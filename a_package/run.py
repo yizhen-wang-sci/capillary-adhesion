@@ -15,7 +15,7 @@ from a_package.config import Config, save_config, expand_sweeps, count_sweep_com
 from a_package.domain import Grid
 from a_package.problem import generate_surface, NodalFormCapillary
 from a_package.simulation import Simulation, SimulationIO
-from a_package.runtime import RunDir, register_run, switch_log_file
+from a_package.runtime import RunDir, CaseDir, switch_log_file
 
 
 logger = logging.getLogger(__name__)
@@ -188,19 +188,19 @@ def run_simulation(config: Config, run_dir: RunDir) -> SimulationIO:
         raise ValueError(f"Unknown constraint type: {constraint_type}")
 
 
-def run_sweep(config: Config, run_dir: RunDir) -> list[SimulationIO]:
+def run_sweep(config: Config, case_dir: CaseDir) -> list[SimulationIO]:
     """
     Run simulation(s) from config, handling sweeps if present.
 
     If config has no sweeps, runs single simulation.
-    If config has sweeps, expands and runs each in a subdirectory.
+    If config has sweeps, creates all runs upfront and runs each.
 
     Parameters
     ----------
     config : Config
         Configuration, possibly with sweep definitions.
-    run_dir : RunDir
-        Base run directory. Sub-runs will be created in intermediate_dir.
+    case_dir : CaseDir
+        Data directory for this case.
 
     Returns
     -------
@@ -211,22 +211,22 @@ def run_sweep(config: Config, run_dir: RunDir) -> list[SimulationIO]:
 
     if nb_configs == 1:
         # No sweeps, single run
+        run_dir = case_dir.create_run(__file__, with_hash=True)
         switch_log_file(run_dir.log_file)
         return [run_simulation(config, run_dir)]
 
-    # Parameter sweep
-    results = []
-    for index, expanded_config in enumerate(expand_sweeps(config)):
-        # Create sub-run directory
-        sub_run = register_run(run_dir.intermediate_dir, __file__, with_hash=False)
-        switch_log_file(sub_run.log_file)
+    # Parameter sweep - create all run dirs upfront
+    run_dirs = case_dir.create_sweep(__file__, nb_configs, with_hash=True)
 
+    results = []
+    for index, (run_dir, expanded_config) in enumerate(zip(run_dirs, expand_sweeps(config))):
+        switch_log_file(run_dir.log_file)
         logger.info(f"Run #{index + 1} of {nb_configs} runs.")
 
         # Save expanded config for reproducibility
-        save_config(expanded_config, sub_run.parameters_dir / f"config.toml")
+        save_config(expanded_config, run_dir.parameters_dir / "config.toml")
 
-        io = run_simulation(expanded_config, sub_run)
+        io = run_simulation(expanded_config, run_dir)
         results.append(io)
 
     return results

@@ -13,7 +13,7 @@ import os
 import sys
 
 from a_package.config import Config, get_surface_shape, load_config
-from a_package.runtime import register_run, reset_logging
+from a_package.runtime import CaseDir, reset_logging
 from a_package.run import run_sweep, build_trajectory, create_grid_from_config, generate_surface_from_config
 
 from cases.visualise_onerun import create_overview_animation
@@ -37,16 +37,16 @@ def main():
     if show_me_preview:
         preview_surface_and_gap(config)
 
-    # setup run directory
-    case_name = os.path.splitext(os.path.basename(__file__))[0]
+    # setup case directory
+    script_name = os.path.splitext(os.path.basename(__file__))[0]
     upper_shape = get_surface_shape(config, "upper")
     lower_shape = get_surface_shape(config, "lower")
     shape_name = f'{upper_shape}-on-{lower_shape}'
-    base_dir = os.path.join(case_name, shape_name)
-    run = register_run(base_dir, __file__, config_file)
+    base_dir = os.path.join(script_name, shape_name)
+    case_dir = CaseDir(base_dir)
 
     # Run simulation(s) - handles sweeps automatically
-    ios = run_sweep(config, run)
+    ios = run_sweep(config, case_dir)
 
     # Create visualisations
     for io in ios:
