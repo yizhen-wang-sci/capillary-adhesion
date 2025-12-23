@@ -4,7 +4,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 from a_package.domain import Grid
-from a_package.problem.surfaces import SelfAffineRoughness
+from a_package.problem import SelfAffineRoughness
 
 from .io import SimulationIO, Term
 
@@ -27,75 +27,283 @@ color_transition_phase = "lightblue"
 eps = 1e-2  # cut off value to decide one phase
 
 
+# =============================================================================
+# Shared helpers
+# =============================================================================
+
+def _nondimensionalize(grid):
+    """Get nondimensionalization unit from grid."""
+    return min(grid.element_sizes)
+
+
+def _compute_extent(grid, unit):
+    """Compute imshow extent from grid dimensions."""
+    return (0, grid.lengths[0] / unit, 0, grid.lengths[1] / unit)
+
+
+# =============================================================================
+# Low-level primitives (array-based, no io)
+# =============================================================================
+
+def draw_field_2d(
+    ax: plt.Axes,
+    field: np.ndarray,
+    extent: tuple,
+    *,
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    alpha: float = 1.0,
+    interpolation: str = "none",
+):
+    """
+    Draw a 2D field as an image.
+
+    Parameters
+    ----------
+    ax : plt.Axes
+        Matplotlib axes to draw on.
+    field : np.ndarray
+        2D array of values to display.
+    extent : tuple
+        (xmin, xmax, ymin, ymax) for axis limits.
+    cmap : str
+        Colormap name.
+    vmin, vmax : float, optional
+        Color scale limits.
+    alpha : float
+        Transparency (0-1).
+    interpolation : str
+        Interpolation method.
+
+    Returns
+    -------
+    AxesImage
+        The image object (can be used for colorbars).
+    """
+    return ax.imshow(
+        field,
+        extent=extent,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        alpha=alpha,
+        interpolation=interpolation,
+    )
+
+
+def draw_masked_field_2d(
+    ax: plt.Axes,
+    field: np.ndarray,
+    extent: tuple,
+    mask: np.ndarray,
+    *,
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    alpha: float = 1.0,
+    interpolation: str = "nearest",
+):
+    """
+    Draw a 2D field with masking.
+
+    Parameters
+    ----------
+    ax : plt.Axes
+        Matplotlib axes to draw on.
+    field : np.ndarray
+        2D array of values to display.
+    extent : tuple
+        (xmin, xmax, ymin, ymax) for axis limits.
+    mask : np.ndarray
+        Boolean array where True means masked (hidden).
+    cmap : str
+        Colormap name.
+    vmin, vmax : float, optional
+        Color scale limits.
+    alpha : float
+        Transparency (0-1).
+    interpolation : str
+        Interpolation method.
+
+    Returns
+    -------
+    AxesImage
+        The image object.
+    """
+    masked_field = np.ma.masked_where(mask, field)
+    return ax.imshow(
+        masked_field,
+        extent=extent,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        alpha=alpha,
+        interpolation=interpolation,
+    )
+
+
+def draw_cross_section(
+    ax: plt.Axes,
+    x: np.ndarray,
+    h_upper: np.ndarray,
+    h_lower: np.ndarray,
+    phi: np.ndarray | None = None,
+    *,
+    cutoff: float = eps,
+    color_solid: str | None = None,
+    color_liquid: str | None = None,
+    color_transition: str | None = None,
+    show_legend: bool = True,
+):
+    """
+    Draw a filled cross-section with surfaces, contact, and phase regions.
+
+    Parameters
+    ----------
+    ax : plt.Axes
+        Matplotlib axes to draw on.
+    x : np.ndarray
+        1D array of x coordinates.
+    h_upper : np.ndarray
+        1D array of upper surface heights.
+    h_lower : np.ndarray
+        1D array of lower surface heights.
+    phi : np.ndarray, optional
+        1D array of phase field values. If None, only surfaces and contact shown.
+    cutoff : float
+        Phase threshold for liquid/transition classification.
+    color_solid, color_liquid, color_transition : str, optional
+        Colors for regions. Uses module defaults if None.
+    show_legend : bool
+        Whether to show legend.
+    """
+    # Use module defaults if not specified
+    _color_solid = color_solid or color_solid_phase
+    _color_liquid = color_liquid or color_liquid_phase
+    _color_transition = color_transition or color_transition_phase
+
+    # Draw surface lines
+    ax.plot(x, h_upper, "k-")
+    ax.plot(x, h_lower, "k-")
+
+    # Helper to fill contiguous regions
+    def fill_regions(indices, color):
+        if np.size(indices):
+            i_diff = np.diff(indices, prepend=indices[0] - 1)
+            i_break = np.hstack((i_diff > 1).nonzero())
+            for section in np.split(indices, i_break):
+                ax.fill_between(x[section], h_lower[section], h_upper[section], color=color)
+
+    # Fill contact regions (where upper < lower, i.e. overlap)
+    at_contact = np.asanyarray(h_upper < h_lower).nonzero()[0]
+    fill_regions(at_contact, _color_solid)
+
+    # Fill phase regions if phase field provided
+    if phi is not None:
+        liquid_phase = np.asarray(phi >= 1 - cutoff).nonzero()[0]
+        fill_regions(liquid_phase, _color_liquid)
+
+        transition_phase = np.asarray((phi < 1 - cutoff) & (phi > 0 + cutoff)).nonzero()[0]
+        fill_regions(transition_phase, _color_transition)
+
+    # Legend with dummy patches
+    if show_legend:
+        handles = []
+        if phi is not None:
+            [p_interface] = ax.fill(np.nan, np.nan, _color_transition, label="Interface")
+            [p_liquid] = ax.fill(np.nan, np.nan, _color_liquid, label="Liquid")
+            handles.extend([p_interface, p_liquid])
+        [p_solid] = ax.fill(np.nan, np.nan, _color_solid, label="Solid")
+        handles.append(p_solid)
+        ax.legend(handles=handles, loc="upper center", ncol=len(handles))
+
+    # No view margin along x-axis
+    ax.set_xlim(x[0], x[-1])
+
+
+def draw_evolution_curve(
+    ax: plt.Axes,
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    color: str = "C0",
+    linestyle: str = "-",
+    marker: str = "o",
+    ms: float = 3,
+    label: str | None = None,
+    show_grid: bool = True,
+    show_legend: bool = True,
+):
+    """
+    Draw an evolution curve with markers.
+
+    Parameters
+    ----------
+    ax : plt.Axes
+        Matplotlib axes to draw on.
+    x : np.ndarray
+        1D array of x values (e.g., step numbers).
+    y : np.ndarray
+        1D array of y values.
+    color : str
+        Line and marker color.
+    linestyle : str
+        Line style.
+    marker : str
+        Marker style.
+    ms : float
+        Marker size.
+    label : str, optional
+        Legend label.
+    show_grid : bool
+        Whether to show grid.
+    show_legend : bool
+        Whether to show legend (only if label provided).
+    """
+    ax.plot(x, y, color=color, linestyle=linestyle, marker=marker, ms=ms, mfc="none", label=label)
+
+    if show_grid:
+        ax.grid()
+
+    if show_legend and label:
+        ax.legend(loc="upper right")
+
+
+# =============================================================================
+# High-level wrappers (SimulationIO-dependent)
+# =============================================================================
+
 def plot_cross_section_sketch(ax: plt.Axes, io: SimulationIO, idx_step: int, idx_row: int, value_cutoff=eps):
-    # Get the data of the cross section at specified row index
+    """
+    Plot cross-section with surfaces, contact, and phase regions.
+
+    Wrapper that loads data and calls draw_cross_section primitive.
+    """
     # FIXME: only shift in x-axis is considered.
     grid = io.grid
-    unit = min(grid.element_sizes)
+    unit = _nondimensionalize(grid)
     data = io.load_step(
-        idx_step, field_names=[Term.upper_solid, Term.lower_solid, Term.phase],
-        single_value_names=[Term.separation])
+        idx_step,
+        field_names=[Term.upper_solid, Term.lower_solid, Term.phase],
+        single_value_names=[Term.separation],
+    )
 
-    h1 = data[Term.upper_solid][0,0,idx_row]
+    # Extract and nondimensionalize
+    h_upper = data[Term.upper_solid][0, 0, idx_row]
     sep = data[Term.separation]
-    h1 = (h1 + sep) / unit
-    h2 = data[Term.lower_solid][0,0,idx_row] / unit
+    h_upper = (h_upper + sep) / unit
+    h_lower = data[Term.lower_solid][0, 0, idx_row] / unit
     x = grid.form_nodal_axis(0) / unit
-
-    # add border values due to periodic boundary condition
-    h1 = np.append(h1, h1[0])
-    h2 = np.append(h2, h2[0])
-    x = np.append(x, grid.lengths[0]/unit)
-
-    # plot the two plates
-    ax.plot(x, h1, "k-")
-    ax.plot(x, h2, "k-")
-
-    # highlight the contacting part (if any)
-    at_contact = np.asanyarray(h1 < h2).nonzero()[0]
-    if np.size(at_contact):
-        i_diff = np.diff(at_contact, prepend=at_contact[0] - 1)
-        i_break = np.hstack((i_diff > 1).nonzero())
-        for contact_part in np.split(at_contact, i_break):
-            ax.fill_between(x[contact_part], h2[contact_part], h1[contact_part], color=color_solid_phase)
-
-    # highlight the liquid phase (if any)
     phi = data[Term.phase][0, 0, idx_row, :]
-    water_phase = np.asarray(phi >= 1 - value_cutoff).nonzero()[0]
-    if np.size(water_phase):
-        i_diff = np.diff(water_phase, prepend=water_phase[0] - 1)
-        i_break = np.hstack((i_diff > 1).nonzero())
-        for section in np.split(water_phase, i_break):
-            ax.fill_between(x[section], h2[section], h1[section], color=color_liquid_phase)
 
-    # # highlight the vapour phase (if any)
-    # phi = data[Term.phase][0, 0, idx_row, :]
-    # vapour_phase = np.asarray(phi <= 0 + value_cutoff).nonzero()[0]
-    # if np.size(vapour_phase):
-    #     i_diff = np.diff(vapour_phase, prepend=vapour_phase[0] - 1)
-    #     i_break = np.hstack((i_diff > 1).nonzero())
-    #     for section in np.split(vapour_phase, i_break):
-    #         ax.fill_between(x[section], h2[section], h1[section], color=color_vapour_phase)
+    # Add border values for periodic boundary condition
+    h_upper = np.append(h_upper, h_upper[0])
+    h_lower = np.append(h_lower, h_lower[0])
+    x = np.append(x, grid.lengths[0] / unit)
+    phi = np.append(phi, phi[0])
 
-    # highlight the transition phase (if any)
-    phi = data[Term.phase][0, 0, idx_row, :]
-    transition_phase = np.asarray((phi <= 1 - value_cutoff) & (phi >= 0 + value_cutoff)).nonzero()[0]
-    if np.size(transition_phase):
-        i_diff = np.diff(transition_phase, prepend=transition_phase[0] - 1)
-        i_break = np.hstack((i_diff > 1).nonzero())
-        for section in np.split(transition_phase, i_break):
-            ax.fill_between(x[section], h2[section], h1[section], color=color_transition_phase)
-
-    # Because the hightlight might not necessarily exist, we have to manually create the legend
-    [p_solid] = ax.fill(np.nan, np.nan, color_solid_phase, label="Solid")
-    [p_liquid] = ax.fill(np.nan, np.nan, color_liquid_phase, label="Liquid")
-    # [p_vapour] = ax.fill(np.nan, np.nan, color_vapour_phase, label="Vapour")
-    [p_interface] = ax.fill(np.nan, np.nan, color_transition_phase, label="Interface")
-    # ax.legend(handles=[p_vapour, p_interface, p_liquid, p_solid], loc="upper center", ncol=2)
-    ax.legend(handles=[p_interface, p_liquid, p_solid], loc="upper center", ncol=3)
-
-    # No view margin along x-axis.
-    ax.set_xlim(x[0], x[-1])
+    draw_cross_section(ax, x, h_upper, h_lower, phi, cutoff=value_cutoff)
 
 
 def plot_cross_section_phase_field(ax: plt.Axes, io: SimulationIO, idx_step: int, idx_row: int):
@@ -106,84 +314,67 @@ def plot_cross_section_phase_field(ax: plt.Axes, io: SimulationIO, idx_step: int
 
 
 def plot_height_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
+    """Plot upper surface height field."""
     data = io.load_step(idx_step, field_names=[Term.upper_solid])
-    unit = min(io.grid.element_sizes)
-    # make value dimension less
+    unit = _nondimensionalize(io.grid)
     h = data[Term.upper_solid].squeeze() / unit
-
-    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
-    im = ax.imshow(h, interpolation='none', cmap=cmap_height, extent=tuple(border))
-
-    return im
+    extent = _compute_extent(io.grid, unit)
+    return draw_field_2d(ax, h, extent, cmap=cmap_height)
 
 
 def plot_gap_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
-    # nondimensionalize by 'eta'
+    """Plot gap field between surfaces."""
     data = io.load_step(idx_step, field_names=[Term.gap])
-    unit = min(io.grid.element_sizes)
+    unit = _nondimensionalize(io.grid)
     g = data[Term.gap].squeeze() / unit
-    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
-
-    # Set a negative 'vmin' so that the map still looks blue
-    vmax = g.max()
-    vmin = 0
-    # im = ax.imshow(g, cmap='Blues', vmin=vmin, vmax=vmax, interpolation='nearest', extent=border)
-    im = ax.imshow(g, interpolation='none', cmap=cmap_gap, vmin=vmin, vmax=vmax, extent=border)
-
-    return im
+    extent = _compute_extent(io.grid, unit)
+    return draw_field_2d(ax, g, extent, cmap=cmap_gap, vmin=0, vmax=g.max())
 
 
 def plot_contact_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
-    # nondimensionalize by 'eta'
+    """Plot contact regions (where gap <= 0)."""
     data = io.load_step(idx_step, field_names=[Term.gap])
-    unit = min(io.grid.element_sizes)
+    unit = _nondimensionalize(io.grid)
     g = data[Term.gap].squeeze() / unit
-
-    # mask the non-contact part
-    contact = np.ma.masked_where(g > 0, g)
-
-    # nondimensionalize by 'eta'
-    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
-    im = ax.imshow(contact, cmap=cmap_contact, vmin=-1, vmax=1, alpha=0.4, interpolation='nearest', extent=border)
-    return im
+    extent = _compute_extent(io.grid, unit)
+    # Mask non-contact regions (gap > 0)
+    return draw_masked_field_2d(ax, g, extent, mask=(g > 0),
+                                 cmap=cmap_contact, vmin=-1, vmax=1, alpha=0.4)
 
 
 def plot_droplet_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
+    """Plot liquid droplet with liquid and transition phases overlaid."""
     data = io.load_step(idx_step, field_names=[Term.phase])
-    unit = min(io.grid.element_sizes)
-    # only use a part of the colour map, as the bluest blue is too dark
-    vmin = 0
-    vmax = 1.5
-    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
-
+    unit = _nondimensionalize(io.grid)
+    extent = _compute_extent(io.grid, unit)
     phi = data[Term.phase].squeeze()
-    liquid = np.ma.masked_where(phi <= 1 - eps, phi)
-    im = ax.imshow(
-        liquid, cmap=cmap_phase_field, vmin=vmin, vmax=vmax, alpha=0.85, interpolation="nearest", extent=border
-    )
 
-    transition = np.ma.masked_where((phi <= 0 + eps) | (phi > 1 - eps), phi)
-    im = ax.imshow(
-        transition, cmap=cmap_phase_field, vmin=vmin, vmax=vmax, alpha=0.7, interpolation="nearest", extent=border
-    )
+    # Use partial colormap range (bluest blue is too dark)
+    vmin, vmax = 0, 1.5
 
+    # Liquid phase (phi >= 1 - eps)
+    draw_masked_field_2d(ax, phi, extent, mask=(phi <= 1 - eps),
+                         cmap=cmap_phase_field, vmin=vmin, vmax=vmax, alpha=0.85)
+
+    # Transition phase (eps < phi < 1 - eps)
+    im = draw_masked_field_2d(ax, phi, extent, mask=((phi <= eps) | (phi > 1 - eps)),
+                              cmap=cmap_phase_field, vmin=vmin, vmax=vmax, alpha=0.7)
     return im
 
 
 def plot_phase_field_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
-    data = io.load_step(idx_step, field_names=[Term.phase]) 
-    unit = min(io.grid.element_sizes)
-    # NOTE: the value 2.0 is for solid phase, while that of the water / vapor phase is 1.0 / 0.0 respectively.
-    # these values are to match the color in the "afmhot" colormap.
-    # value_contact = 2.0
-    # phi[g <= 0] = value_contact
-    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
-    im = ax.imshow(data[Term.phase].squeeze(), vmin=0, vmax=2, cmap='Blues', interpolation='nearest', extent=border)
-    return im
+    """Plot raw phase field values."""
+    data = io.load_step(idx_step, field_names=[Term.phase])
+    unit = _nondimensionalize(io.grid)
+    extent = _compute_extent(io.grid, unit)
+    phi = data[Term.phase].squeeze()
+    return draw_field_2d(ax, phi, extent, cmap="Blues", vmin=0, vmax=2, interpolation="nearest")
 
 
+# NOT UPDATED: Has hardcoded pixel size, needs refactoring
 def plot_interface_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
-    data = io.load_step(idx_step, field_names=[Term.phase]) 
+    """[NOT UPDATED] Plot phase interface using gradient-based edge detection."""
+    data = io.load_step(idx_step, field_names=[Term.phase])
     dphi = np.gradient(data[Term.phase].squeeze())
     edge = sum(dphi_i**2 for dphi_i in dphi) > 1e-6
     interface = np.where(edge, data[Term.phase].squeeze(), 0)
@@ -199,36 +390,34 @@ def plot_combined_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
     # im3 = plot_interface_topography(ax, io, idx_step)
     im4 = plot_droplet_topography(ax, io, idx_step)
     # im4 = plot_phase_field_topography(ax, io, idx_step)
-    # return im1, im2, im4
+    return im1, im2, im4
 
 
+# NOT UPDATED: Legacy function, may not follow new conventions
 def demonstrate_dynamics(ax: plt.Axes, io: SimulationIO):
-    # extract data
+    """[NOT UPDATED] Plot separation vs step index."""
     data = io.load_trajectory(single_value_names=[Term.separation])
     unit = min(io.grid.element_sizes)
     ax.plot(data[Term.separation] / unit)
 
 
 def plot_gibbs_free_energy(ax: plt.Axes, io: SimulationIO, nb_steps: int | None = None):
-
+    """Plot Gibbs free energy evolution."""
     data = io.load_trajectory(single_value_names=[Term.energy])
     energy = data[Term.energy][:nb_steps]
 
     # Non-dimensionalize
-    unit = min(io.grid.element_sizes)
-    # NOTE: actually needs to be divided again by 'gamma'(surface tension), but 'gamma' is symbolic so far.
-    energy = energy / (unit**2)  
+    # NOTE: actually needs to be divided again by 'gamma' (surface tension), but 'gamma' is symbolic so far.
+    unit = _nondimensionalize(io.grid)
+    energy = energy / (unit**2)
 
-    # Plot the x, y, z component of forces
-    steps = np.arange(nb_steps)
-    ax.plot(steps, energy, color="C1", linestyle="-", marker="x", ms=5, mfc="none", label=r"$G$")
-
-    # Format the plot
-    ax.legend(loc='upper right')
-    ax.grid()
+    steps = np.arange(len(energy))
+    draw_evolution_curve(ax, steps, energy, color="C1", marker="x", ms=5, label=r"$G$")
 
 
+# NOT UPDATED: Standalone demo function, not used in production
 def plot_PSD(ax: plt.Axes):
+    """[NOT UPDATED] Plot power spectral density (standalone demo)."""
     # TODO: change to sample the PSD from the height profile of a rough surface
     L = 10           # spatial dimension
     n_grid = 200     # samples in spatial domain
@@ -250,42 +439,35 @@ def plot_PSD(ax: plt.Axes):
 
 
 def plot_normal_force(ax: plt.Axes, io: SimulationIO, nb_steps: int | None = None):
+    """Plot normal force (numerical derivative of energy) evolution."""
     data = io.load_trajectory(single_value_names=[Term.energy, Term.separation])
     energy = data[Term.energy][:nb_steps]
     displ_z = data[Term.separation][:nb_steps]
-    # numerical difference to get force
+
+    # Numerical difference to get force
     force = -(energy[1:] - energy[:-1]) / (displ_z[1:] - displ_z[:-1])
 
     # Non-dimensionalize
-    unit = min(io.grid.element_sizes)
-    force = force / unit  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
+    # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
+    unit = _nondimensionalize(io.grid)
+    force = force / unit
 
-    # Plot the x, y, z component of forces
-    steps = np.arange(nb_steps)
-    steps = (steps[1:] + steps[:-1]) / 2
-    ax.plot(steps, force, color="b", linestyle="-", marker="o", ms=3, mfc="none", label=r"$F_z$")
-
-    # Format the plot
-    ax.legend(loc='upper right')
-    ax.grid()
+    # Midpoint steps for derivative
+    steps = (np.arange(len(energy))[1:] + np.arange(len(energy))[:-1]) / 2
+    draw_evolution_curve(ax, steps, force, color="b", marker="o", ms=3, label=r"$F_z$")
 
 
-def plot_pressure(ax: plt.Axes, io: SimulationIO, nb_steps: int=None):
-
+def plot_pressure(ax: plt.Axes, io: SimulationIO, nb_steps: int | None = None):
+    """Plot pressure (Lagrange multiplier) evolution."""
     data = io.load_trajectory(single_value_names=[Term.pressure])
     pressure = data[Term.pressure][:nb_steps]
 
     # Non-dimensionalize
-    unit = min(io.grid.element_sizes)
+    unit = _nondimensionalize(io.grid)
     pressure = pressure * unit
 
-    # Plot the x, y, z component of forces
-    steps = np.arange(nb_steps)
-    ax.plot(steps, pressure, color="r", linestyle="-", marker="o", ms=5, mfc="none", label=r"$P/\gamma a^{-1}$")
-
-    # Format the plot
-    ax.legend(loc='upper right')
-    ax.grid()
+    steps = np.arange(len(pressure))
+    draw_evolution_curve(ax, steps, pressure, color="r", marker="o", ms=5, label=r"$P/\gamma a^{-1}$")
 
 
 def hide_border(ax: plt.Axes):
