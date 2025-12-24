@@ -34,6 +34,25 @@ def create_grid_from_config(config: Config) -> Grid:
     return Grid([L, L], [N, N])
 
 
+def get_surface_shape(config: Config, which: str) -> str:
+    """
+    Get the shape name for a surface.
+
+    Parameters
+    ----------
+    config : Config
+        The configuration object.
+    which : str
+        Either "upper" or "lower".
+
+    Returns
+    -------
+    str
+        The surface shape name.
+    """
+    return config.problem[which]["shape"]
+
+
 def generate_surface_from_config(grid: Grid, surface_cfg: dict[str, Any]) -> np.ndarray:
     """
     Generate a surface from configuration dict.

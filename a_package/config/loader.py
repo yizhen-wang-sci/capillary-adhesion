@@ -5,7 +5,6 @@ Uses tomllib (Python 3.11+) or tomli (backport) for reading,
 and tomli_w for writing.
 """
 
-import copy
 import sys
 from pathlib import Path
 from typing import Any
@@ -57,22 +56,3 @@ def save_config(config: Config, path: str | Path) -> None:
 
     with open(path, "wb") as f:
         tomli_w.dump(data, f)
-
-
-def get_surface_shape(config: Config, which: str) -> str:
-    """
-    Get the shape name for a surface.
-
-    Parameters
-    ----------
-    config : Config
-        The configuration object.
-    which : str
-        Either "upper" or "lower".
-
-    Returns
-    -------
-    str
-        The surface shape name.
-    """
-    return config.problem[which]["shape"]

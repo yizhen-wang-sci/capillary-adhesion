@@ -9,6 +9,6 @@ Provides:
 
 from .schema import Config
 
-from .loader import load_config, save_config, get_surface_shape
+from .loader import load_config, save_config
 
 from .sweep import expand_sweeps, count_sweep_combinations
