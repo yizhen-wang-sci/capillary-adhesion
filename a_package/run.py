@@ -13,7 +13,7 @@ import numpy.random as random
 
 from a_package.config import Config, save_config, expand_sweeps, count_sweep_combinations
 from a_package.domain import Grid
-from a_package.problem import generate_surface, NodalFormCapillary
+from a_package.problem import generate_surface, compute_volume_from_percent
 from a_package.simulation import Simulation, SimulationIO
 from a_package.runtime import RunDir, CaseDir, switch_log_file
 
@@ -124,35 +124,6 @@ def build_trajectory(config: Config) -> np.ndarray:
         raise ValueError(f"Unknown trajectory type: {traj_type}")
 
 
-def compute_liquid_volume(
-    grid: Grid,
-    constraint_cfg: dict[str, Any],
-    upper: np.ndarray,
-    lower: np.ndarray,
-    capillary_args: dict[str, Any],
-    trajectory: np.ndarray,
-) -> float:
-    """
-    Compute liquid volume from percentage specification.
-
-    The percentage is relative to the maximum possible volume
-    (full liquid at minimum separation).
-    """
-    # Create formulation at minimum separation to compute reference volume
-    formulation = NodalFormCapillary(grid, capillary_args)
-    z_min = np.amin(trajectory)
-    gap = np.clip(upper + z_min - lower, 0, None)
-    formulation.set_gap(gap)
-
-    # Full liquid phase field
-    full_liquid = np.ones([1, 1, *grid.nb_elements])
-    formulation.set_phase(full_liquid)
-
-    # Compute volume as percentage of full
-    V_percent = 0.01 * constraint_cfg["liquid_volume_percent"]
-    return formulation.get_volume() * V_percent
-
-
 # -----------------------------------------------------------------------------
 # Public API
 # -----------------------------------------------------------------------------
@@ -197,8 +168,9 @@ def run_simulation(config: Config, run_dir: RunDir) -> SimulationIO:
     constraint_type = constraint_cfg["type"]
 
     if constraint_type == "constant_volume":
-        volume = compute_liquid_volume(
-            grid, constraint_cfg, upper, lower, capillary_args, trajectory
+        volume = compute_volume_from_percent(
+            grid, capillary_args, upper, lower, trajectory,
+            volume_percent=constraint_cfg["liquid_volume_percent"],
         )
         return simulation.run_with_constant_volume(
             upper, lower, trajectory, volume, run_dir.results_dir, phase_init=phase_init
