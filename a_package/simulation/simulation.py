@@ -11,6 +11,7 @@ import pathlib
 import numpy as np
 
 from a_package.domain import Grid
+from a_package.problem import NodalFormCapillary
 from a_package.solver import RigidContactSolver, PhaseSolver
 
 from .io import SimulationIO, Term
@@ -85,7 +86,8 @@ class Simulation:
 
         # Create solvers
         contact_solver = RigidContactSolver(upper, lower)
-        phase_solver = PhaseSolver(self.grid, self.capillary_args, self.optimizer_args)
+        formulation = NodalFormCapillary(self.grid, self.capillary_args)
+        phase_solver = PhaseSolver(formulation, self.optimizer_args)
 
         # IO
         io = SimulationIO(self.grid, store_dir)

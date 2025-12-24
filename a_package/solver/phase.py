@@ -9,9 +9,9 @@ import types
 
 import numpy as np
 
-from a_package.domain import Grid
-from a_package.solver.optimizer import AugmentedLagrangian
-from a_package.problem.capillary import NodalFormCapillary
+from a_package.problem import NodalFormCapillary
+
+from .optimizer import AugmentedLagrangian
 
 
 logger = logging.getLogger(__name__)
@@ -19,17 +19,22 @@ logger = logging.getLogger(__name__)
 
 class PhaseSolver:
     """
-    Solves for the equilibrium phase field under                                                                                             various constraints.
+    Solves for the equilibrium phase field under various constraints.
 
-    Owns the formulation and optimizer, provides methods for different
-    constraint types.
+    Receives a formulation (problem) and optimizer, provides methods for
+    different constraint types.
     """
 
-    formulation: NodalFormCapillary
-    optimizer: AugmentedLagrangian
-
-    def __init__(self, grid: Grid, capillary_args: dict, optimizer_args: dict):
-        self.formulation = NodalFormCapillary(grid, capillary_args)
+    def __init__(self, formulation: NodalFormCapillary, optimizer_args: dict):
+        """
+        Parameters
+        ----------
+        formulation : NodalFormCapillary
+            Problem formulation providing energy/volume evaluation.
+        optimizer_args : dict
+            Arguments for the AugmentedLagrangian optimizer.
+        """
+        self.formulation = formulation
         self.optimizer = AugmentedLagrangian(**optimizer_args)
 
     def solve_with_constant_volume(self, gap, phase, pressure, volume):
