@@ -131,7 +131,7 @@ class CaseDir:
 
         Parameters
         ----------
-        case_dir : str | Path
+        path : str | Path
             Relative path for the case (e.g., "load_unload/tip-on-flat").
         data_root : str | Path | None
             Root directory for all simulation data. Defaults to "data/" in repo root.

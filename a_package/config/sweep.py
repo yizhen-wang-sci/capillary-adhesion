@@ -7,7 +7,7 @@ one for each parameter combination.
 
 import copy
 import itertools
-from dataclasses import replace
+import dataclasses as dc
 from typing import Any, Iterator
 
 import numpy as np
@@ -33,7 +33,7 @@ def expand_sweeps(config: Config) -> Iterator[Config]:
     """
     if not config.sweeps:
         # No sweeps defined, return the original config
-        yield replace(config, sweeps=[])
+        yield dc.replace(config, sweeps=[])
         return
 
     # Expand each sweep into values
@@ -50,7 +50,7 @@ def expand_sweeps(config: Config) -> Iterator[Config]:
         # Create a new config with sweep values applied
         new_config = _apply_values(config, paths, combo)
         # Remove sweep specifications from the expanded config
-        new_config = replace(new_config, sweeps=[])
+        new_config = dc.replace(new_config, sweeps=[])
         yield new_config
 
 
