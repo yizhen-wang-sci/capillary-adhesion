@@ -29,4 +29,4 @@ class Config:
     problem: dict[str, Any]
     simulation: dict[str, Any]
     solver: dict[str, Any] = field(default_factory=dict)
-    sweeps: list[dict[str, Any]] = field(default_factory=list)
+    sweep: list[dict[str, Any]] = field(default_factory=list)

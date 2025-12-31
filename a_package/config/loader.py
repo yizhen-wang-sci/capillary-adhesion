@@ -27,14 +27,14 @@ def load_config(path: str | Path) -> Config:
         data = tomllib.load(f)
 
     # Extract sweeps (TOML uses [[sweep]] array syntax)
-    sweeps = data.pop("sweep", [])
+    sweep = data.pop("sweep", [])
 
     return Config(
         domain=data["domain"],
         problem=data["problem"],
         solver=data["solver"],
         simulation=data["simulation"],
-        sweeps=sweeps,
+        sweep=sweep,
     )
 
 
@@ -51,8 +51,8 @@ def save_config(config: Config, path: str | Path) -> None:
         data["solver"] = config.solver
     if config.simulation:
         data["simulation"] = config.simulation
-    if config.sweeps:
-        data["sweep"] = config.sweeps
+    if config.sweep:
+        data["sweep"] = config.sweep
 
     with open(path, "wb") as f:
         tomli_w.dump(data, f)

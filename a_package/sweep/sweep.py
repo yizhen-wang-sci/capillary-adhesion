@@ -31,14 +31,14 @@ def expand_sweeps(config: Config) -> Iterator[Config]:
     Config
         Individual configurations with sweep parameters resolved.
     """
-    if not config.sweeps:
+    if not config.sweep:
         # No sweeps defined, return the original config
-        yield dc.replace(config, sweeps=[])
+        yield dc.replace(config, sweep=[])
         return
 
     # Expand each sweep into values
     sweep_values: list[tuple[str, list[Any]]] = []
-    for sweep in config.sweeps:
+    for sweep in config.sweep:
         values = _expand_sweep_values(sweep)
         sweep_values.append((sweep["path"], values))
 
@@ -50,7 +50,7 @@ def expand_sweeps(config: Config) -> Iterator[Config]:
         # Create a new config with sweep values applied
         new_config = _apply_values(config, paths, combo)
         # Remove sweep specifications from the expanded config
-        new_config = dc.replace(new_config, sweeps=[])
+        new_config = dc.replace(new_config, sweep=[])
         yield new_config
 
 
@@ -120,11 +120,11 @@ def count_sweep_combinations(config: Config) -> int:
 
     Returns 1 if no sweeps are defined.
     """
-    if not config.sweeps:
+    if not config.sweep:
         return 1
 
     total = 1
-    for sweep in config.sweeps:
+    for sweep in config.sweep:
         values = _expand_sweep_values(sweep)
         total *= len(values)
     return total
