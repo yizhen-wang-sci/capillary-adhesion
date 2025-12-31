@@ -4,7 +4,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 from a_package.domain import Grid
-from a_package.problem import SelfAffineRoughness
 
 from .io import SimulationIO, Term
 
@@ -416,26 +415,29 @@ def plot_gibbs_free_energy(ax: plt.Axes, io: SimulationIO, nb_steps: int | None 
 
 
 # NOT UPDATED: Standalone demo function, not used in production
-def plot_PSD(ax: plt.Axes):
-    """[NOT UPDATED] Plot power spectral density (standalone demo)."""
-    # TODO: change to sample the PSD from the height profile of a rough surface
-    L = 10           # spatial dimension
-    n_grid = 200     # samples in spatial domain
-    grid = Grid([L, L], [n_grid, n_grid])
+# TODO: change to sample the PSD from the height profile of a rough surface
+# def plot_PSD(ax: plt.Axes):
+#     """[NOT UPDATED] Plot power spectral density (standalone demo)."""
 
-    qR = 2e0  # roll-off
-    qS = 2e1  # cut-off
-    C0 = 1e7  # prefactor
-    H = 0.95  # Hurst exponent
-    roughness = SelfAffineRoughness(C0, qR, qS, H)
+#     from a_package.problem import SelfAffineRoughness
 
-    # isotropic PSD
-    q_iso = grid.form_spectral_axis(0)
-    ax.loglog(fft.fftshift(q_iso), fft.fftshift(roughness.mapto_isotropic_psd(q_iso)))
-    ax.axvline(abs(q_iso[q_iso.nonzero()]).min(), color="r", linestyle="--")
-    ax.axvline(q_iso.max(), color="r", linestyle="--")
+#     L = 10           # spatial dimension
+#     n_grid = 200     # samples in spatial domain
+#     grid = Grid([L, L], [n_grid, n_grid])
 
-    ax.grid()
+#     qR = 2e0  # roll-off
+#     qS = 2e1  # cut-off
+#     C0 = 1e7  # prefactor
+#     H = 0.95  # Hurst exponent
+#     roughness = SelfAffineRoughness(C0, qR, qS, H)
+
+#     # isotropic PSD
+#     q_iso = grid.form_spectral_axis(0)
+#     ax.loglog(fft.fftshift(q_iso), fft.fftshift(roughness.mapto_isotropic_psd(q_iso)))
+#     ax.axvline(abs(q_iso[q_iso.nonzero()]).min(), color="r", linestyle="--")
+#     ax.axvline(q_iso.max(), color="r", linestyle="--")
+
+#     ax.grid()
 
 
 def plot_normal_force(ax: plt.Axes, io: SimulationIO, nb_steps: int | None = None):
