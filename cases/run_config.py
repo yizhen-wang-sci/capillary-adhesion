@@ -12,9 +12,9 @@ import logging
 import os
 import sys
 
-from a_package.config import Config, get_surface_shape, load_config
+from a_package.config import Config, load_config
 from a_package.runtime import CaseDir, reset_logging
-from a_package.run import run_sweep, build_trajectory, create_grid_from_config, generate_surface_from_config
+from a_package.run import run_sweep, build_trajectory, create_grid_from_config, generate_surface_from_config, get_surface_shape
 
 from cases.visualise_onerun import create_overview_animation
 
@@ -62,8 +62,8 @@ def preview_surface_and_gap(config: Config):
     from a_package.simulation.visualisation import latexify_plot
 
     grid = create_grid_from_config(config)
-    h1 = generate_surface_from_config(grid, config.physics["upper"])
-    h0 = generate_surface_from_config(grid, config.physics["lower"])
+    h1 = generate_surface_from_config(grid, config.problem["upper"])
+    h0 = generate_surface_from_config(grid, config.problem["lower"])
     trajectory = build_trajectory(config)
 
     latexify_plot(12)
