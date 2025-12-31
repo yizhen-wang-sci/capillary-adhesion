@@ -11,7 +11,8 @@ from typing import Any
 import numpy as np
 import numpy.random as random
 
-from a_package.config import Config, save_config, expand_sweeps, count_sweep_combinations
+from a_package.config import Config, save_config
+from a_package.sweep import expand_sweeps, count_sweep_combinations
 from a_package.domain import Grid
 from a_package.problem import generate_surface, compute_volume_from_percent
 from a_package.simulation import Simulation, SimulationIO

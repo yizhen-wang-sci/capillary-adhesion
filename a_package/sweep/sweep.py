@@ -12,7 +12,7 @@ from typing import Any, Iterator
 
 import numpy as np
 
-from .schema import Config
+from a_package.config import Config
 
 
 def expand_sweeps(config: Config) -> Iterator[Config]:
