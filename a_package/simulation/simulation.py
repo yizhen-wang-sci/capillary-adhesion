@@ -14,7 +14,8 @@ from a_package.domain import Grid
 from a_package.problem import NodalFormCapillary
 from a_package.solver import RigidContactSolver, PhaseSolver
 
-from .io import SimulationIO, Term
+from .io import SimulationIO
+from .schema import Term
 
 
 logger = logging.getLogger(__name__)

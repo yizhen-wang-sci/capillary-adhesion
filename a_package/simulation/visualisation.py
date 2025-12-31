@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 
 from a_package.domain import Grid
 
-from .io import SimulationIO, Term
+from .io import SimulationIO
+from .schema import Term
 
 
 # Setup for colours
