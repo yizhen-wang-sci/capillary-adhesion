@@ -23,10 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 # -----------------------------------------------------------------------------
-# Helpers: config -> primitives
+# Private helpers: config -> primitives
 # -----------------------------------------------------------------------------
 
-def create_grid_from_config(config: Config) -> Grid:
+def _create_grid_from_config(config: Config) -> Grid:
     """Create a Grid from configuration."""
     grid_cfg = config.domain["grid"]
     a = grid_cfg["pixel_size"]
@@ -35,7 +35,7 @@ def create_grid_from_config(config: Config) -> Grid:
     return Grid([L, L], [N, N])
 
 
-def get_surface_shape(config: Config, which: str) -> str:
+def _get_surface_shape(config: Config, which: str) -> str:
     """
     Get the shape name for a surface.
 
@@ -54,7 +54,7 @@ def get_surface_shape(config: Config, which: str) -> str:
     return config.problem[which]["shape"]
 
 
-def generate_surface_from_config(grid: Grid, surface_cfg: dict[str, Any]) -> np.ndarray:
+def _generate_surface_from_config(grid: Grid, surface_cfg: dict[str, Any]) -> np.ndarray:
     """
     Generate a surface from configuration dict.
 
@@ -65,7 +65,7 @@ def generate_surface_from_config(grid: Grid, surface_cfg: dict[str, Any]) -> np.
     return generate_surface(grid, shape, **cfg)
 
 
-def build_capillary_args(config: Config) -> dict[str, Any]:
+def _build_capillary_args(config: Config) -> dict[str, Any]:
     """
     Build capillary model arguments from configuration.
 
@@ -79,7 +79,7 @@ def build_capillary_args(config: Config) -> dict[str, Any]:
     return {"eta": eta, "theta": theta}
 
 
-def build_solver_args(config: Config) -> dict[str, Any]:
+def _build_solver_args(config: Config) -> dict[str, Any]:
     """
     Build solver arguments from configuration.
 
@@ -98,7 +98,7 @@ def build_solver_args(config: Config) -> dict[str, Any]:
     }
 
 
-def build_trajectory(config: Config) -> np.ndarray:
+def _build_trajectory(config: Config) -> np.ndarray:
     """Build separation trajectory from configuration."""
     traj_cfg = config.simulation["trajectory"]
     traj_type = traj_cfg["type"]
@@ -129,6 +129,37 @@ def build_trajectory(config: Config) -> np.ndarray:
 # Public API
 # -----------------------------------------------------------------------------
 
+def inspect_config(config: Config) -> dict:
+    """
+    Extract computed primitives from config for inspection/preview.
+
+    Parameters
+    ----------
+    config : Config
+        Configuration object.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+        - grid: Grid object
+        - upper: upper surface height array
+        - lower: lower surface height array
+        - trajectory: separation values array
+        - upper_shape: name of upper surface shape
+        - lower_shape: name of lower surface shape
+    """
+    grid = _create_grid_from_config(config)
+    return {
+        "grid": grid,
+        "upper": _generate_surface_from_config(grid, config.problem["upper"]),
+        "lower": _generate_surface_from_config(grid, config.problem["lower"]),
+        "trajectory": _build_trajectory(config),
+        "upper_shape": _get_surface_shape(config, "upper"),
+        "lower_shape": _get_surface_shape(config, "lower"),
+    }
+
+
 def run_simulation(config: Config, run_dir: RunDir) -> SimulationIO:
     """
     Run a single simulation from config.
@@ -149,12 +180,12 @@ def run_simulation(config: Config, run_dir: RunDir) -> SimulationIO:
         IO object for accessing saved results.
     """
     # Build primitives from config
-    grid = create_grid_from_config(config)
-    upper = generate_surface_from_config(grid, config.problem["upper"])
-    lower = generate_surface_from_config(grid, config.problem["lower"])
-    capillary_args = build_capillary_args(config)
-    solver_args = build_solver_args(config)
-    trajectory = build_trajectory(config)
+    grid = _create_grid_from_config(config)
+    upper = _generate_surface_from_config(grid, config.problem["upper"])
+    lower = _generate_surface_from_config(grid, config.problem["lower"])
+    capillary_args = _build_capillary_args(config)
+    solver_args = _build_solver_args(config)
+    trajectory = _build_trajectory(config)
 
     # Random initial phase field
     rng = random.default_rng()
@@ -222,3 +253,33 @@ def run_sweep(config: Config, case_dir: CaseDir) -> list[SimulationIO]:
         results.append(io)
 
     return results
+
+
+def run_from_config(
+    config: Config,
+    case_name: str,
+    post_run=None,
+) -> list[SimulationIO]:
+    """
+    Single entry point: config in, results out.
+
+    Parameters
+    ----------
+    config : Config
+        Configuration, possibly with sweep definitions.
+    case_name : str
+        Name for the case directory.
+    post_run : Callable[[SimulationIO], None], optional
+        Callback to run after each simulation completes.
+
+    Returns
+    -------
+    list[SimulationIO]
+        List of IO objects, one per run.
+    """
+    case_dir = CaseDir(case_name)
+    ios = run_sweep(config, case_dir)
+    if post_run:
+        for io in ios:
+            post_run(io)
+    return ios
