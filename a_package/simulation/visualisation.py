@@ -1,5 +1,4 @@
 import numpy as np
-import numpy.fft as fft
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -31,12 +30,12 @@ eps = 1e-2  # cut off value to decide one phase
 # Shared helpers
 # =============================================================================
 
-def _nondimensionalize(grid):
+def _nondimensionalize(grid: Grid):
     """Get nondimensionalization unit from grid."""
     return min(grid.element_sizes)
 
 
-def _compute_extent(grid, unit):
+def _compute_extent(grid: Grid, unit):
     """Compute imshow extent from grid dimensions."""
     return (0, grid.lengths[0] / unit, 0, grid.lengths[1] / unit)
 
