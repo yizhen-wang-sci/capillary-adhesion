@@ -6,7 +6,7 @@ Minimal schema that mirrors subpackage organization:
 - problem: physics and geometry (upper, lower, capillary)
 - solver: optimizer settings
 - simulation: trajectory and constraint settings
-- sweeps: parameter sweep specifications
+- sweep: parameter sweep specifications
 
 Each section is a raw dict - semantic knowledge lives in the consuming code
 (run.py), not here. This avoids duplication between config schema and

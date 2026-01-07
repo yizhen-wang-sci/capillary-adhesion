@@ -224,6 +224,10 @@ class CaseDir:
         """
         Create multiple runs as part of a sweep.
 
+        Note: Requires count upfront (from sweep.count_sweep_combinations).
+        This coupling enables atomic sweep creation (all-or-nothing) and
+        proper sweep grouping in INDEX.json.
+
         Parameters
         ----------
         script_path : str | Path
