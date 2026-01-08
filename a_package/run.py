@@ -11,12 +11,11 @@ from typing import Any
 import numpy as np
 import numpy.random as random
 
-from a_package.config import Config, save_config
-from a_package.sweep import expand_sweeps, count_sweep_combinations
+from a_package.config import Config
 from a_package.domain import Grid
 from a_package.problem import generate_surface, compute_volume_from_percent
 from a_package.simulation import Simulation, SimulationIO
-from a_package.runtime import RunDir, CaseDir, switch_log_file
+from a_package.runtime import RunDir, CaseDir, prepare_sweep
 
 
 logger = logging.getLogger(__name__)
@@ -230,29 +229,10 @@ def run_sweep(config: Config, case_dir: CaseDir) -> list[SimulationIO]:
     list[SimulationIO]
         List of IO objects, one per run.
     """
-    nb_configs = count_sweep_combinations(config)
-
-    if nb_configs == 1:
-        # No sweeps, single run
-        run_dir = case_dir.create_run(__file__, with_hash=True)
-        switch_log_file(run_dir.log_file)
-        return [run_simulation(config, run_dir)]
-
-    # Parameter sweep - create all run dirs upfront
-    run_dirs = case_dir.create_sweep(__file__, nb_configs, with_hash=True)
-
-    results = []
-    for index, (run_dir, expanded_config) in enumerate(zip(run_dirs, expand_sweeps(config))):
-        switch_log_file(run_dir.log_file)
-        logger.info(f"Run #{index + 1} of {nb_configs} runs.")
-
-        # Save expanded config for reproducibility
-        save_config(expanded_config, run_dir.parameters_dir / "config.toml")
-
-        io = run_simulation(expanded_config, run_dir)
-        results.append(io)
-
-    return results
+    return [
+        run_simulation(cfg, run_dir)
+        for run_dir, cfg in prepare_sweep(case_dir, config, __file__)
+    ]
 
 
 def run_from_config(

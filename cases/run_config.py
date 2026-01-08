@@ -1,11 +1,15 @@
 """
-Load-unload simulation case.
+Run simulation from config file.
 
 Usage:
-    python -m cases.load_unload config.toml [config2.toml ...]
+    python -m cases.run_config config.toml
 
-The first config file provides base parameters. Additional config files
-can override specific values (useful for sweep specifications).
+Workflow:
+    1. Load config
+    2. Extract primitives via inspect_config() for naming/preview
+    3. Derive case directory name from surface shapes
+    4. Run simulation(s) via run_sweep()
+    5. Generate animations for each result
 """
 
 import logging
