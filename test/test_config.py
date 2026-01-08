@@ -11,10 +11,9 @@ import numpy as np
 from a_package.config import (
     load_config,
     save_config,
-    expand_sweeps,
-    count_sweep_combinations,
-    get_surface_shape,
     Config,
+    expand_sweep_spec,
+    count_sweep_combinations,
 )
 from a_package.problem.surfaces import generate_surface
 from a_package.domain import Grid
@@ -131,8 +130,6 @@ def test_load_config(temp_toml_file):
     assert config.problem["upper"]["shape"] == "tip"
     assert config.problem["upper"]["radius"] == 10.0
     assert config.problem["lower"]["shape"] == "flat"
-    assert get_surface_shape(config, "upper") == "tip"
-    assert get_surface_shape(config, "lower") == "flat"
     # Problem capillary is a raw dict
     assert config.problem["capillary"]["contact_angle_degree"] == 45.0
     assert config.problem["capillary"]["interface_thickness"] == 0.05
@@ -159,22 +156,22 @@ def test_save_and_reload_config(temp_toml_file):
         reloaded = load_config(output_path)
 
         assert reloaded.domain["grid"]["pixel_size"] == config.domain["grid"]["pixel_size"]
-        assert get_surface_shape(reloaded, "upper") == get_surface_shape(config, "upper")
+        assert reloaded.problem["upper"]["shape"] == config.problem["upper"]["shape"]
         assert reloaded.simulation["constraint"]["liquid_volume_percent"] == config.simulation["constraint"]["liquid_volume_percent"]
     finally:
         os.unlink(output_path)
 
 
-def test_expand_sweeps_no_sweep(temp_toml_file):
+def test_expand_sweep_spec_no_sweep(temp_toml_file):
     """Test expansion when no sweeps are defined."""
     config = load_config(temp_toml_file)
 
-    expanded = list(expand_sweeps(config))
+    expanded = list(expand_sweep_spec(config.sweep))
     assert len(expanded) == 1
-    assert expanded[0].simulation["constraint"]["liquid_volume_percent"] == 15.0
+    assert expanded[0] == {}  # Empty overrides dict
 
 
-def test_expand_sweeps_with_linspace(sample_toml_with_sweep):
+def test_expand_sweep_spec_with_linspace(sample_toml_with_sweep):
     """Test sweep expansion with linspace."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
         f.write(sample_toml_with_sweep)
@@ -183,70 +180,36 @@ def test_expand_sweeps_with_linspace(sample_toml_with_sweep):
     try:
         config = load_config(filepath)
 
-        assert len(config.sweeps) == 1
-        assert count_sweep_combinations(config) == 4
+        assert len(config.sweep) == 1
+        assert count_sweep_combinations(config.sweep) == 4
 
-        expanded = list(expand_sweeps(config))
+        expanded = list(expand_sweep_spec(config.sweep))
         assert len(expanded) == 4
 
-        # Check the swept values
-        volumes = [c.simulation["constraint"]["liquid_volume_percent"] for c in expanded]
+        # Check the swept values (now as override dicts)
+        path = "simulation.constraint.liquid_volume_percent"
+        volumes = [overrides[path] for overrides in expanded]
         np.testing.assert_array_almost_equal(volumes, [20.0, 40.0, 60.0, 80.0])
-
-        # Verify sweeps are removed from expanded configs
-        for c in expanded:
-            assert len(c.sweeps) == 0
     finally:
         os.unlink(filepath)
 
 
-def test_expand_sweeps_with_multiple_sweeps():
+def test_expand_sweep_spec_with_multiple_sweeps():
     """Test sweep expansion with multiple sweep parameters."""
-    # Create a config programmatically with raw dicts
-    config = Config(
-        domain={
-            "grid": {"pixel_size": 0.05, "nb_pixels": 64},
-        },
-        problem={
-            "upper": {"shape": "tip", "radius": 10.0},
-            "lower": {"shape": "flat", "constant": 0.0},
-            "capillary": {
-                "interface_thickness": 0.05,
-                "contact_angle_degree": 45.0,
-            },
-        },
-        solver={
-            "optimizer": {
-                "max_nb_iters": 1000,
-                "max_nb_loops": 30,
-                "tol_convergence": 1e-6,
-                "tol_constraints": 1e-8,
-                "init_penalty_weight": 0.1,
-            }
-        },
-        simulation={
-            "trajectory": {
-                "type": "approach_retract",
-                "min_separation": 0.0,
-                "max_separation": 0.1,
-                "step_size": 0.01,
-                "round_trip": True,
-            },
-            "constraint": {
-                "type": "constant_volume",
-                "liquid_volume_percent": 15.0,
-            },
-        },
-        sweeps=[
-            {"path": "simulation.constraint.liquid_volume_percent", "linspace": [20.0, 40.0, 3]},
-            {"path": "problem.capillary.contact_angle_degree", "values": [30.0, 60.0]},
-        ],
-    )
+    sweep_spec = [
+        {"path": "simulation.constraint.liquid_volume_percent", "linspace": [20.0, 40.0, 3]},
+        {"path": "problem.capillary.contact_angle_degree", "values": [30.0, 60.0]},
+    ]
 
-    assert count_sweep_combinations(config) == 6  # 3 * 2
+    assert count_sweep_combinations(sweep_spec) == 6  # 3 * 2
 
-    expanded = list(expand_sweeps(config))
+    expanded = list(expand_sweep_spec(sweep_spec))
     assert len(expanded) == 6
+
+    # Each override dict should have both paths
+    for overrides in expanded:
+        assert "simulation.constraint.liquid_volume_percent" in overrides
+        assert "problem.capillary.contact_angle_degree" in overrides
 
 
 def test_generate_surface_flat():
