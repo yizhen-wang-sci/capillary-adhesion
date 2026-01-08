@@ -5,7 +5,6 @@ Uses tomllib (Python 3.11+) or tomli (backport) for reading,
 and tomli_w for writing.
 """
 
-import copy
 import sys
 from pathlib import Path
 from typing import Any
@@ -28,14 +27,14 @@ def load_config(path: str | Path) -> Config:
         data = tomllib.load(f)
 
     # Extract sweeps (TOML uses [[sweep]] array syntax)
-    sweeps = data.pop("sweep", [])
+    sweep = data.pop("sweep", [])
 
     return Config(
         domain=data["domain"],
         problem=data["problem"],
         solver=data["solver"],
         simulation=data["simulation"],
-        sweeps=sweeps,
+        sweep=sweep,
     )
 
 
@@ -52,27 +51,8 @@ def save_config(config: Config, path: str | Path) -> None:
         data["solver"] = config.solver
     if config.simulation:
         data["simulation"] = config.simulation
-    if config.sweeps:
-        data["sweep"] = config.sweeps
+    if config.sweep:
+        data["sweep"] = config.sweep
 
     with open(path, "wb") as f:
         tomli_w.dump(data, f)
-
-
-def get_surface_shape(config: Config, which: str) -> str:
-    """
-    Get the shape name for a surface.
-
-    Parameters
-    ----------
-    config : Config
-        The configuration object.
-    which : str
-        Either "upper" or "lower".
-
-    Returns
-    -------
-    str
-        The surface shape name.
-    """
-    return config.problem[which]["shape"]

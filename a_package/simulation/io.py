@@ -4,12 +4,6 @@ IO for simulation data exchange.
 Provides simulation-aware persistence built on top of domain/io.py.
 """
 
-import sys
-if sys.version_info >= (3, 11):
-    from enum import StrEnum
-else:
-    from backports.strenum import StrEnum
-
 import numpy as np
 
 from a_package.domain import Grid, Field, NpyIO
@@ -123,17 +117,3 @@ class FieldArray:
 def format_filename(name: str, index: int) -> str:
     """Format a filename with step index."""
     return f"{name}--{index}"
-
-
-class Term(StrEnum):
-    upper_solid = "upper"
-    lower_solid = "lower"
-    separation = "separation"
-    pressure = "pressure"
-    volume = "volume"
-    gap = "gap"
-    phase = "phase"
-    energy = "energy"
-    perimeter = "perimeter"
-    phase_init = "phase_init"
-    pressure_init = "pressure_init"

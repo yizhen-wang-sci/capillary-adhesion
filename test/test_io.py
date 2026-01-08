@@ -7,8 +7,7 @@ import pytest
 import numpy as np
 import numpy.random as random
 
-from a_package.domain import Grid
-from a_package.simulation.io import NpyIO
+from a_package.domain import Grid, NpyIO
 
 
 rng = random.default_rng()

@@ -3,6 +3,8 @@ Black-box simulation execution.
 
 Provides run_simulation() and run_sweep() - config in, results out.
 Helper functions translate config to primitives.
+
+Orchestrates: config parsing, sweep expansion, run staging, simulation.
 """
 
 import logging
@@ -11,21 +13,21 @@ from typing import Any
 import numpy as np
 import numpy.random as random
 
-from a_package.config import Config, save_config, expand_sweeps, count_sweep_combinations
+from a_package.config import Config, save_config, expand_configs
 from a_package.domain import Grid
-from a_package.problem import generate_surface, NodalFormCapillary
+from a_package.problem import generate_surface, compute_volume_from_percent
 from a_package.simulation import Simulation, SimulationIO
-from a_package.runtime import RunDir, register_run, switch_log_file
+from a_package.runtime import RunDir, CaseDir, prepare_sweep
 
 
 logger = logging.getLogger(__name__)
 
 
 # -----------------------------------------------------------------------------
-# Helpers: config -> primitives
+# Private helpers: config -> primitives
 # -----------------------------------------------------------------------------
 
-def create_grid_from_config(config: Config) -> Grid:
+def _create_grid_from_config(config: Config) -> Grid:
     """Create a Grid from configuration."""
     grid_cfg = config.domain["grid"]
     a = grid_cfg["pixel_size"]
@@ -34,7 +36,26 @@ def create_grid_from_config(config: Config) -> Grid:
     return Grid([L, L], [N, N])
 
 
-def generate_surface_from_config(grid: Grid, surface_cfg: dict[str, Any]) -> np.ndarray:
+def _get_surface_shape(config: Config, which: str) -> str:
+    """
+    Get the shape name for a surface.
+
+    Parameters
+    ----------
+    config : Config
+        The configuration object.
+    which : str
+        Either "upper" or "lower".
+
+    Returns
+    -------
+    str
+        The surface shape name.
+    """
+    return config.problem[which]["shape"]
+
+
+def _generate_surface_from_config(grid: Grid, surface_cfg: dict[str, Any]) -> np.ndarray:
     """
     Generate a surface from configuration dict.
 
@@ -45,7 +66,7 @@ def generate_surface_from_config(grid: Grid, surface_cfg: dict[str, Any]) -> np.
     return generate_surface(grid, shape, **cfg)
 
 
-def build_capillary_args(config: Config) -> dict[str, Any]:
+def _build_capillary_args(config: Config) -> dict[str, Any]:
     """
     Build capillary model arguments from configuration.
 
@@ -59,7 +80,7 @@ def build_capillary_args(config: Config) -> dict[str, Any]:
     return {"eta": eta, "theta": theta}
 
 
-def build_solver_args(config: Config) -> dict[str, Any]:
+def _build_solver_args(config: Config) -> dict[str, Any]:
     """
     Build solver arguments from configuration.
 
@@ -78,7 +99,7 @@ def build_solver_args(config: Config) -> dict[str, Any]:
     }
 
 
-def build_trajectory(config: Config) -> np.ndarray:
+def _build_trajectory(config: Config) -> np.ndarray:
     """Build separation trajectory from configuration."""
     traj_cfg = config.simulation["trajectory"]
     traj_type = traj_cfg["type"]
@@ -105,38 +126,40 @@ def build_trajectory(config: Config) -> np.ndarray:
         raise ValueError(f"Unknown trajectory type: {traj_type}")
 
 
-def compute_liquid_volume(
-    grid: Grid,
-    constraint_cfg: dict[str, Any],
-    upper: np.ndarray,
-    lower: np.ndarray,
-    capillary_args: dict[str, Any],
-    trajectory: np.ndarray,
-) -> float:
-    """
-    Compute liquid volume from percentage specification.
-
-    The percentage is relative to the maximum possible volume
-    (full liquid at minimum separation).
-    """
-    # Create formulation at minimum separation to compute reference volume
-    formulation = NodalFormCapillary(grid, capillary_args)
-    z_min = np.amin(trajectory)
-    gap = np.clip(upper + z_min - lower, 0, None)
-    formulation.set_gap(gap)
-
-    # Full liquid phase field
-    full_liquid = np.ones([1, 1, *grid.nb_elements])
-    formulation.set_phase(full_liquid)
-
-    # Compute volume as percentage of full
-    V_percent = 0.01 * constraint_cfg["liquid_volume_percent"]
-    return formulation.get_volume() * V_percent
-
-
 # -----------------------------------------------------------------------------
 # Public API
 # -----------------------------------------------------------------------------
+
+def inspect_config(config: Config) -> dict:
+    """
+    Extract computed primitives from config for inspection/preview.
+
+    Parameters
+    ----------
+    config : Config
+        Configuration object.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+        - grid: Grid object
+        - upper: upper surface height array
+        - lower: lower surface height array
+        - trajectory: separation values array
+        - upper_shape: name of upper surface shape
+        - lower_shape: name of lower surface shape
+    """
+    grid = _create_grid_from_config(config)
+    return {
+        "grid": grid,
+        "upper": _generate_surface_from_config(grid, config.problem["upper"]),
+        "lower": _generate_surface_from_config(grid, config.problem["lower"]),
+        "trajectory": _build_trajectory(config),
+        "upper_shape": _get_surface_shape(config, "upper"),
+        "lower_shape": _get_surface_shape(config, "lower"),
+    }
+
 
 def run_simulation(config: Config, run_dir: RunDir) -> SimulationIO:
     """
@@ -158,12 +181,12 @@ def run_simulation(config: Config, run_dir: RunDir) -> SimulationIO:
         IO object for accessing saved results.
     """
     # Build primitives from config
-    grid = create_grid_from_config(config)
-    upper = generate_surface_from_config(grid, config.problem["upper"])
-    lower = generate_surface_from_config(grid, config.problem["lower"])
-    capillary_args = build_capillary_args(config)
-    solver_args = build_solver_args(config)
-    trajectory = build_trajectory(config)
+    grid = _create_grid_from_config(config)
+    upper = _generate_surface_from_config(grid, config.problem["upper"])
+    lower = _generate_surface_from_config(grid, config.problem["lower"])
+    capillary_args = _build_capillary_args(config)
+    solver_args = _build_solver_args(config)
+    trajectory = _build_trajectory(config)
 
     # Random initial phase field
     rng = random.default_rng()
@@ -178,8 +201,9 @@ def run_simulation(config: Config, run_dir: RunDir) -> SimulationIO:
     constraint_type = constraint_cfg["type"]
 
     if constraint_type == "constant_volume":
-        volume = compute_liquid_volume(
-            grid, constraint_cfg, upper, lower, capillary_args, trajectory
+        volume = compute_volume_from_percent(
+            grid, capillary_args, upper, lower, trajectory,
+            volume_percent=constraint_cfg["liquid_volume_percent"],
         )
         return simulation.run_with_constant_volume(
             upper, lower, trajectory, volume, run_dir.results_dir, phase_init=phase_init
@@ -188,45 +212,66 @@ def run_simulation(config: Config, run_dir: RunDir) -> SimulationIO:
         raise ValueError(f"Unknown constraint type: {constraint_type}")
 
 
-def run_sweep(config: Config, run_dir: RunDir) -> list[SimulationIO]:
+def run_sweep(config: Config, case_dir: CaseDir) -> list[SimulationIO]:
     """
     Run simulation(s) from config, handling sweeps if present.
 
     If config has no sweeps, runs single simulation.
-    If config has sweeps, expands and runs each in a subdirectory.
+    If config has sweeps, creates all runs upfront and runs each.
 
     Parameters
     ----------
     config : Config
         Configuration, possibly with sweep definitions.
-    run_dir : RunDir
-        Base run directory. Sub-runs will be created in intermediate_dir.
+    case_dir : CaseDir
+        Data directory for this case.
 
     Returns
     -------
     list[SimulationIO]
         List of IO objects, one per run.
     """
-    nb_configs = count_sweep_combinations(config)
+    # Expand configs (handles sweep or single run)
+    configs = expand_configs(config)
+    nb_runs = len(configs)
 
-    if nb_configs == 1:
-        # No sweeps, single run
-        switch_log_file(run_dir.log_file)
-        return [run_simulation(config, run_dir)]
+    # Prepare run directories
+    run_dirs = list(prepare_sweep(case_dir, nb_runs, __file__))
 
-    # Parameter sweep
+    # Execute each run
     results = []
-    for index, expanded_config in enumerate(expand_sweeps(config)):
-        # Create sub-run directory
-        sub_run = register_run(run_dir.intermediate_dir, __file__, with_hash=False)
-        switch_log_file(sub_run.log_file)
-
-        logger.info(f"Run #{index + 1} of {nb_configs} runs.")
-
-        # Save expanded config for reproducibility
-        save_config(expanded_config, sub_run.parameters_dir / f"config.toml")
-
-        io = run_simulation(expanded_config, sub_run)
-        results.append(io)
+    for run_dir, cfg in zip(run_dirs, configs):
+        save_config(cfg, run_dir.parameters_dir / "config.toml")
+        results.append(run_simulation(cfg, run_dir))
 
     return results
+
+
+def run_from_config(
+    config: Config,
+    case_name: str,
+    post_run=None,
+) -> list[SimulationIO]:
+    """
+    Single entry point: config in, results out.
+
+    Parameters
+    ----------
+    config : Config
+        Configuration, possibly with sweep definitions.
+    case_name : str
+        Name for the case directory.
+    post_run : Callable[[SimulationIO], None], optional
+        Callback to run after each simulation completes.
+
+    Returns
+    -------
+    list[SimulationIO]
+        List of IO objects, one per run.
+    """
+    case_dir = CaseDir(case_name)
+    ios = run_sweep(config, case_dir)
+    if post_run:
+        for io in ios:
+            post_run(io)
+    return ios

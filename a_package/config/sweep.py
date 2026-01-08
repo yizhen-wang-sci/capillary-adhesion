@@ -1,13 +1,13 @@
 """
 Parameter sweep expansion for parametric exploration.
 
-Expands a config with sweep specifications into multiple configs,
-one for each parameter combination.
+Expands sweep specifications into parameter override dictionaries,
+and applies overrides to Config objects.
 """
 
 import copy
 import itertools
-from dataclasses import replace
+import dataclasses as dc
 from typing import Any, Iterator
 
 import numpy as np
@@ -15,80 +15,121 @@ import numpy as np
 from .schema import Config
 
 
-def expand_sweeps(config: Config) -> Iterator[Config]:
+@dc.dataclass
+class SweepItem:
     """
-    Expand a configuration with sweeps into individual configurations.
+    Single sweep parameter specification.
 
-    If no sweeps are defined, yields the original config once.
+    Attributes
+    ----------
+    path : str
+        Dot-notation path to config value (e.g., "problem.capillary.contact_angle_degree")
+    values : list[Any]
+        Expanded list of values to sweep over.
+    """
+    path: str
+    values: list[Any]
+
+    @classmethod
+    def from_dict(cls, spec: dict[str, Any]) -> "SweepItem":
+        """
+        Create SweepItem from raw dict specification.
+
+        Parameters
+        ----------
+        spec : dict
+            Must contain 'path' and one of:
+            - 'linspace': [start, stop, num]
+            - 'logspace': [start, stop, num]
+            - 'values': [v1, v2, ...]
+        """
+        path = spec["path"]
+
+        if "linspace" in spec:
+            start, stop, num = spec["linspace"]
+            values = np.linspace(start, stop, int(num)).tolist()
+        elif "logspace" in spec:
+            start, stop, num = spec["logspace"]
+            values = np.logspace(start, stop, int(num)).tolist()
+        elif "values" in spec:
+            values = list(spec["values"])
+        else:
+            raise ValueError(
+                f"Sweep at path '{path}' has no values specified. "
+                "Use linspace, logspace, or values."
+            )
+
+        return cls(path=path, values=values)
+
+
+# -----------------------------------------------------------------------------
+# Low-level: sweep spec -> override dicts
+# -----------------------------------------------------------------------------
+
+def expand_sweep_spec(sweep_spec: list[dict] | None) -> Iterator[dict[str, Any]]:
+    """
+    Expand sweep specification into parameter override dicts.
 
     Parameters
     ----------
-    config : Config
-        Configuration potentially containing sweep specifications.
+    sweep_spec : list[dict] | None
+        List of sweep definitions, each with 'path' and values spec
+        (linspace, logspace, or values).
 
     Yields
     ------
-    Config
-        Individual configurations with sweep parameters resolved.
+    dict[str, Any]
+        Dict mapping path -> value for each combination.
+        Empty dict if no sweeps defined.
+
+    Examples
+    --------
+    >>> spec = [{"path": "a.b", "values": [1, 2]}]
+    >>> list(expand_sweep_spec(spec))
+    [{"a.b": 1}, {"a.b": 2}]
     """
-    if not config.sweeps:
-        # No sweeps defined, return the original config
-        yield replace(config, sweeps=[])
+    if not sweep_spec:
+        yield {}
         return
 
-    # Expand each sweep into values
-    sweep_values: list[tuple[str, list[Any]]] = []
-    for sweep in config.sweeps:
-        values = _expand_sweep_values(sweep)
-        sweep_values.append((sweep["path"], values))
+    items = [SweepItem.from_dict(spec) for spec in sweep_spec]
 
-    # Compute the Cartesian product of all sweep parameters
-    paths = [path for path, _ in sweep_values]
-    value_lists = [values for _, values in sweep_values]
+    paths = [item.path for item in items]
+    value_lists = [item.values for item in items]
 
     for combo in itertools.product(*value_lists):
-        # Create a new config with sweep values applied
-        new_config = _apply_values(config, paths, combo)
-        # Remove sweep specifications from the expanded config
-        new_config = replace(new_config, sweeps=[])
-        yield new_config
+        yield dict(zip(paths, combo))
 
 
-def _expand_sweep_values(sweep: dict[str, Any]) -> list[Any]:
-    """Convert sweep specification to list of values."""
-    if "linspace" in sweep:
-        start, stop, num = sweep["linspace"]
-        return np.linspace(start, stop, int(num)).tolist()
-    elif "logspace" in sweep:
-        start, stop, num = sweep["logspace"]
-        return np.logspace(start, stop, int(num)).tolist()
-    elif "values" in sweep:
-        return list(sweep["values"])
-    else:
-        raise ValueError(f"Sweep at path '{sweep.get('path', '?')}' has no values specified. "
-                         "Use linspace, logspace, or values.")
+def count_sweep_combinations(sweep_spec: list[dict] | None) -> int:
+    """
+    Count the total number of configurations that would be generated.
+
+    Returns 1 if no sweeps are defined.
+    """
+    if not sweep_spec:
+        return 1
+
+    items = [SweepItem.from_dict(spec) for spec in sweep_spec]
+    total = 1
+    for item in items:
+        total *= len(item.values)
+    return total
 
 
-def _apply_values(config: Config, paths: list[str], values: tuple[Any, ...]) -> Config:
-    """Apply sweep values to a config by modifying the nested attributes."""
-    # Work on a deep copy to avoid mutating the original
-    new_config = copy.deepcopy(config)
-
-    for path, value in zip(paths, values):
-        _set_nested_value(new_config, path, value)
-
-    return new_config
-
+# -----------------------------------------------------------------------------
+# High-level: Config -> list[Config]
+# -----------------------------------------------------------------------------
 
 def _set_nested_value(config: Config, path: str, value: Any) -> None:
     """
     Set a nested value using dot notation.
 
-    The first part of the path is a Config attribute (domain, physics, etc.),
+    The first part of the path is a Config attribute (domain, problem, etc.),
     the rest navigates through nested dicts.
 
-    Example: path="physics.capillary.contact_angle_degree" sets
-             config.physics["capillary"]["contact_angle_degree"] = value
+    Example: path="problem.capillary.contact_angle_degree" sets
+             config.problem["capillary"]["contact_angle_degree"] = value
     """
     parts = path.split(".")
     # First part is a Config attribute
@@ -100,31 +141,46 @@ def _set_nested_value(config: Config, path: str, value: Any) -> None:
     obj[parts[-1]] = value
 
 
-def _get_nested_value(config: Config, path: str) -> Any:
+def _apply_overrides(config: Config, overrides: dict[str, Any]) -> Config:
     """
-    Get a nested value using dot notation.
+    Apply path->value overrides to a config.
 
-    Example: path="physics.capillary.contact_angle_degree" returns
-             config.physics["capillary"]["contact_angle_degree"]
+    Parameters
+    ----------
+    config : Config
+        Original configuration.
+    overrides : dict[str, Any]
+        Dict mapping dot-notation paths to values.
+
+    Returns
+    -------
+    Config
+        New config with overrides applied and sweep cleared.
     """
-    parts = path.split(".")
-    obj = getattr(config, parts[0])
-    for part in parts[1:]:
-        obj = obj[part]
-    return obj
+    if not overrides:
+        return dc.replace(config, sweep=[])
+
+    new_config = copy.deepcopy(config)
+    for path, value in overrides.items():
+        _set_nested_value(new_config, path, value)
+    return dc.replace(new_config, sweep=[])
 
 
-def count_sweep_combinations(config: Config) -> int:
+def expand_configs(config: Config) -> list[Config]:
     """
-    Count the total number of configurations that would be generated.
+    Expand config with sweeps into list of individual configs.
 
-    Returns 1 if no sweeps are defined.
+    Parameters
+    ----------
+    config : Config
+        Configuration, possibly with sweep definitions.
+
+    Returns
+    -------
+    list[Config]
+        List of expanded configs (sweep field cleared).
     """
-    if not config.sweeps:
-        return 1
-
-    total = 1
-    for sweep in config.sweeps:
-        values = _expand_sweep_values(sweep)
-        total *= len(values)
-    return total
+    return [
+        _apply_overrides(config, overrides)
+        for overrides in expand_sweep_spec(config.sweep)
+    ]

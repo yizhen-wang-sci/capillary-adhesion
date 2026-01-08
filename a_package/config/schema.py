@@ -6,18 +6,18 @@ Minimal schema that mirrors subpackage organization:
 - problem: physics and geometry (upper, lower, capillary)
 - solver: optimizer settings
 - simulation: trajectory and constraint settings
-- sweeps: parameter sweep specifications
+- sweep: parameter sweep specifications
 
 Each section is a raw dict - semantic knowledge lives in the consuming code
 (run.py), not here. This avoids duplication between config schema and
 problem/solver classes.
 """
 
-from dataclasses import dataclass, field
+import dataclasses as dc
 from typing import Any
 
 
-@dataclass
+@dc.dataclass
 class Config:
     """
     Top-level configuration.
@@ -28,5 +28,5 @@ class Config:
     domain: dict[str, Any]
     problem: dict[str, Any]
     simulation: dict[str, Any]
-    solver: dict[str, Any] = field(default_factory=dict)
-    sweeps: list[dict[str, Any]] = field(default_factory=list)
+    solver: dict[str, Any] = dc.field(default_factory=dict)
+    sweep: list[dict[str, Any]] = dc.field(default_factory=list)

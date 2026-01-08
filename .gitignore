@@ -1,6 +1,5 @@
 # Temporary files
 *~
-/runtime
 
 # Python related
 *.pyc
@@ -10,3 +9,8 @@
 /dist
 *egg-info
 /venv
+
+# Other
+*.npy
+/data
+*seeds
