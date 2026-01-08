@@ -20,7 +20,7 @@ from a_package.config import load_config
 from a_package.runtime import CaseDir, reset_logging
 from a_package.run import run_sweep, inspect_config
 
-from cases.visualise_onerun import create_overview_animation
+from cases.visualisation import create_overview_animation, preview_surface_and_gap
 
 
 show_me_preview = False
@@ -56,65 +56,6 @@ def main():
     # Create visualisations
     for io in ios:
         create_overview_animation(io, io.grid)
-
-
-def preview_surface_and_gap(primitives: dict):
-    """A visual check before running simulations."""
-    import matplotlib.animation as ani
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    from a_package.simulation.visualisation import latexify_plot
-
-    grid = primitives["grid"]
-    h1 = primitives["upper"]
-    h0 = primitives["lower"]
-    trajectory = primitives["trajectory"]
-
-    latexify_plot(12)
-
-    # create the figure and axes
-    fig = plt.figure(figsize=(12, 5), constrained_layout=True)
-    ax1 = fig.add_subplot(1, 2, 1, projection="3d")
-    ax2 = fig.add_subplot(1, 2, 2)
-
-    def update_frame(i_frame: int):
-        # clear content of last frames
-        for ax in (ax1, ax2):
-            ax.clear()
-
-        [xm, ym] = grid.form_nodal_mesh()
-        a = min(grid.element_sizes)
-        # 3D surface plot of upper and lower rigid body
-        ax1.plot_surface(xm, ym, h0 / a, cmap="berlin")
-        ax1.plot_surface(xm, ym, (h1 + trajectory[i_frame]) / a, cmap="plasma")
-        ax1.view_init(elev=0, azim=-45)
-        ax1.set_xlabel(r"Position $x/a$")
-        ax1.set_ylabel(r"Position $y/a$")
-        ax1.set_zlabel(r"Position $z/a$")
-
-        # 2D colour map of the gap
-        h_diff = h1 - h0 + trajectory[i_frame]
-        gap = np.clip(h_diff, 0, None)
-        contact = np.ma.masked_where(gap > 0, gap)
-        [nx, ny] = grid.nb_elements
-        border = (0, nx, 0, ny)
-        ax2.imshow(gap / a, vmin=0, interpolation="nearest", cmap="hot", extent=border)
-        ax2.imshow(contact, cmap="Greys", vmin=-1, vmax=1, alpha=0.4, interpolation="nearest", extent=border)
-        ax2.set_xlabel(r"Position $x/a$")
-        ax2.set_ylabel(r"Position $y/a$")
-
-        return *ax1.images, *ax2.images
-
-    # draw the animation
-    nb_steps = len(trajectory)
-    _ = ani.FuncAnimation(fig, update_frame, nb_steps, interval=200, repeat_delay=3000)
-
-    # allow to exit if it does not look right
-    plt.show()
-    skip = input("Run simulation [Y/n]? ").strip().lower() in ("n", "no")
-    if skip:
-        sys.exit(0)
 
 
 if __name__ == "__main__":
