@@ -1,3 +1,3 @@
 from .simulation import Simulation
-from .io import SimulationIO, NpyIO
+from .io import SimulationIO
 from .schema import Term

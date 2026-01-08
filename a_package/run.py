@@ -3,6 +3,8 @@ Black-box simulation execution.
 
 Provides run_simulation() and run_sweep() - config in, results out.
 Helper functions translate config to primitives.
+
+Orchestrates: config parsing, sweep expansion, run staging, simulation.
 """
 
 import logging
@@ -11,7 +13,7 @@ from typing import Any
 import numpy as np
 import numpy.random as random
 
-from a_package.config import Config
+from a_package.config import Config, save_config, expand_configs
 from a_package.domain import Grid
 from a_package.problem import generate_surface, compute_volume_from_percent
 from a_package.simulation import Simulation, SimulationIO
@@ -229,10 +231,20 @@ def run_sweep(config: Config, case_dir: CaseDir) -> list[SimulationIO]:
     list[SimulationIO]
         List of IO objects, one per run.
     """
-    return [
-        run_simulation(cfg, run_dir)
-        for run_dir, cfg in prepare_sweep(case_dir, config, __file__)
-    ]
+    # Expand configs (handles sweep or single run)
+    configs = expand_configs(config)
+    nb_runs = len(configs)
+
+    # Prepare run directories
+    run_dirs = list(prepare_sweep(case_dir, nb_runs, __file__))
+
+    # Execute each run
+    results = []
+    for run_dir, cfg in zip(run_dirs, configs):
+        save_config(cfg, run_dir.parameters_dir / "config.toml")
+        results.append(run_simulation(cfg, run_dir))
+
+    return results
 
 
 def run_from_config(
