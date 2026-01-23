@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from a_package.domain import Grid, adapt_shape
-from a_package.problem.capillary import NodalFormCapillary
+from a_package.model.capillary import NodalFormCapillary
 
 
 show_me_plot = False

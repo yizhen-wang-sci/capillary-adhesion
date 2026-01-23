@@ -280,3 +280,93 @@ class SolverResult(typing.NamedTuple):
     is_converged: bool
     reached_iter_limit: bool
     had_abnormal_stop: bool
+
+
+class BoundConstrainedSolver:
+    """Solver for bound-constrained optimization (no equality constraints)."""
+
+    max_iter: int
+    tol_convergence: float
+    tol_creeping: float
+
+    def __init__(self, max_iter=1000, tol_convergence=1e-6, tol_creeping=1e2):
+        self.max_iter = max_iter
+        self.tol_convergence = tol_convergence
+        self.tol_creeping = tol_creeping
+
+    def solve(self, numopt: NumOptB, x0: np.ndarray):
+        """
+        Solve bound-constrained minimization.
+
+        Parameters
+        ----------
+        numopt : NumOptB
+            Problem with get_x, set_x, get_f, get_f_Dx, x_lb, x_ub.
+        x0 : np.ndarray
+            Initial guess.
+
+        Returns
+        -------
+        SolverResult
+        """
+        logger.info("BoundConstrainedSolver: starting")
+
+        t_exec = -timeit.default_timer()
+        x_shape = x0.shape
+
+        # reform bounds with clipping
+        reformed = self._reform_simple_bounds_with_clipping(numopt)
+
+        def compute_f(x):
+            reformed.set_x(x.reshape(x_shape))
+            return reformed.get_f()
+
+        def compute_f_Dx(x):
+            reformed.set_x(x.reshape(x_shape))
+            return reformed.get_f_Dx()
+
+        [x_opt, f_opt, info] = scipy.optimize.fmin_l_bfgs_b(
+            compute_f,
+            x0,
+            fprime=compute_f_Dx,
+            maxiter=self.max_iter,
+            factr=self.tol_creeping,
+            pgtol=self.tol_convergence,
+        )
+
+        t_exec += timeit.default_timer()
+
+        reformed.set_x(x_opt.reshape(x_shape))
+        is_converged = info["warnflag"] == 0
+        reached_iter_limit = info["nit"] >= self.max_iter
+
+        logger.info(f"BoundConstrainedSolver: nit={info['nit']}, f={f_opt:.3e}, {info['task']}")
+        logger.info(f"BoundConstrainedSolver: time={t_exec:.1e}s, converged={is_converged}")
+
+        return SolverResult(
+            primal=reformed.get_x(),
+            dual=0.0,
+            time=t_exec,
+            is_converged=is_converged,
+            reached_iter_limit=reached_iter_limit,
+            had_abnormal_stop=not is_converged and not reached_iter_limit,
+        )
+
+    @staticmethod
+    def _reform_simple_bounds_with_clipping(num_opt: NumOptB):
+        def set_x_clipped(x: np.ndarray):
+            num_opt.set_x(np.clip(x, num_opt.x_lb, num_opt.x_ub))
+
+        def get_f_Dx_masked():
+            f_Dx = num_opt.get_f_Dx().ravel()
+            x = num_opt.get_x().ravel()
+            f_Dx[(x <= num_opt.x_lb) & (f_Dx > 0)] = 0
+            f_Dx[(x >= num_opt.x_ub) & (f_Dx < 0)] = 0
+            return f_Dx
+
+        return types.SimpleNamespace(
+            get_x=num_opt.get_x,
+            set_x=set_x_clipped,
+            get_f=num_opt.get_f,
+            get_f_Dx=get_f_Dx_masked,
+        )

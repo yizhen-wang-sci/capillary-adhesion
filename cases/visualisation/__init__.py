@@ -17,6 +17,11 @@ from .primitives import (
     latexify_plot,
     hide_border,
     hide_ticks,
+    build_triangulation,
+    expand_field_to_vertices,
+    draw_triangulated_surface_2d,
+    draw_triangulated_surface_3d,
+    draw_triangulated_surface_combined,
 )
 from .plots import (
     plot_cross_section_sketch,
@@ -33,7 +38,6 @@ from .plots import (
 from .animations import (
     create_overview_animation,
     animate_droplet_evolution,
-    animate_droplet_evolution_with_curves,
 )
 from .preview import preview_surface_and_gap
 from .sweep_data import (

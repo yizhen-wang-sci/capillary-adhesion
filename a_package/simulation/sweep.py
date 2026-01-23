@@ -12,7 +12,7 @@ from typing import Any, Iterator
 
 import numpy as np
 
-from .schema import Config
+from .parameter import Config
 
 
 @dc.dataclass

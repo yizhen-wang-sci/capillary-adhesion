@@ -284,3 +284,309 @@ def latexify_plot(font_size: int):
         'ytick.labelsize': font_size,
     }
     matplotlib.rcParams.update(params)
+
+
+# =============================================================================
+# Triangularized surface visualization
+# =============================================================================
+
+def build_triangulation(nx: int, ny: int, dx: float = 1.0, dy: float = 1.0):
+    """
+    Build triangulation for a 2D grid.
+
+    Each pixel is split into two triangles following the FEM convention:
+        (i,j) ---- (i+1,j)
+          |     /   |
+          | 0  /  1 |
+          |   /     |
+        (i,j+1) -- (i+1,j+1)
+
+    Triangle 0: (i,j), (i+1,j), (i,j+1)
+    Triangle 1: (i+1,j), (i+1,j+1), (i,j+1)
+
+    Parameters
+    ----------
+    nx, ny : int
+        Number of elements in x and y directions.
+    dx, dy : float
+        Element sizes in x and y directions.
+
+    Returns
+    -------
+    x, y : np.ndarray
+        1D arrays of vertex x and y coordinates (length (nx+1)*(ny+1)).
+    triangles : np.ndarray
+        Triangle connectivity array of shape (2*nx*ny, 3).
+    """
+    # Vertex coordinates (including boundary nodes for non-periodic viz)
+    x_nodes = np.arange(nx + 1) * dx
+    y_nodes = np.arange(ny + 1) * dy
+    xv, yv = np.meshgrid(x_nodes, y_nodes)
+    x = xv.ravel()
+    y = yv.ravel()
+
+    # Build triangle connectivity
+    triangles = []
+    for j in range(ny):
+        for i in range(nx):
+            # Vertex indices in the flattened array
+            v00 = j * (nx + 1) + i          # (i, j)
+            v10 = j * (nx + 1) + (i + 1)    # (i+1, j)
+            v01 = (j + 1) * (nx + 1) + i    # (i, j+1)
+            v11 = (j + 1) * (nx + 1) + (i + 1)  # (i+1, j+1)
+
+            # Triangle 0: (i,j), (i+1,j), (i,j+1)
+            triangles.append([v00, v10, v01])
+            # Triangle 1: (i+1,j), (i+1,j+1), (i,j+1)
+            triangles.append([v10, v11, v01])
+
+    return x, y, np.array(triangles)
+
+
+def expand_field_to_vertices(field: np.ndarray, periodic: bool = True):
+    """
+    Expand a nodal field to include boundary vertices for triangulation.
+
+    Parameters
+    ----------
+    field : np.ndarray
+        2D array of shape (ny, nx) with nodal values.
+    periodic : bool
+        If True, wrap values for periodic boundary conditions.
+
+    Returns
+    -------
+    np.ndarray
+        Expanded array of shape (ny+1, nx+1).
+    """
+    ny, nx = field.shape
+    expanded = np.zeros((ny + 1, nx + 1))
+    expanded[:ny, :nx] = field
+
+    if periodic:
+        # Wrap periodic boundaries
+        expanded[:ny, nx] = field[:, 0]
+        expanded[ny, :nx] = field[0, :]
+        expanded[ny, nx] = field[0, 0]
+    else:
+        # Extrapolate (simple copy of edge values)
+        expanded[:ny, nx] = field[:, -1]
+        expanded[ny, :nx] = field[-1, :]
+        expanded[ny, nx] = field[-1, -1]
+
+    return expanded
+
+
+def draw_triangulated_surface_2d(
+    ax: plt.Axes,
+    field: np.ndarray,
+    dx: float = 1.0,
+    dy: float = 1.0,
+    *,
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    edgecolors: str = "k",
+    linewidth: float = 0.5,
+    show_mesh: bool = True,
+):
+    """
+    Draw a 2D triangulated color plot.
+
+    Parameters
+    ----------
+    ax : plt.Axes
+        Matplotlib axes to draw on.
+    field : np.ndarray
+        2D array of shape (ny, nx) with nodal values.
+    dx, dy : float
+        Element sizes in x and y directions.
+    cmap : str
+        Colormap name.
+    vmin, vmax : float, optional
+        Color scale limits.
+    edgecolors : str
+        Edge color for triangles. Use 'none' to hide edges.
+    linewidth : float
+        Edge line width.
+    show_mesh : bool
+        Whether to show triangle edges.
+
+    Returns
+    -------
+    TriContourSet or PolyCollection
+        The plot object (can be used for colorbars).
+    """
+    ny, nx = field.shape
+
+    # Build triangulation
+    x, y, triangles = build_triangulation(nx, ny, dx, dy)
+
+    # Expand field to include boundary vertices
+    expanded = expand_field_to_vertices(field, periodic=True)
+    z = expanded.ravel()
+
+    # Create triangulation object
+    triang = matplotlib.tri.Triangulation(x, y, triangles)
+
+    # Draw with tripcolor
+    if show_mesh:
+        tpc = ax.tripcolor(
+            triang, z, cmap=cmap, vmin=vmin, vmax=vmax,
+            edgecolors=edgecolors, linewidth=linewidth
+        )
+    else:
+        tpc = ax.tripcolor(
+            triang, z, cmap=cmap, vmin=vmin, vmax=vmax,
+            edgecolors='none'
+        )
+
+    ax.set_aspect('equal')
+    return tpc
+
+
+def draw_triangulated_surface_3d(
+    ax,
+    field: np.ndarray,
+    dx: float = 1.0,
+    dy: float = 1.0,
+    *,
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    edgecolor: str = "k",
+    linewidth: float = 0.3,
+    alpha: float = 1.0,
+    show_mesh: bool = True,
+):
+    """
+    Draw a 3D triangulated surface plot.
+
+    Parameters
+    ----------
+    ax : Axes3D
+        Matplotlib 3D axes to draw on.
+    field : np.ndarray
+        2D array of shape (ny, nx) with nodal values (heights).
+    dx, dy : float
+        Element sizes in x and y directions.
+    cmap : str
+        Colormap name.
+    vmin, vmax : float, optional
+        Color scale limits.
+    edgecolor : str
+        Edge color for triangles. Use 'none' to hide edges.
+    linewidth : float
+        Edge line width.
+    alpha : float
+        Surface transparency (0-1).
+    show_mesh : bool
+        Whether to show triangle edges.
+
+    Returns
+    -------
+    Poly3DCollection
+        The surface object (can be used for colorbars).
+    """
+    ny, nx = field.shape
+
+    # Build triangulation
+    x, y, triangles = build_triangulation(nx, ny, dx, dy)
+
+    # Expand field to include boundary vertices
+    expanded = expand_field_to_vertices(field, periodic=True)
+    z = expanded.ravel()
+
+    # Draw with plot_trisurf
+    if show_mesh:
+        surf = ax.plot_trisurf(
+            x, y, z, triangles=triangles,
+            cmap=cmap, vmin=vmin, vmax=vmax,
+            edgecolor=edgecolor, linewidth=linewidth,
+            alpha=alpha
+        )
+    else:
+        surf = ax.plot_trisurf(
+            x, y, z, triangles=triangles,
+            cmap=cmap, vmin=vmin, vmax=vmax,
+            edgecolor='none',
+            alpha=alpha
+        )
+
+    return surf
+
+
+def draw_triangulated_surface_combined(
+    field: np.ndarray,
+    dx: float = 1.0,
+    dy: float = 1.0,
+    *,
+    cmap: str = "plasma",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    show_mesh: bool = True,
+    figsize: tuple = (12, 5),
+    title: str | None = None,
+):
+    """
+    Draw both 2D and 3D triangulated surface plots side by side.
+
+    Parameters
+    ----------
+    field : np.ndarray
+        2D array of shape (ny, nx) with nodal values.
+    dx, dy : float
+        Element sizes in x and y directions.
+    cmap : str
+        Colormap name.
+    vmin, vmax : float, optional
+        Color scale limits. If None, auto-scaled to field range.
+    show_mesh : bool
+        Whether to show triangle edges.
+    figsize : tuple
+        Figure size (width, height).
+    title : str, optional
+        Figure title.
+
+    Returns
+    -------
+    fig : Figure
+        The matplotlib figure.
+    axes : tuple
+        Tuple of (ax_2d, ax_3d) axes.
+    """
+    # Auto-scale if not provided
+    if vmin is None:
+        vmin = field.min()
+    if vmax is None:
+        vmax = field.max()
+
+    fig = plt.figure(figsize=figsize, constrained_layout=True)
+    ax_2d = fig.add_subplot(1, 2, 1)
+    ax_3d = fig.add_subplot(1, 2, 2, projection="3d")
+
+    # 2D plot
+    tpc = draw_triangulated_surface_2d(
+        ax_2d, field, dx, dy,
+        cmap=cmap, vmin=vmin, vmax=vmax, show_mesh=show_mesh
+    )
+    ax_2d.set_xlabel("x")
+    ax_2d.set_ylabel("y")
+    ax_2d.set_title("2D Triangulated View")
+    fig.colorbar(tpc, ax=ax_2d, shrink=0.8)
+
+    # 3D plot
+    surf = draw_triangulated_surface_3d(
+        ax_3d, field, dx, dy,
+        cmap=cmap, vmin=vmin, vmax=vmax, show_mesh=show_mesh
+    )
+    ax_3d.set_xlabel("x")
+    ax_3d.set_ylabel("y")
+    ax_3d.set_zlabel("z")
+    ax_3d.set_title("3D Triangulated View")
+    fig.colorbar(surf, ax=ax_3d, shrink=0.6, pad=0.1)
+
+    if title:
+        fig.suptitle(title)
+
+    return fig, (ax_2d, ax_3d)

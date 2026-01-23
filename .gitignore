@@ -12,5 +12,5 @@
 
 # Other
 *.npy
-/data
+**/data
 *seeds

@@ -8,14 +8,14 @@ import tempfile
 import pytest
 import numpy as np
 
-from a_package.config import (
+from a_package.simulation import (
     load_config,
     save_config,
     Config,
     expand_sweep_spec,
     count_sweep_combinations,
 )
-from a_package.problem.surfaces import generate_surface
+from a_package.model.surfaces import generate_surface
 from a_package.domain import Grid
 
 

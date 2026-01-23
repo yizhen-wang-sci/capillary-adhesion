@@ -8,9 +8,7 @@ from typing import Callable, Any
 
 import numpy as np
 
-from a_package.config import load_config
-from a_package.runtime import CaseDir, RunDir
-from a_package.simulation import SimulationIO, Term
+from a_package.simulation import load_config, CaseDir, RunDir, SimulationIO, Term
 
 
 def extract_from_sweep(
