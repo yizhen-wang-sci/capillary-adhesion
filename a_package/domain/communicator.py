@@ -1,10 +1,32 @@
 import muGrid
+
+
 try:
     from mpi4py import MPI
-    communicator = muGrid.Communicator(MPI.COMM_WORLD)
+    _comm = MPI.COMM_WORLD
 except ModuleNotFoundError:
-    MPI = None
-    communicator = muGrid.Communicator()
+    _comm = None
+communicator = muGrid.Communicator(_comm)
+
+
+def serial_exec(action, store=None):
+    """Execute action on root, optionally store result, sync all ranks.
+
+    If store is None: broadcast result to all ranks.
+    If store provided: call store(result) on root, barrier, return None.
+    """
+    result = None
+    if communicator.rank == 0:
+        result = action()
+
+    if store is None:
+        communicator.bcast(result, 0)
+        return result
+    else:
+        if communicator.rank == 0:
+            store(result)
+        communicator.barrier()
+        return None
 
 
 def factorize_closest(value: int, nb_ints: int):
