@@ -1,8 +1,7 @@
 """
 Directory management.
 
-Provides CaseDir and RunDir for organizing simulation. Because one script with different parameter values can genearte
-different results, one CaseDir contains multiple RunDir.
+Provides CaseDir and RunDir for organizing simulation.
 """
 
 import contextlib
@@ -18,88 +17,56 @@ from .metadata import compute_script_hash, get_iso_time
 logger = logging.getLogger(__name__)
 
 
-class CaseDir:
-    """
-    Container for all runs in a case directory.
-
-    Directory structure:
-        case_dir/
-        ├── script.py
-        ├── INDEX.json
-        ├── run1_dir
-        ├── run2_dir
-        └── ...
+class _Dir:
+    """Just a directory.
+    
+    Creates the directory if not exist. Supports using '/' like a path.
     """
 
     def __init__(self, path: str | Path, exist_ok: bool = True):
         self._path = Path(path).absolute()
         if self._path.is_file():
             raise FileExistsError(f"{self._path} is occupied by a file.")
-        self._path.mkdir(parents=True, exist_ok=exist_ok)
-        logger.info(f"Case directory path {self._path}")
+        try:
+            self._path.mkdir(parents=True)
+            logger.info(f"Create directory at {self._path}")
+        except FileExistsError as err:
+            if not exist_ok:
+                raise err
 
     def __truediv__(self, other: str | Path):
         return self._path / other
 
     @property
-    def index_file(self):
+    def path(self):
+        return self._path
+
+
+class CaseDir(_Dir):
+    """
+    A directory to hold scripts. Supports dumping information of a run and script 
+    versioning.
+
+    Directory structure:
+        case_dir/
+        ├── script.py, ...  One or more script files.
+        ├── INDEX.json      A file for script to dump information.
+        ├── version.json    A file for use with script versioning.
+        └── ...             Any other stuff
+    """
+
+    @property
+    def run_index(self):
         return self._path / "INDEX.json"
 
     @property
-    def script_file(self):
-        return self._path / "script.py"
-
-    @classmethod
-    def alongside(
-        cls,
-        script_path: str | Path,
-        case_name: str | None = None,
-        parent_dir: str | Path | None = None,
-        append_hash: bool = True,
-    ):
-        """
-        Create or reuse a CaseDir alongside the given script.
-
-        Places the case directory in the same folder as the script, named
-        "script_name--hash". The hash ensures different script versions
-        get separate directories. Copies the script into the case directory
-        for reproducibility.
-
-        Parameters
-        ----------
-        script_path : str | Path
-            Path to the script file.
-        case_name : str | None
-            Override directory name. Defaults to script name (without extension).
-        parent_dir : str | Path | None
-            Override parent directory. Defaults to script's directory.
-        append_hash : bool
-            Append script content hash to case_name. Defaults to True.
-
-        Returns
-        -------
-        CaseDir
-            New or existing case directory.
-        """
-        script_path = os.path.abspath(script_path)
-        script_dir, script_file = os.path.split(script_path)
-        if case_name is None:
-            case_name, _ = os.path.splitext(script_file)
-        if parent_dir is None:
-            parent_dir = script_dir
-        if append_hash:
-            nb_hex_digits = 6  # shall be fine for ~1000 versions
-            case_name += f"--{compute_script_hash(script_path)[:nb_hex_digits]}"
-
-        case_dir = cls(Path(parent_dir) / case_name)
-        if not case_dir.script_file.exists():
-            shutil.copy2(script_path, case_dir.script_file)
-        return case_dir
+    def version_index(self):
+        return self._path / "version.json"
 
     @contextlib.contextmanager
     def bookkeep(self):
         """
-        Yield a dict for user to add information about specific runs. Time is automatically recorded.
+        Yield a dict to add information during a run. Time is automatically recorded.
         """
         entry = {}
         try:
@@ -107,45 +74,83 @@ class CaseDir:
             yield entry
         finally:
             entry["time_stop"] = get_iso_time()
-            index = self._load_index()
+            index = self._load_run_index()
             index.append(entry)
-            self._save_index(index)
+            self._save_run_index(index)
 
-    def _load_index(self):
-        """Load the index file."""
+    def _load_run_index(self):
         try:
-            with open(self.index_file, "r", encoding="utf-8") as fp:
+            with open(self.run_index, "r", encoding="utf-8") as fp:
                 return json.load(fp)
         except FileNotFoundError:
             return []
 
-    def _save_index(self, index):
-        """Save the index file."""
-        with open(self.index_file, "w", encoding="utf-8") as fp:
+    def _save_run_index(self, index):
+        with open(self.run_index, "w", encoding="utf-8") as fp:
             json.dump(index, fp, indent=2, sort_keys=False)
 
 
-class RunDir:
+    def copy_script(self, src, version: bool = False):
+        """Copy script to case directory.
+
+        If version=True, appends version suffix (e.g. --v1, --v2) based on
+        script content hash. Same content gets same version number. Scripts with
+        different filenames are versioned separately.
+        """
+        src = os.path.abspath(src)
+        _, script_file = os.path.split(src)
+        script_name, script_ext = os.path.splitext(script_file)
+
+        if version:
+            nb_hex_digits = 8
+            hash_hex = compute_script_hash(src)[:nb_hex_digits]
+            version_number = self._get_or_create_version(script_file, hash_hex)
+            script_name += f"--v{version_number}"
+
+        dst = self._path / f"{script_name}{script_ext}"
+        return shutil.copy2(src, dst)
+
+    def _get_or_create_version(self, script_file: str, hash_hex: str):
+        index = self._load_version_index()
+        versions = index.setdefault(script_file, {})
+        if hash_hex in versions:
+            return versions[hash_hex]["version"]
+        # if new, create an incremental one
+        version_number = len(versions) + 1
+        versions[hash_hex] = {"version": version_number, "created": get_iso_time()}
+        self._save_version_index(index)
+        return version_number
+
+    def _load_version_index(self):
+        try:
+            with open(self.version_index, "r", encoding="utf-8") as fp:
+                return json.load(fp)
+        except FileNotFoundError:
+            return {}
+
+    def _save_version_index(self, index):
+        with open(self.version_index, "w", encoding="utf-8") as fp:
+            json.dump(index, fp, indent=2)
+
+
+class RunDir(_Dir):
     """
-    Working directory of a single run.
+    A directory to work with simulation runs. Specifies some convention about file or
+    folder names to hold input, output (separate data & visuals) and log.
 
     Directory structure:
         run_dir/
-        ├── input       Parameters and configuration 
+        ├── input.cfg   Parameters and configuration 
         ├── data/       Simulation output data
         ├── visuals/    Generated plots and animations
         ├── log.txt     Execution log
-        └── ...
+        └── ...         Any other stuff
     """
 
     def __init__(self, path: str | Path, exist_ok: bool = True):
-        self._path = Path(path).absolute()
-        if self._path.is_file():
-            raise FileExistsError(f"{self._path} is occupied by a file.")
-        self._path.mkdir(parents=True, exist_ok=exist_ok)
+        super().__init__(path, exist_ok)
         self.data_dir.mkdir(exist_ok=exist_ok)
         self.visuals_dir.mkdir(exist_ok=exist_ok)
-        logger.info(f"Run directory path {self._path}")
 
     def __truediv__(self, other: str | Path):
         return self._path / other
