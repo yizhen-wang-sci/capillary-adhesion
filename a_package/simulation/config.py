@@ -1,17 +1,16 @@
 """
-Configuration schema and TOML loading/saving.
+Configuration loading utilities.
 
 Provides:
-- Config dataclass for typed configuration
-- TOML loading and saving utilities
+- load_config: Load and merge TOML files into plain dict
+- backfill: Fill missing fields from defaults dict
+- save_config: Persist config dict to TOML
 """
 
 import sys
-import dataclasses as dc
 from pathlib import Path
 from typing import Any
 
-# Import tomllib or backport
 if sys.version_info >= (3, 11):
     import tomllib
 else:
@@ -20,44 +19,25 @@ else:
 import tomli_w
 
 
-# -----------------------------------------------------------------------------
-# Schema
-# -----------------------------------------------------------------------------
+def load_config(*paths: str | Path):
+    """Load and merge TOML config files. Later files override earlier."""
+    if not paths:
+        raise ValueError("At least one config path required")
 
-@dc.dataclass
-class Config:
-    """
-    Top-level configuration.
-
-    First-level keys match subpackage names for clarity.
-    All sections are raw dicts to avoid schema duplication.
-
-    Attributes
-    ----------
-    domain : dict
-        Grid definitions (pixel_size, nb_pixels).
-    problem : dict
-        Physics and geometry (upper, lower, capillary).
-    simulation : dict
-        Trajectory and constraint settings.
-    solver : dict
-        Optimizer settings.
-    sweep : list[dict]
-        Parameter sweep specifications.
-    """
-    domain: dict[str, Any]
-    problem: dict[str, Any]
-    simulation: dict[str, Any]
-    solver: dict[str, Any] = dc.field(default_factory=dict)
-    sweep: list[dict[str, Any]] = dc.field(default_factory=list)
+    merged: dict[str, Any] = {}
+    for path in paths:
+        with open(Path(path), "rb") as fp:
+            merged = _deep_merge(merged, tomllib.load(fp))
+    return merged
 
 
-# -----------------------------------------------------------------------------
-# Loading and Saving
-# -----------------------------------------------------------------------------
+def backfill_config(config: dict, defaults: dict):
+    """Backfill missing fields in config from defaults. Config values take precedence."""
+    return _deep_merge(defaults, config)
 
-def _deep_merge(base: dict, override: dict) -> dict:
-    """Recursively merge override into base, with override taking precedence."""
+
+def _deep_merge(base: dict, override: dict):
+    """Recursively merge override into base."""
     result = dict(base)
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
@@ -67,51 +47,7 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
-def load_config(*paths: str | Path) -> Config:
-    """
-    Load TOML configuration file(s) and return a Config object.
-
-    When multiple paths are provided, files are loaded in order and
-    later files override values from earlier files (deep merge).
-    """
-    if not paths:
-        raise ValueError("At least one config path required")
-
-    # Load and merge all files
-    merged: dict[str, Any] = {}
-    for path in paths:
-        path = Path(path)
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
-        merged = _deep_merge(merged, data)
-
-    # Extract sweeps (TOML uses [[sweep]] array syntax)
-    sweep = merged.pop("sweep", [])
-
-    return Config(
-        domain=merged.get("domain", {}),
-        problem=merged.get("problem", {}),
-        solver=merged.get("solver", {}),
-        simulation=merged.get("simulation", {}),
-        sweep=sweep,
-    )
-
-
-def save_config(config: Config, path: str | Path) -> None:
-    """Save a Config object to a TOML file."""
-    path = Path(path)
-    data: dict[str, Any] = {}
-
-    if config.domain:
-        data["domain"] = config.domain
-    if config.problem:
-        data["problem"] = config.problem
-    if config.solver:
-        data["solver"] = config.solver
-    if config.simulation:
-        data["simulation"] = config.simulation
-    if config.sweep:
-        data["sweep"] = config.sweep
-
-    with open(path, "wb") as f:
-        tomli_w.dump(data, f)
+def save_config(config: dict[str, Any], path: str | Path):
+    """Save config dict to TOML file."""
+    with open(Path(path), "wb") as fp:
+        tomli_w.dump(config, fp)

@@ -1,345 +1,167 @@
 """
 Directory management.
 
-Provides a flat container for runs with an index for sweep tracking.
+Provides CaseDir and RunDir for organizing simulation. Because one script with different parameter values can genearte
+different results, one CaseDir contains multiple RunDir.
 """
 
+import contextlib
 import json
+import logging
 import os
-import subprocess
 import shutil
-import time
 from pathlib import Path
 
-
-def _get_git_hash() -> str | None:
-    """Get current git commit hash."""
-    try:
-        hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
-        return hash
-    except Exception:
-        return None
+from .metadata import compute_script_hash, get_iso_time
 
 
-def _generate_run_id(with_hash: bool = True) -> str:
-    """Generate a unique run ID based on timestamp and git hash."""
-    current_time = time.localtime()
-    run_id = time.strftime("%y%m%d-%H%M%S", current_time)
-
-    if with_hash:
-        git_hash = _get_git_hash()
-        if git_hash:
-            run_id += f"-{git_hash[:6]}"
-
-    return run_id
-
-
-class RunDir:
-    """
-    Structure of a single run directory.
-
-    A run directory contains:
-    - parameters/   Configuration files
-    - results/      Simulation output data
-    - visuals/      Generated plots and animations
-    - log.txt       Execution log
-    - METADATA.json Run metadata
-    """
-
-    def __init__(self, path: str | Path):
-        self.path = Path(path)
-        self.run_id = self.path.name
-
-    @property
-    def results_dir(self) -> Path:
-        return self.path / "results"
-
-    @property
-    def parameters_dir(self) -> Path:
-        return self.path / "parameters"
-
-    @property
-    def visuals_dir(self) -> Path:
-        return self.path / "visuals"
-
-    @property
-    def log_file(self) -> Path:
-        return self.path / "log.txt"
-
-    @property
-    def metadata_file(self) -> Path:
-        return self.path / "METADATA.json"
-
-    def setup(self) -> None:
-        """Create the directory structure."""
-        self.path.mkdir(parents=True, exist_ok=False)
-        self.results_dir.mkdir()
-        self.parameters_dir.mkdir()
-        self.visuals_dir.mkdir()
-        self.log_file.touch()
-        with open(self.metadata_file, "w", encoding="utf-8") as fp:
-            json.dump({}, fp)
-
-    def load_metadata(self) -> dict:
-        """Load metadata from file."""
-        with open(self.metadata_file, "r", encoding="utf-8") as fp:
-            return json.load(fp)
-
-    def update_metadata(self, new_info: dict) -> None:
-        """Update metadata file with new information."""
-        metadata = self.load_metadata()
-        metadata.update(new_info)
-        with open(self.metadata_file, "w", encoding="utf-8") as fp:
-            json.dump(metadata, fp, indent=2, sort_keys=True)
-
-    def add_parameter_file(self, file_path: str | Path) -> None:
-        """Copy a parameter file into the parameters directory."""
-        shutil.copy2(file_path, self.parameters_dir)
+logger = logging.getLogger(__name__)
 
 
 class CaseDir:
     """
     Container for all runs in a case directory.
 
-    Manages a flat collection of runs with an index file for sweep tracking.
-
     Directory structure:
         case_dir/
-        ├── INDEX.json          # Tracks runs and sweeps
-        ├── run-id-1/           # RunDir
-        ├── run-id-2/           # RunDir
+        ├── script.py
+        ├── INDEX.json
+        ├── run1_dir
+        ├── run2_dir
         └── ...
-
-    Index format:
-        {
-            "runs": {
-                "run-id-1": {},
-                "run-id-2": {"sweep_id": "sweep-001", "sweep_index": 0}
-            },
-            "sweeps": {
-                "sweep-001": {
-                    "created": "2024-12-18T12:34:56",
-                    "run_ids": ["run-id-2", "run-id-3"]
-                }
-            }
-        }
     """
 
-    def __init__(self, path: str | Path, data_root: str | Path | None = None):
+    def __init__(self, path: str | Path, exist_ok: bool = True):
+        self._path = Path(path).absolute()
+        if self._path.is_file():
+            raise FileExistsError(f"{self._path} is occupied by a file.")
+        self._path.mkdir(parents=True, exist_ok=exist_ok)
+        logger.info(f"Case directory path {self._path}")
+
+    def __truediv__(self, other: str | Path):
+        return self._path / other
+
+    @property
+    def index_file(self):
+        return self._path / "INDEX.json"
+
+    @property
+    def script_file(self):
+        return self._path / "script.py"
+
+    @classmethod
+    def alongside(
+        cls,
+        script_path: str | Path,
+        case_name: str | None = None,
+        parent_dir: str | Path | None = None,
+        append_hash: bool = True,
+    ):
         """
-        Initialize a CaseDir.
+        Create or reuse a CaseDir alongside the given script.
+
+        Places the case directory in the same folder as the script, named
+        "script_name--hash". The hash ensures different script versions
+        get separate directories. Copies the script into the case directory
+        for reproducibility.
 
         Parameters
         ----------
-        path : str | Path
-            Relative path for the case (e.g., "load_unload/tip-on-flat").
-        data_root : str | Path | None
-            Root directory for all simulation data. Defaults to "data/" in repo root.
+        script_path : str | Path
+            Path to the script file.
+        case_name : str | None
+            Override directory name. Defaults to script name (without extension).
+        parent_dir : str | Path | None
+            Override parent directory. Defaults to script's directory.
+        append_hash : bool
+            Append script content hash to case_name. Defaults to True.
+
+        Returns
+        -------
+        CaseDir
+            New or existing case directory.
         """
-        if data_root is None:
-            repo_root = os.getenv("PYTHONPATH", os.getcwd())
-            data_root = Path(repo_root) / "data"
+        script_path = os.path.abspath(script_path)
+        script_dir, script_file = os.path.split(script_path)
+        if case_name is None:
+            case_name, _ = os.path.splitext(script_file)
+        if parent_dir is None:
+            parent_dir = script_dir
+        if append_hash:
+            nb_hex_digits = 6  # shall be fine for ~1000 versions
+            case_name += f"--{compute_script_hash(script_path)[:nb_hex_digits]}"
 
-        self.case_dir = Path(data_root) / path
-        self.index_file = self.case_dir / "INDEX.json"
+        case_dir = cls(Path(parent_dir) / case_name)
+        if not case_dir.script_file.exists():
+            shutil.copy2(script_path, case_dir.script_file)
+        return case_dir
 
-    def _ensure_case_dir(self) -> None:
-        """Create case directory if it doesn't exist."""
-        self.case_dir.mkdir(parents=True, exist_ok=True)
-        if not self.index_file.exists():
-            self._save_index({"runs": {}, "sweeps": {}})
+    @contextlib.contextmanager
+    def bookkeep(self):
+        """
+        Yield a dict for user to add information about specific runs. Time is automatically recorded.
+        """
+        entry = {}
+        try:
+            entry["time_start"] = get_iso_time()
+            yield entry
+        finally:
+            entry["time_stop"] = get_iso_time()
+            index = self._load_index()
+            index.append(entry)
+            self._save_index(index)
 
-    def _load_index(self) -> dict:
+    def _load_index(self):
         """Load the index file."""
-        if not self.index_file.exists():
-            return {"runs": {}, "sweeps": {}}
-        with open(self.index_file, "r", encoding="utf-8") as fp:
-            return json.load(fp)
+        try:
+            with open(self.index_file, "r", encoding="utf-8") as fp:
+                return json.load(fp)
+        except FileNotFoundError:
+            return []
 
-    def _save_index(self, index: dict) -> None:
+    def _save_index(self, index):
         """Save the index file."""
         with open(self.index_file, "w", encoding="utf-8") as fp:
-            json.dump(index, fp, indent=2, sort_keys=True)
+            json.dump(index, fp, indent=2, sort_keys=False)
 
-    def create_run(
-        self,
-        script_path: str | Path,
-        *param_paths: str | Path,
-        with_hash: bool = True,
-    ) -> RunDir:
-        """
-        Create a new standalone run.
 
-        Parameters
-        ----------
-        script_path : str | Path
-            Path to the script creating this run (for metadata).
-        *param_paths : str | Path
-            Parameter files to copy into the run.
-        with_hash : bool
-            Whether to include git hash in run ID.
+class RunDir:
+    """
+    Working directory of a single run.
 
-        Returns
-        -------
-        RunDir
-            The created run directory.
-        """
-        self._ensure_case_dir()
+    Directory structure:
+        run_dir/
+        ├── input       Parameters and configuration 
+        ├── data/       Simulation output data
+        ├── visuals/    Generated plots and animations
+        ├── log.txt     Execution log
+        └── ...
+    """
 
-        run_id = _generate_run_id(with_hash)
-        run_dir = RunDir(self.case_dir / run_id)
-        run_dir.setup()
+    def __init__(self, path: str | Path, exist_ok: bool = True):
+        self._path = Path(path).absolute()
+        if self._path.is_file():
+            raise FileExistsError(f"{self._path} is occupied by a file.")
+        self._path.mkdir(parents=True, exist_ok=exist_ok)
+        self.data_dir.mkdir(exist_ok=exist_ok)
+        self.visuals_dir.mkdir(exist_ok=exist_ok)
+        logger.info(f"Run directory path {self._path}")
 
-        # Copy parameter files
-        for param_path in param_paths:
-            run_dir.add_parameter_file(param_path)
+    def __truediv__(self, other: str | Path):
+        return self._path / other
 
-        # Set metadata
-        metadata = {
-            "run_id": run_id,
-            "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "script": str(Path(script_path).absolute()),
-        }
-        if param_paths:
-            metadata["parameters"] = [str(Path(p).absolute()) for p in param_paths]
-        if with_hash:
-            git_hash = _get_git_hash()
-            if git_hash:
-                metadata["git_hash"] = git_hash
-        run_dir.update_metadata(metadata)
+    @property
+    def input_file(self):
+        return self._path / "input.cfg"
 
-        # Update index
-        index = self._load_index()
-        index["runs"][run_id] = {}
-        self._save_index(index)
+    @property
+    def data_dir(self):
+        return self._path / "data"
 
-        return run_dir
+    @property
+    def visuals_dir(self):
+        return self._path / "visuals"
 
-    def create_sweep(
-        self,
-        script_path: str | Path,
-        nb_runs: int,
-        with_hash: bool = True,
-    ) -> list[RunDir]:
-        """
-        Create multiple runs as part of a sweep.
-
-        Note: Requires count upfront (from sweep.count_sweep_combinations).
-        This coupling enables atomic sweep creation (all-or-nothing) and
-        proper sweep grouping in INDEX.json.
-
-        Parameters
-        ----------
-        script_path : str | Path
-            Path to the script creating this sweep.
-        nb_runs : int
-            Number of runs in the sweep.
-        with_hash : bool
-            Whether to include git hash in run IDs.
-
-        Returns
-        -------
-        list[RunDir]
-            List of created run directories, in order.
-        """
-        self._ensure_case_dir()
-
-        sweep_id = _generate_run_id(with_hash)
-        sweep_time = time.strftime("%Y-%m-%dT%H:%M:%S")
-        git_hash = _get_git_hash() if with_hash else None
-
-        run_dirs = []
-        run_ids = []
-
-        for sweep_index in range(nb_runs):
-            # Create unique run_id by appending sweep index
-            run_id = f"{sweep_id}--{sweep_index}"
-            run_dir = RunDir(self.case_dir / run_id)
-            run_dir.setup()
-
-            # Set metadata
-            metadata = {
-                "run_id": run_id,
-                "time": sweep_time,
-                "script": str(Path(script_path).absolute()),
-                "sweep_id": sweep_id,
-                "sweep_index": sweep_index,
-            }
-            if git_hash:
-                metadata["git_hash"] = git_hash
-            run_dir.update_metadata(metadata)
-
-            run_dirs.append(run_dir)
-            run_ids.append(run_id)
-
-        # Update index
-        index = self._load_index()
-        for i, run_id in enumerate(run_ids):
-            index["runs"][run_id] = {"sweep_id": sweep_id, "sweep_index": i}
-        index["sweeps"][sweep_id] = {
-            "created": sweep_time,
-            "run_ids": run_ids,
-        }
-        self._save_index(index)
-
-        return run_dirs
-
-    def get_run(self, run_id: str) -> RunDir:
-        """
-        Retrieve a run by ID.
-
-        Parameters
-        ----------
-        run_id : str
-            The run identifier.
-
-        Returns
-        -------
-        RunDir
-            The run directory.
-
-        Raises
-        ------
-        KeyError
-            If run_id is not found in the index.
-        """
-        index = self._load_index()
-        if run_id not in index["runs"]:
-            raise KeyError(f"Run '{run_id}' not found in index")
-        return RunDir(self.case_dir / run_id)
-
-    def get_sweep_runs(self, sweep_id: str) -> list[RunDir]:
-        """
-        Retrieve all runs in a sweep, ordered by sweep_index.
-
-        Parameters
-        ----------
-        sweep_id : str
-            The sweep identifier.
-
-        Returns
-        -------
-        list[RunDir]
-            List of run directories, sorted by sweep_index.
-
-        Raises
-        ------
-        KeyError
-            If sweep_id is not found.
-        """
-        index = self._load_index()
-        if sweep_id not in index["sweeps"]:
-            raise KeyError(f"Sweep '{sweep_id}' not found in index")
-
-        run_ids = index["sweeps"][sweep_id]["run_ids"]
-        return [RunDir(self.case_dir / rid) for rid in run_ids]
-
-    def list_runs(self) -> list[RunDir]:
-        """List all runs in this case directory."""
-        index = self._load_index()
-        return [RunDir(self.case_dir / rid) for rid in index["runs"]]
-
-    def list_sweeps(self) -> list[str]:
-        """List all sweep IDs in this case directory."""
-        index = self._load_index()
-        return list(index["sweeps"].keys())
+    @property
+    def log_file(self):
+        return self._path / "log.txt"
