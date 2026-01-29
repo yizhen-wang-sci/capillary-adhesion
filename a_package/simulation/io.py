@@ -14,7 +14,7 @@ class SimulationIO:
     grid: Grid
     _io: NpyIO
 
-    def __init__(self, grid, store_dir) -> None:
+    def __init__(self, grid, store_dir):
         self.grid = grid
         self._io = NpyIO(store_dir)
 
@@ -102,7 +102,7 @@ class _FieldArray:
     _io: NpyIO
     _name: str
 
-    def __init__(self, grid: Grid, io: NpyIO, name: str) -> None:
+    def __init__(self, grid: Grid, io: NpyIO, name: str):
         self.grid = grid
         self._io = io
         self._name = name
@@ -114,6 +114,6 @@ class _FieldArray:
         self._io.save_field(self.grid, _format_filename(self._name, index), value)
 
 
-def _format_filename(name: str, index: int) -> str:
+def _format_filename(name: str, index: int):
     """Format a filename with step index."""
     return f"{name}--{index}"

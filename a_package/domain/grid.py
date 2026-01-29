@@ -19,7 +19,7 @@ class Grid:
         self.element_area = functools.reduce(operator.mul, self.element_sizes, 1.)
 
     @property
-    def is_in_parallel(self) -> bool:
+    def is_in_parallel(self):
         return False
 
     def form_index_axis(self, ax_index: int):

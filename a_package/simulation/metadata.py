@@ -11,13 +11,13 @@ import time
 from pathlib import Path
 
 
-def compute_script_hash(script_path: Path | str) -> str:
+def compute_script_hash(script_path: Path | str):
     """Compute SHA256 hash of script file content."""
     content = Path(script_path).read_bytes()
     return hashlib.sha256(content).hexdigest()
 
 
-def compute_config_hash(config: dict) -> str:
+def compute_config_hash(config: dict):
     """Compute SHA256 hash of config dict.
 
     Note: TOML datetime values are not JSON serializable. Use string dates in config.
@@ -27,17 +27,17 @@ def compute_config_hash(config: dict) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def get_timestamp() -> str:
+def get_timestamp():
     """Generate timestamp string (YYMMDD-HHMMSS)."""
     return time.strftime("%y%m%d-%H%M%S", time.localtime())
 
 
-def get_iso_time() -> str:
+def get_iso_time():
     """Generate ISO 8601 timestamp (YYYY-MM-DDTHH:MM:SS)."""
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
 
 
-def get_git_hash() -> str | None:
+def get_git_hash():
     """Get current git commit hash, or None if not in a git repo."""
     try:
         result = subprocess.run(
