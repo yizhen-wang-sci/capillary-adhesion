@@ -1,5 +1,4 @@
 from .io import SimulationIO
-from .schema import Term
 from .dirs import CaseDir, RunDir
 from .logging import reset_logging, switch_log_file
 from .config import load_config, save_config

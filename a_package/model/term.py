@@ -6,6 +6,8 @@ else:
 
 
 class Term(StrEnum):
+    """Standardized names for fields and values. Mainly used as IO keys."""
+
     upper_solid = "upper"
     lower_solid = "lower"
     separation = "separation"
