@@ -10,7 +10,6 @@ Convention:
 - NodalFormCapillary is public (optimization-ready interface)
 """
 
-import dataclasses as dc
 import logging
 
 import numpy as np
@@ -25,7 +24,6 @@ logger = logging.getLogger(__name__)
 # Pure Physics Model (numerics-free, private)
 # =============================================================================
 
-@dc.dataclass(init=True)
 class CapillaryBridge:
     """Pure physics model for capillary bridge.
 
@@ -33,109 +31,92 @@ class CapillaryBridge:
     This class is private; use NodalFormCapillary for optimization.
     """
 
-    eta: float
-    """interface thickness"""
-    theta: float
-    """contact angle"""
-
-    def __post_init__(self):
-        # convention
-        self.phase_vapour = 0.
-        self.phase_liquid = 1.
-        # According to Modica-Mortola's theorem, the perimeter of liquid-vapour interface is propotional to its energy.
-        # That propotion equals to the integral of the square root of the double-well penalty, on the interval connected
-        # by two phases. Therefore, we have to set a prefactor equal to the inverse of that propotion, then that value
-        # would exactly be the perimeter
-        self.perimeter_prefactor = 3.
-
-        # more parameters
-        self.curv = 0.5 * (abs(np.sin(self.theta)) + np.asin(np.cos(self.theta)) / np.cos(self.theta))
-        self.gamma = -np.cos(self.theta)
-
-        # To save gap heights in quadrature points
-        self.gap: Field = None
-        """gap between two rigid bodies"""
-
-    def compute_perimeter(self, phase: Field, phase_grad: Field):
+    def __init__(self, eta: float, theta: float):
         """
-        - phase: phase-field
-        - phase_grad: gradient of phase-field
+        Parameters
+        ----------
+        eta : float
+            Interface thickness of the diffuse interface model.
+        theta : float
+            Contact angle at the liquid-solid interface, in radians.
         """
+        self._eta = eta
+        self._theta = theta
+        self._curv = 0.5 * (abs(np.sin(theta)) + np.asin(np.cos(theta)) / np.cos(theta))
+        self._gamma = -np.cos(theta)
+
+    @property
+    def phase_vapour(self):
+        """Phase-field value representing vapour phase."""
+        return 0.
+
+    @property
+    def phase_liquid(self):
+        """Phase-field value representing liquid phase."""
+        return 1.
+
+    @property
+    def perimeter_prefactor(self):
+        """Prefactor for perimeter computation.
+
+        According to Modica-Mortola's theorem, the perimeter of liquid-vapour
+        interface is proportional to its energy. That proportion equals to the
+        integral of the square root of the double-well penalty, on the interval
+        connected by two phases. Therefore, we set a prefactor equal to the
+        inverse of that proportion, then that value would exactly be the perimeter.
+        """
+        return 3.
+
+    def compute_local_perimeter(self, phase: Field, phase_grad: Field):
+        """Compute local perimeter density of liquid-vapour interface."""
         return self.perimeter_prefactor * (
-            (1 / self.eta) * self.double_well_penalty(phase) + self.eta * self.square_penalty(phase_grad)
-        )
+            (1 / self._eta) * self.double_well_penalty(phase) + self._eta * self.square_penalty(phase_grad))
 
-    def compute_energy(self, phase: Field, phase_grad: Field):
-        """
-        - phase: phase-field
-        - phase_grad: gradient of phase-field
-        """
-        liquid_vapour = (
-            self.perimeter_prefactor
-            * ((1 / self.eta) * self.double_well_penalty(phase) + self.eta * self.square_penalty(phase_grad))
-            * self.gap
-            * self.curv
-        )
-        # upper and lower surface, so the 2. (height gradient squareis one order higher and omitted)
+    def compute_local_energy(self, gap: Field, phase: Field, phase_grad: Field):
+        """Compute local energy density (liquid-vapour + liquid-solid contributions)."""
+        liquid_vapour = self.compute_local_perimeter(phase, phase_grad) * gap * self._curv
+        # upper and lower surface, so the 2. (height gradient square is one order higher and omitted)
         liquid_solid = 2.0 * phase
-        return liquid_vapour + self.gamma * liquid_solid
+        return liquid_vapour + self._gamma * liquid_solid
 
     @staticmethod
     def double_well_penalty(x):
+        """Double-well potential W(x) = x^2(1-x)^2, summed over components."""
         return np.sum(x**2 * (1 - x) ** 2, axis=field_component_ax, keepdims=True)
 
     @staticmethod
     def square_penalty(x):
+        """Square norm |x|^2, summed over components."""
         return np.sum(x**2, axis=field_component_ax, keepdims=True)
 
-    # def compute_force(self, phase: Field, phase_grad: Field):
-    #     # the common part of 3 components
-    #     liquid_vapour_D_gap = (
-    #         self.perimeter_prefactor
-    #         * ((1 / self.eta) * self.double_well_penalty(phase) + self.eta * self.square_penalty(phase_grad))
-    #         * self.curv
-    #     )
-
-    #     # the different part of 3 components
-    #     f_x = (liquid_vapour_D_gap * self.dg_dx).sum()
-    #     f_y = (liquid_vapour_D_gap * self.dg_dy).sum()
-    #     f_z = liquid_vapour_D_gap.sum()  # dg_dz = 1
-
-    #     return f_x, f_y, f_z
-
-    def compute_energy_jacobian(self, phase: Field, phase_grad: Field):
-        """
-        - phase: phase-field
-        - phase_grad: gradient of phase-field
-        """
-        liquid_vapour_D_phase = (
-            self.perimeter_prefactor
-            * ((1 / self.eta) * self.double_well_penalty_derivative(phase))
-            * self.gap
-            * self.curv
-        )
-        liquid_vapour_D_phase_grad = (
-            self.perimeter_prefactor * (self.eta * self.square_penalty_derivatie(phase_grad)) * self.gap * self.curv
-        )
+    def compute_local_energy_jacobian(self, gap: Field, phase: Field, phase_grad: Field):
+        """Compute derivatives of local energy w.r.t. phase and phase gradient."""
+        liquid_vapour_D_phase = (self.perimeter_prefactor * (1 / self._eta)
+                                 * self.double_well_penalty_derivative(phase) * gap * self._curv)
+        liquid_vapour_D_phase_grad = (self.perimeter_prefactor * self._eta
+                                      * self.square_penalty_derivative(phase_grad) * gap * self._curv)
 
         liquid_solid_D_phase = 2.0
-        # liquid_vapour_D_phase_grad = 0.
 
-        return liquid_vapour_D_phase + self.gamma * liquid_solid_D_phase, liquid_vapour_D_phase_grad
+        return liquid_vapour_D_phase + self._gamma * liquid_solid_D_phase, liquid_vapour_D_phase_grad
 
     @staticmethod
     def double_well_penalty_derivative(x):
+        """Derivative of double-well potential: dW/dx = 2x(1-x)(1-2x)."""
         return 2 * x * (1 - x) * (1 - 2 * x)
 
     @staticmethod
-    def square_penalty_derivatie(x):
+    def square_penalty_derivative(x):
+        """Derivative of square norm: d|x|^2/dx = 2x."""
         return 2 * x
 
-    def compute_volume(self, phase: Field):
-        return phase * self.gap
+    def compute_local_volume(self, gap: Field, phase: Field):
+        """Compute local liquid volume density."""
+        return phase * gap
 
-    def compute_volume_jacobian(self, phase: Field):
-        return (self.gap,)
+    def compute_local_volume_jacobian(self, gap: Field, phase: Field):
+        """Compute derivative of local volume w.r.t. phase."""
+        return (gap,)
 
 
 # =============================================================================
@@ -143,119 +124,106 @@ class CapillaryBridge:
 # =============================================================================
 
 class NodalFormCapillary:
-    """Formulates capillary bridge physics into an optimisation problem.
+    """Nodal-value interface for capillary bridge evaluation.
 
-    Combines:
-    - Physics: CapillaryBridge (energy, volume computations)
-    - Numerics: FEM (interpolation), Quadrature (integration)
-
-    Provides evaluation interface for optimizers:
-    - get_energy(), get_energy_jacobian()
-    - get_volume(), get_volume_jacobian()
+    Combines CapillaryBridge physics with FEM interpolation and quadrature
+    integration. Accepts nodal values via set_gap/set_phase and provides
+    integrated quantities via get_energy/get_volume and their jacobians.
     """
 
-    nodal_shape: list[int]
-    nodal_gap: Field
-    nodal_phase: Field
-    quadr_phase: Field
-    quadr_phase_gradient: Field
-    bridge: CapillaryBridge
-    fem: FirstOrderElement
-    quadrature: Quadrature
-    phase_lb: float
-    phase_ub: float
-
     def __init__(self, grid: Grid, capillary_args: dict, quadrature: Quadrature = centroid_quadrature):
-        self.grid = grid
-        self.nodal_shape = [1, 1, *grid.nb_elements]
+        self._grid = grid
+        self._bridge = CapillaryBridge(**capillary_args)
+        self._quadrature = quadrature
+        self._fem = FirstOrderElement(grid, quadrature.quad_pt_coords)
 
-        self.nodal_gap = np.zeros(self.nodal_shape)
-        self.nodal_phase = np.zeros(self.nodal_shape)
-        self.quadr_phase = np.zeros([])
-        self.quadr_phase_gradient = np.zeros([])
-
-        self.bridge = CapillaryBridge(**capillary_args)
-        self.fem = FirstOrderElement(grid, quadrature.quad_pt_coords)
-        self.quadrature = quadrature
+        # Initialise to None so it raises error if user forgets to set them
+        self._nodal_gap: Field = None
+        self._quadr_gap: Field = None
+        self._nodal_phase: Field = None
+        self._quadr_phase: Field = None
+        self._quadr_phase_gradient: Field = None
 
     def get_gap(self):
-        return self.nodal_gap
+        """Return nodal gap field."""
+        return self._nodal_gap
 
     def set_gap(self, value):
-        self.nodal_gap = adapt_shape(value)
-        # map to quadrature points
-        self.bridge.gap = self.fem.interpolate_value(self.nodal_gap)
-
-    @property
-    def quadr_gap(self):
-        return self.bridge.gap
+        """Set nodal gap and update quadrature-point values."""
+        self._nodal_gap = adapt_shape(value)
+        self._quadr_gap = self._fem.interpolate_value(self._nodal_gap)
 
     @property
     def gap_is_closed(self):
-        return self.nodal_gap == 0
+        """Boolean mask where gap equals zero (solid contact)."""
+        return self._nodal_gap == 0
 
     def get_phase(self):
-        return self.nodal_phase
+        """Return nodal phase field."""
+        return self._nodal_phase
+
+    def set_phase(self, value):
+        """Set nodal phase and update quadrature-point values and gradients."""
+        value[self.gap_is_closed] = 0.
+        self._nodal_phase = value
+        self._quadr_phase = self._fem.interpolate_value(self._nodal_phase)
+        self._quadr_phase_gradient = self._fem.interpolate_gradient(self._nodal_phase)
 
     @property
     def phase_lb(self):
-        return self.bridge.phase_vapour
+        """Lower bound for phase field (vapour)."""
+        return self._bridge.phase_vapour
 
     @property
     def phase_ub(self):
-        return self.bridge.phase_liquid
+        """Upper bound for phase field (liquid)."""
+        return self._bridge.phase_liquid
 
-    def set_phase(self, value):
-        # Clean the phase-field where the solid bodies contact
-        value[self.gap_is_closed] = 0.
-        self.nodal_phase = value
-        # map to quadrature points
-        self.quadr_phase = self.fem.interpolate_value(self.nodal_phase)
-        # self._quad_phase_grad = np.stack(
-        #     [self.fem.interpolate_gradient_x(nodal_phase), self.fem.interpolate_gradient_y(nodal_phase)],
-        #     axis=0
-        # )
-        self.quadr_phase_gradient = self.fem.interpolate_gradient(self.nodal_phase)
-
-    def validate_phase_field(self, nodal_phase: Field):
-        # check phase field < 0
-        if np.any(nodal_phase < 0):
-            outlier = np.where(nodal_phase < 0, nodal_phase, np.nan)
+    def validate_phase(self):
+        """Log warnings if phase field exceeds [0, 1] bounds."""
+        if np.any(self._nodal_phase < 0):
+            outlier = np.where(self._nodal_phase < 0, self._nodal_phase, np.nan)
             count = np.count_nonzero(~np.isnan(outlier))
             extreme = np.nanmin(outlier)
             logger.warning(f"Notice: phase field has {count} values < 0, min at {extreme:.2e}")
-        # check phase field > 1
-        if np.any(nodal_phase > 1):
-            outlier = np.where(nodal_phase > 1, nodal_phase, np.nan)
+        if np.any(self._nodal_phase > 1):
+            outlier = np.where(self._nodal_phase > 1, self._nodal_phase, np.nan)
             count = np.count_nonzero(~np.isnan(outlier))
             extreme = np.nanmax(outlier)
             logger.warning(f"Notice: phase field has {count} values > 1, max at 1.0+{extreme - 1:.2e}.")
 
     def get_energy(self):
-        integrand = self.bridge.compute_energy(self.quadr_phase, self.quadr_phase_gradient)
-        return self.quadrature.integrate(self.grid, integrand).item()
+        """Compute total capillary energy."""
+        integrand = self._bridge.compute_local_energy(self._quadr_gap, self._quadr_phase, self._quadr_phase_gradient)
+        return self._quadrature.integrate(self._grid, integrand).item()
 
     def get_energy_jacobian(self):
-        [energy_D_phase, energy_D_phase_grad] = self.bridge.compute_energy_jacobian(
-            self.quadr_phase, self.quadr_phase_gradient)
-        jacobian = self.fem.propag_sens_value(self.quadrature.propag_integral_weight(
-            self.grid, energy_D_phase)) + self.fem.propag_sens_gradient(self.quadrature.propag_integral_weight(
-                self.grid, energy_D_phase_grad))
-        # clean the contact part because there won't be either liquid or vapour
+        """Compute gradient of energy w.r.t. nodal phase."""
+        [energy_D_phase, energy_D_phase_grad] = self._bridge.compute_local_energy_jacobian(
+            self._quadr_gap, self._quadr_phase, self._quadr_phase_gradient)
+        jacobian = self._fem.propag_sens_value(self._quadrature.propag_integral_weight(
+            self._grid, energy_D_phase)) + self._fem.propag_sens_gradient(self._quadrature.propag_integral_weight(
+                self._grid, energy_D_phase_grad))
         jacobian[self.gap_is_closed] = 0
         return jacobian
 
     def get_volume(self):
-        integrand = self.bridge.compute_volume(self.quadr_phase)
-        return self.quadrature.integrate(self.grid, integrand).item()
+        """Compute total liquid volume."""
+        integrand = self._bridge.compute_local_volume(self._quadr_gap, self._quadr_phase)
+        return self._quadrature.integrate(self._grid, integrand).item()
 
     def get_volume_jacobian(self):
-        [volume_D_phase] = self.bridge.compute_volume_jacobian(self.quadr_phase)
-        jacobian = self.fem.propag_sens_value(self.quadrature.propag_integral_weight(self.grid, volume_D_phase))
-        # clean the contact part because there won't be either liquid or vapour
+        """Compute gradient of volume w.r.t. nodal phase."""
+        [volume_D_phase] = self._bridge.compute_local_volume_jacobian(self._quadr_gap, self._quadr_phase)
+        jacobian = self._fem.propag_sens_value(self._quadrature.propag_integral_weight(self._grid, volume_D_phase))
         jacobian[self.gap_is_closed] = 0
         return jacobian
 
     def get_perimeter(self):
-        integrand = self.bridge.compute_perimeter(self.quadr_phase, self.quadr_phase_gradient)
-        return self.quadrature.integrate(self.grid, integrand).item()
+        """Compute total perimeter of liquid-vapour interface."""
+        integrand = self._bridge.compute_local_perimeter(self._quadr_phase, self._quadr_phase_gradient)
+        return self._quadrature.integrate(self._grid, integrand).item()
+
+    def get_max_volume(self):
+        """Compute maximum available volume (when gap fully filled with liquid)."""
+        return self._quadrature.integrate(self._grid, self._quadr_gap).item()
