@@ -6,6 +6,8 @@ import pathlib
 
 import numpy as np
 
+# import NuMPI.IO
+
 from .grid import Grid
 from .field import Field, adapt_shape
 
@@ -24,14 +26,34 @@ class NpyIO:
         return self.root_path / f"{name}.npy"
 
     def load_field(self, grid: Grid, name: str):
+        # Serial implementation
         try:
             field = np.load(self._to_full_path(name), allow_pickle=False)
         except FileNotFoundError:
             field = np.atleast_2d([])
         return adapt_shape(field)
 
+        # # Parallel implementation using NuMPI
+        # try:
+        #     field = NuMPI.IO.load_npy(
+        #         self._to_full_path(name),
+        #         tuple(grid.subdomain_base),
+        #         tuple(grid.nb_elements))
+        # except FileNotFoundError:
+        #     field = np.atleast_2d([])
+        # return adapt_shape(field)
+
     def save_field(self, grid: Grid, name: str, field: Field):
+        # Serial implementation
         np.save(self._to_full_path(name), field)
+
+        # # Parallel implementation using NuMPI
+        # # FIXME: it cannot save all components / subpoints.
+        # NuMPI.IO.save_npy(
+        #     self._to_full_path(name),
+        #     np.ascontiguousarray(field.squeeze()),
+        #     tuple(grid.subdomain_base),
+        #     tuple(grid.nb_elements_global))
 
     def load_value_array(self, name: str):
         try:
@@ -41,4 +63,8 @@ class NpyIO:
         return array
 
     def save_value_array(self, name: str, array: np.ndarray):
+        # Serial implementation
         np.save(self._to_full_path(name), array)
+
+        # # Parallel implementation using serial_exec
+        # serial_exec(lambda: array, store=lambda a: np.save(self._to_full_path(name), a))
