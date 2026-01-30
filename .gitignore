@@ -11,6 +11,4 @@
 /venv
 
 # Other
-*.npy
-**/data
-*seeds
+/cases
