@@ -1,6 +1,0 @@
-# Parameter sweep: varying liquid volume percentage
-# Base setup: setups/tip-flat-hydrophilic.toml
-
-[[sweep]]
-path = "simulation.constraint.liquid_volume_percent"
-linspace = [25.0, 50.0, 12]

@@ -1,5 +1,5 @@
 """
-Domain module: spatial foundation and discretization.
+Domain module: spatial foundation, discretization, and optimization.
 
 Provides:
 - Grid: spatial discretization (will support domain decomposition)
@@ -7,6 +7,7 @@ Provides:
 - NpyIO: parallel-aware persistence (future)
 - FEM: finite element interpolation
 - Quadrature: integration rules
+- Optimizer: numerical optimization (will support parallelization)
 """
 
 from .grid import Grid
@@ -14,3 +15,4 @@ from .field import Field, adapt_shape, field_component_ax, field_element_axs
 from .io import NpyIO
 from .fem import FirstOrderElement
 from .quadrature import Quadrature, centroid_quadrature
+from .optimizer import BoundConstrainedSolver, AugmentedLagrangian, solve_unconstrained
