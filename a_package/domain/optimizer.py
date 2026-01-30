@@ -10,6 +10,9 @@ import typing
 import numpy as np
 import scipy.optimize
 
+# from NuMPI.Optimization import l_bfgs
+# from NuMPI import MPI
+
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +133,30 @@ def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int = 10000):
         had_abnormal_stop=not is_converged and info["nit"] < max_iter,
         message=info["task"].decode() if isinstance(info["task"], bytes) else info["task"],
     )
+
+    # # Parallel implementation using NuMPI
+    # result = l_bfgs(
+    #     compute_f,
+    #     x0,
+    #     jac=compute_f_Dx,
+    #     maxiter=max_iter,
+    #     ftol=1e2 * np.finfo(float).eps,
+    #     gtol=1e-6,
+    #     comm=MPI.COMM_WORLD,
+    # )
+    #
+    # t_exec += timeit.default_timer()
+    # numopt.set_x(result.x.reshape(x_shape))
+    # return OptimizerResult(
+    #     primal=numopt.get_x(),
+    #     dual=0.0,
+    #     time=t_exec,
+    #     nit=result.nit,
+    #     is_converged=result.success,
+    #     reached_iter_limit=result.nit >= max_iter,
+    #     had_abnormal_stop=not result.success and result.nit < max_iter,
+    #     message=result.message,
+    # )
 
 
 class BoundConstrainedSolver:

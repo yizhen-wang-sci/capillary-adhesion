@@ -11,6 +11,9 @@ import os
 import shutil
 from pathlib import Path
 
+from NuMPI import MPI
+_comm = MPI.COMM_WORLD
+
 from .metadata import compute_script_hash, get_iso_time
 
 
@@ -25,14 +28,16 @@ class _Dir:
 
     def __init__(self, path: str | Path, exist_ok: bool = True):
         self._path = Path(path).absolute()
-        if self._path.is_file():
-            raise FileExistsError(f"{self._path} is occupied by a file.")
-        try:
-            self._path.mkdir(parents=True)
-            logger.info(f"Create directory at {self._path}")
-        except FileExistsError as err:
-            if not exist_ok:
-                raise err
+        if _comm.rank == 0:
+            if self._path.is_file():
+                raise FileExistsError(f"{self._path} is occupied by a file.")
+            try:
+                self._path.mkdir(parents=True)
+                logger.info(f"Create directory at {self._path}")
+            except FileExistsError as err:
+                if not exist_ok:
+                    raise err
+        _comm.barrier()
 
     def __truediv__(self, other: str | Path):
         return self._path / other
@@ -149,8 +154,10 @@ class RunDir(_Dir):
 
     def __init__(self, path: str | Path, exist_ok: bool = True):
         super().__init__(path, exist_ok)
-        self.data_dir.mkdir(exist_ok=exist_ok)
-        self.visuals_dir.mkdir(exist_ok=exist_ok)
+        if _comm.rank == 0:
+            self.data_dir.mkdir(exist_ok=exist_ok)
+            self.visuals_dir.mkdir(exist_ok=exist_ok)
+        _comm.barrier()
 
     def __truediv__(self, other: str | Path):
         return self._path / other
