@@ -4,7 +4,7 @@
 [domain]
 [domain.grid]
 pixel_size = 0.01
-nb_pixels = 256
+nb_pixels = 1024
 
 [problem]
 [problem.upper]
@@ -13,6 +13,7 @@ prefactor = 1e5
 rolloff_wavelength_pixels = 64
 cutoff_wavelength_pixels = 8
 hurst_exponent = 0.95
+seed = 0
 
 [problem.lower]
 shape = "rough"
@@ -20,6 +21,7 @@ prefactor = 1e5
 rolloff_wavelength_pixels = 64
 cutoff_wavelength_pixels = 8
 hurst_exponent = 0.95
+seed = 1
 
 [problem.capillary]
 interface_thickness = 0.01
@@ -36,11 +38,13 @@ init_penalty_weight = 0.1
 [simulation]
 [simulation.trajectory]
 type = "approach_retract"
-min_separation = 0.0000
-max_separation = 0.0010
+min_separation = 0.0001
+max_separation = 0.0002
+# min_separation = 0.0005
+# max_separation = 0.00052
 step_size = 0.00001
 round_trip = true
 
 [simulation.constraint]
-type = "constant_volume"
-liquid_volume_percent = 25.0
+pressure = 5000
+liquid_volume_percent = 50.0

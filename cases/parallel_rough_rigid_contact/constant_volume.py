@@ -8,33 +8,31 @@ Usage:
 import logging
 import os
 import sys
-import types
+from types import SimpleNamespace
 
 import numpy as np
 import numpy.random as random
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-from a_package.model import NodalFormCapillary
+from a_package.model import NodalFormCapillary, RigidContact, Term
+from a_package.model.roughness import SelfAffineRoughness, psd_to_height
 from a_package.domain import AugmentedLagrangian
 from a_package.simulation import (
-    load_config, save_config,
-    SimulationIO, Term, CaseDir, RunDir, reset_logging,
+    load_config, save_config, unroll_sweep, 
+    get_timestamp,
+    SimulationIO, CaseDir, RunDir, reset_logging, switch_log_file
 )
 
 from cases.config_helpers import (
     create_grid_from_config,
-    generate_surface_from_config,
     build_capillary_args,
     build_solver_args,
     build_trajectory,
-    RigidContactSolver,
-    prepare_sweep,
 )
 
 from cases.visualisation import (
     latexify_plot,
-    draw_evolution_curve,
     plot_combined_topography,
     plot_cross_section_sketch,
     plot_gibbs_free_energy,
@@ -46,83 +44,80 @@ from cases.visualisation import (
 logger = logging.getLogger(__name__)
 
 
-def compute_volume_from_percent(grid, capillary_args, upper, lower, trajectory, volume_percent):
-    """
-    Convert volume percentage to actual volume.
-
-    The percentage is relative to the maximum possible volume
-    (full liquid at minimum separation).
-    """
-    formulation = NodalFormCapillary(grid, capillary_args)
-
-    # Compute gap at minimum separation
-    z_min = np.amin(trajectory)
-    gap = np.clip(upper + z_min - lower, 0, None)
-    formulation.set_gap(gap)
-
-    # Full liquid phase field
-    full_liquid = np.ones([1, 1, *grid.nb_elements])
-    formulation.set_phase(full_liquid)
-
-    # Compute volume as percentage of full
-    return formulation.get_volume() * (volume_percent / 100.0)
-
-
 def main():
-    reset_logging()
-
+    # CLI
     if len(sys.argv) < 2:
-        print(f"Usage: python -m cases.run_constant_volume config.toml")
+        print(f"At least one config file is required via CLI.")
         sys.exit(1)
+    config_files = sys.argv[1:]
 
-    config_file = sys.argv[1]
-    config = load_config(config_file)
+    # setup
+    reset_logging()
+    case_dir = CaseDir(os.path.splitext(__file__)[0])
+    script_v = case_dir.copy_script(__file__, version=True)
+    config_origin = load_config(*config_files)
 
-    # Setup case directory
-    script_name = os.path.splitext(os.path.basename(__file__))[0]
-    upper_shape = config.problem["upper"]["shape"]
-    lower_shape = config.problem["lower"]["shape"]
-    shape_name = f"{upper_shape}-on-{lower_shape}"
-    base_dir = os.path.join(script_name, shape_name)
-    case_dir = CaseDir(base_dir)
+    # run simulation now
+    with case_dir.bookkeep() as entry:
+        entry["command"] = [os.path.basename(script_v), *config_files]
+        runs = []
+        entry["runs"] = runs
+        ios = []
+        for config in unroll_sweep(config_origin):
+            run_name = "--".join([
+                get_timestamp(),
+                f"volume{config['simulation']['constraint']['liquid_volume_percent']}%",
+                f"theta{config['problem']['capillary']['contact_angle_degree']}",
+                f"grid{config['domain']['grid']['nb_pixels']}",
+            ])
+            runs.append(run_name)
 
-    # Single run (no sweep support)
-    [run_dir] = list(prepare_sweep(case_dir, 1, __file__))
-    save_config(config, run_dir.parameters_dir / "config.toml")
-    io = run_constant_volume(config, run_dir)
+            run_dir = RunDir(case_dir / run_name, exist_ok=False)
+            switch_log_file(run_dir.log_file)
+            save_config(config, run_dir.input_file)
+            io = _run_constant_volume(config, run_dir.data_dir)
+            ios.append(io)
 
-    # Visualization
-    visualize_constant_volume(io, run_dir.visuals_dir)
+    # post-process
+    for run_name, io in zip(runs, ios):
+        run_dir = RunDir(case_dir / run_name)
+        _visualize_constant_volume(io, run_dir.visuals_dir)
+
+# =============================================================================
+# Simulation
+# =============================================================================
 
 
-def run_constant_volume(config, run_dir: RunDir):
+def _run_constant_volume(config, output_path):
     """Run simulation with constant volume constraint."""
     grid = create_grid_from_config(config)
-    upper = generate_surface_from_config(grid, config.problem["upper"])
-    lower = generate_surface_from_config(grid, config.problem["lower"])
+    upper = _generate_rough_from_config(grid, config["problem"]["upper"])
+    lower = _generate_rough_from_config(grid, config["problem"]["lower"])
     capillary_args = build_capillary_args(config)
     solver_args = build_solver_args(config)
     trajectory = np.round(build_trajectory(config), 6)
 
-    # Get volume from config
-    constraint_cfg = config.simulation["constraint"]
-    volume = compute_volume_from_percent(
-        grid, capillary_args, upper, lower, trajectory,
-        volume_percent=constraint_cfg["liquid_volume_percent"],
-    )
+    # Create solvers
+    contact_solver = RigidContact(upper, lower)
+    formulation = NodalFormCapillary(grid, capillary_args)
+    optimizer = AugmentedLagrangian(**solver_args)
+
+    # Compute target volume from percentage at minimum separation
+    constraint_cfg = config["simulation"]["constraint"]
+    z_min = np.amin(trajectory)
+    contact_solver.set_mean_separation(z_min)
+    gap_at_min = contact_solver.get_gap()
+    formulation.set_gap(gap_at_min)
+    max_volume = formulation.get_max_volume()
+    volume = max_volume * (constraint_cfg["liquid_volume_percent"] / 100.0)
 
     # Initial phase field
     rng = random.default_rng()
     phase = rng.random((1, 1, *grid.nb_elements))
     pressure = 0.0
 
-    # Create solvers
-    contact_solver = RigidContactSolver(upper, lower)
-    formulation = NodalFormCapillary(grid, capillary_args)
-    optimizer = AugmentedLagrangian(**solver_args)
-
     # IO
-    io = SimulationIO(grid, run_dir.results_dir)
+    io = SimulationIO(grid, output_path)
     io.save_constant(
         fields={Term.phase_init: phase},
         single_values={Term.pressure_init: pressure},
@@ -136,16 +131,17 @@ def run_constant_volume(config, run_dir: RunDir):
     # Simulation loop
     for index, separation in enumerate(trajectory):
         logger.info(f"Step {index}: separation={separation}")
-        gap = contact_solver.solve_gap(separation)
+        contact_solver.set_mean_separation(separation)
+        gap = contact_solver.get_gap()
         formulation.set_gap(gap)
 
         # Build constrained optimization problem
         def volume_constraint():
             return formulation.get_volume() - volume
-        
+
         volume_constraint_jacobian = formulation.get_volume_jacobian
 
-        problem = types.SimpleNamespace(
+        problem = SimpleNamespace(
             get_x=formulation.get_phase,
             set_x=formulation.set_phase,
             get_f=formulation.get_energy,
@@ -181,9 +177,30 @@ def run_constant_volume(config, run_dir: RunDir):
     return io
 
 
+def _generate_rough_from_config(grid, surface_cfg):
+    """Generate rough surface from config dict."""
+    cfg = dict(surface_cfg)
+    cfg.pop("shape")
+
+    # Convert wavelength in pixels to angular wavenumber
+    a = grid.element_sizes[0]
+    qR = (2 * np.pi) / (a * cfg["rolloff_wavelength_pixels"])
+    qS = (2 * np.pi) / (a * cfg["cutoff_wavelength_pixels"])
+
+    # Generate PSD and convert to height
+    roughness = SelfAffineRoughness(cfg["prefactor"], qR, qS, cfg["hurst_exponent"])
+    q_2D = grid.form_spectral_mesh()
+    _, C_2D = roughness.mapto_isotropic_psd(q_2D)
+
+    rng = random.default_rng(cfg.get("seed"))
+    height = psd_to_height(C_2D, rng=rng)
+    return height.squeeze(axis=0)
+
+
 # =============================================================================
 # Visualization
 # =============================================================================
+
 
 def animate_constant_volume(io: SimulationIO):
     """
@@ -270,7 +287,7 @@ def animate_constant_volume(io: SimulationIO):
     return animation.FuncAnimation(fig, update_image, n_step, interval=200, repeat_delay=3000)
 
 
-def visualize_constant_volume(io: SimulationIO, output_dir):
+def _visualize_constant_volume(io: SimulationIO, output_dir):
     """Create and save visualization for constant-volume simulation."""
     latexify_plot(15)
     anim = animate_constant_volume(io)

@@ -62,7 +62,7 @@ def generate_surface(grid: Grid, shape: str, **params) -> np.ndarray:
     grid : Grid
         The computational grid.
     shape : str
-        Surface type identifier ("flat", "tip", "sinusoid", "pattern").
+        Surface type identifier ("flat", "tip", "sinusoid").
     **params
         Shape-specific parameters.
 
@@ -110,43 +110,3 @@ def _generate_sinusoid(grid: Grid, wavenumber: float, amplitude: float) -> np.nd
     [x, y] = grid.form_nodal_mesh()
     height = amplitude * np.cos(wavenumber * x) * np.cos(wavenumber * y)
     return height
-
-
-@_register("pattern")
-def _generate_pattern(
-    grid: Grid,
-    tip_center_x: float = 0.0,
-    tip_center_y: float = 0.0,
-    wave_len_L: float | None = None,
-    wave_amp_L: float | None = None,
-    wave_len_M: float | None = None,
-    wave_amp_M: float | None = None,
-    wave_len_S: float | None = None,
-    wave_amp_S: float | None = None,
-) -> np.ndarray:
-    """Generate a multi-scale wave pattern surface."""
-    [xm, ym] = grid.form_nodal_mesh()
-    x0 = tip_center_x
-    y0 = tip_center_y
-
-    height = np.zeros_like(xm)
-
-    # Large wavelength component
-    if wave_len_L is not None and wave_amp_L is not None:
-        height += wave_amp_L * \
-                  np.cos(2 * np.pi / wave_len_L * (xm - x0)) * \
-                  np.cos(2 * np.pi / wave_len_L * (ym - y0))
-
-    # Medium wavelength component
-    if wave_len_M is not None and wave_amp_M is not None:
-        height += wave_amp_M * \
-                  np.cos(2 * np.pi / wave_len_M * (xm - x0)) * \
-                  np.cos(2 * np.pi / wave_len_M * (ym - y0))
-
-    # Small wavelength component
-    if wave_len_S is not None and wave_amp_S is not None:
-        height += wave_amp_S * \
-                  np.cos(2 * np.pi / wave_len_S * (xm - x0)) * \
-                  np.cos(2 * np.pi / wave_len_S * (ym - y0))
-
-    return np.atleast_2d(height)
