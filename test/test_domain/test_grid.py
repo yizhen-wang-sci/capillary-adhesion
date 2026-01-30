@@ -3,8 +3,8 @@ import numpy as np
 from a_package.domain import Grid
 from a_package.domain.fem import FirstOrderElement
 
-from test.reference import Grid as ReferenceGrid
-from test.reference import FirstOrderElement as ReferenceFirstOrderElement
+from test.test_domain.reference import Grid as ReferenceGrid
+from test.test_domain.reference import FirstOrderElement as ReferenceFirstOrderElement
 
 
 def test_first_order_element():
