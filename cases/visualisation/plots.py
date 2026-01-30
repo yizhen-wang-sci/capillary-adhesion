@@ -8,9 +8,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from a_package.domain import Grid
-from a_package.simulation import SimulationIO, Term
+from a_package.model import Term
+from a_package.simulation import SimulationIO
 
 from .primitives import (
+    get_length_unit,
+    compute_extent,
     draw_field_2d,
     draw_masked_field_2d,
     draw_cross_section,
@@ -24,20 +27,6 @@ from .primitives import (
 
 
 # =============================================================================
-# Helpers
-# =============================================================================
-
-def _nondimensionalize(grid: Grid):
-    """Get nondimensionalization unit from grid."""
-    return min(grid.element_sizes)
-
-
-def _compute_extent(grid: Grid, unit):
-    """Compute imshow extent from grid dimensions."""
-    return (0, grid.lengths[0] / unit, 0, grid.lengths[1] / unit)
-
-
-# =============================================================================
 # Cross-section plots
 # =============================================================================
 
@@ -48,7 +37,7 @@ def plot_cross_section_sketch(ax: plt.Axes, io: SimulationIO, idx_step: int, idx
     Wrapper that loads data and calls draw_cross_section primitive.
     """
     grid = io.grid
-    unit = _nondimensionalize(grid)
+    unit = get_length_unit(grid)
     data = io.load_step(
         idx_step,
         field_names=[Term.upper_solid, Term.lower_solid, Term.phase],
@@ -87,27 +76,27 @@ def plot_cross_section_phase_field(ax: plt.Axes, io: SimulationIO, idx_step: int
 def plot_height_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
     """Plot upper surface height field."""
     data = io.load_step(idx_step, field_names=[Term.upper_solid])
-    unit = _nondimensionalize(io.grid)
+    unit = get_length_unit(io.grid)
     h = data[Term.upper_solid].squeeze() / unit
-    extent = _compute_extent(io.grid, unit)
+    extent = compute_extent(io.grid, unit)
     return draw_field_2d(ax, h, extent, cmap=cmap_height)
 
 
 def plot_gap_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
     """Plot gap field between surfaces."""
     data = io.load_step(idx_step, field_names=[Term.gap])
-    unit = _nondimensionalize(io.grid)
+    unit = get_length_unit(io.grid)
     g = data[Term.gap].squeeze() / unit
-    extent = _compute_extent(io.grid, unit)
+    extent = compute_extent(io.grid, unit)
     return draw_field_2d(ax, g, extent, cmap=cmap_gap, vmin=0, vmax=g.max())
 
 
 def plot_contact_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
     """Plot contact regions (where gap <= 0)."""
     data = io.load_step(idx_step, field_names=[Term.gap])
-    unit = _nondimensionalize(io.grid)
+    unit = get_length_unit(io.grid)
     g = data[Term.gap].squeeze() / unit
-    extent = _compute_extent(io.grid, unit)
+    extent = compute_extent(io.grid, unit)
     # Mask non-contact regions (gap > 0)
     return draw_masked_field_2d(ax, g, extent, mask=(g > 0),
                                  cmap=cmap_contact, vmin=-1, vmax=1, alpha=0.4)
@@ -116,8 +105,8 @@ def plot_contact_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
 def plot_droplet_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
     """Plot liquid droplet with liquid and transition phases overlaid."""
     data = io.load_step(idx_step, field_names=[Term.phase])
-    unit = _nondimensionalize(io.grid)
-    extent = _compute_extent(io.grid, unit)
+    unit = get_length_unit(io.grid)
+    extent = compute_extent(io.grid, unit)
     phi = data[Term.phase].squeeze()
 
     # Use partial colormap range (bluest blue is too dark)
@@ -136,8 +125,8 @@ def plot_droplet_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
 def plot_phase_field_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
     """Plot raw phase field values."""
     data = io.load_step(idx_step, field_names=[Term.phase])
-    unit = _nondimensionalize(io.grid)
-    extent = _compute_extent(io.grid, unit)
+    unit = get_length_unit(io.grid)
+    extent = compute_extent(io.grid, unit)
     phi = data[Term.phase].squeeze()
     return draw_field_2d(ax, phi, extent, cmap="Blues", vmin=0, vmax=2, interpolation="nearest")
 
@@ -160,7 +149,7 @@ def plot_gibbs_free_energy(ax: plt.Axes, io: SimulationIO, nb_steps: int | None 
     energy = data[Term.energy][:nb_steps]
 
     # Non-dimensionalize
-    unit = _nondimensionalize(io.grid)
+    unit = get_length_unit(io.grid)
     energy = energy / (unit**2)
 
     steps = np.arange(len(energy))
@@ -177,7 +166,7 @@ def plot_normal_force(ax: plt.Axes, io: SimulationIO, nb_steps: int | None = Non
     force = -(energy[1:] - energy[:-1]) / (displ_z[1:] - displ_z[:-1])
 
     # Non-dimensionalize
-    unit = _nondimensionalize(io.grid)
+    unit = get_length_unit(io.grid)
     force = force / unit
 
     # Midpoint steps for derivative
@@ -191,7 +180,7 @@ def plot_pressure(ax: plt.Axes, io: SimulationIO, nb_steps: int | None = None):
     pressure = data[Term.pressure][:nb_steps]
 
     # Non-dimensionalize
-    unit = _nondimensionalize(io.grid)
+    unit = get_length_unit(io.grid)
     pressure = pressure * unit
 
     steps = np.arange(len(pressure))

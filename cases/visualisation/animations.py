@@ -8,7 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-from a_package.simulation import SimulationIO, Term
+from a_package.model import Term
+from a_package.simulation import SimulationIO
 
 from .primitives import latexify_plot
 from .plots import plot_combined_topography

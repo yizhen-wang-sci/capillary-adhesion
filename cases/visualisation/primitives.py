@@ -9,6 +9,22 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
+from a_package.domain import Grid
+
+
+# =============================================================================
+# Grid helpers
+# =============================================================================
+
+def get_length_unit(grid: Grid):
+    """Get characteristic length unit from grid (smallest element size)."""
+    return min(grid.element_sizes)
+
+
+def compute_extent(grid: Grid, unit: float):
+    """Compute imshow extent from grid dimensions."""
+    return (0, grid.lengths[0] / unit, 0, grid.lengths[1] / unit)
+
 
 # =============================================================================
 # Color constants
