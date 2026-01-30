@@ -1,70 +1,56 @@
 """
-IO for persisting fields and arrays.
+Parallel-aware data persistence.
 """
 
 import pathlib
 
 import numpy as np
 
-# import NuMPI.IO
+import NuMPI.IO
+from NuMPI import MPI
 
 from .grid import Grid
-from .field import Field, adapt_shape
+
+
+_comm = MPI.COMM_WORLD
 
 
 class NpyIO:
     """
-    NumPy-based persistence for fields and arrays.
+    NumPy-based parallel-aware data persistence.
     """
 
-    root_path: pathlib.Path
-
     def __init__(self, root_path):
-        self.root_path = pathlib.Path(root_path)
+        self._root_path = pathlib.Path(root_path)
 
     def _to_full_path(self, name: str):
-        return self.root_path / f"{name}.npy"
+        return self._root_path / f"{name}.npy"
 
-    def load_field(self, grid: Grid, name: str):
-        # Serial implementation
-        try:
-            field = np.load(self._to_full_path(name), allow_pickle=False)
-        except FileNotFoundError:
-            field = np.atleast_2d([])
-        return adapt_shape(field)
+    def load_distributed(self, grid: Grid, name: str):
+        return NuMPI.IO.load_npy(
+            self._to_full_path(name),
+            tuple(grid.subdomain_base),
+            tuple(grid.nb_elements))
 
-        # # Parallel implementation using NuMPI
-        # try:
-        #     field = NuMPI.IO.load_npy(
-        #         self._to_full_path(name),
-        #         tuple(grid.subdomain_base),
-        #         tuple(grid.nb_elements))
-        # except FileNotFoundError:
-        #     field = np.atleast_2d([])
-        # return adapt_shape(field)
+    def save_distributed(self, grid: Grid, name: str, data):
+        NuMPI.IO.save_npy(
+            self._to_full_path(name),
+            np.ascontiguousarray(data),
+            tuple(grid.subdomain_base),
+            tuple(grid.nb_elements_global))
 
-    def save_field(self, grid: Grid, name: str, field: Field):
-        # Serial implementation
-        np.save(self._to_full_path(name), field)
+    def load_singular(self, name: str):
+        if _comm.rank == 0:
+            return np.load(self._to_full_path(name), allow_pickle=False)
+        return None
 
-        # # Parallel implementation using NuMPI
-        # # FIXME: it cannot save all components / subpoints.
-        # NuMPI.IO.save_npy(
-        #     self._to_full_path(name),
-        #     np.ascontiguousarray(field.squeeze()),
-        #     tuple(grid.subdomain_base),
-        #     tuple(grid.nb_elements_global))
+    def save_singular(self, name: str, data):
+        if _comm.rank == 0:
+            np.save(self._to_full_path(name), data)
+        _comm.barrier()
 
-    def load_value_array(self, name: str):
-        try:
-            array = np.load(self._to_full_path(name), allow_pickle=False)
-        except FileNotFoundError:
-            array = np.array([])
-        return array
+    def load_replicated(self, name: str):
+        return _comm.bcast(self.load_singular(name))
 
-    def save_value_array(self, name: str, array: np.ndarray):
-        # Serial implementation
-        np.save(self._to_full_path(name), array)
-
-        # # Parallel implementation using serial_exec
-        # serial_exec(lambda: array, store=lambda a: np.save(self._to_full_path(name), a))
+    def save_aggregated(self, name, data):
+        self.save_singular(name, _comm.gather(data))
