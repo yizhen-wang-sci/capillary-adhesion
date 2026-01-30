@@ -6,7 +6,12 @@ import numpy as np
 import numpy.fft as fft
 import muGrid
 
-from .communicator import communicator, factorize_closest
+try:
+    from mpi4py import MPI
+    _comm = MPI.COMM_WORLD
+except ModuleNotFoundError:
+    _comm = None
+communicator = muGrid.Communicator(_comm)
 
 
 class Grid:
@@ -76,3 +81,13 @@ class Grid:
     # FIXME: muFFT?
     def form_spectral_mesh(self):
         return np.meshgrid(self.form_spectral_axis(0), self.form_spectral_axis(1))
+
+
+def factorize_closest(value: int, nb_ints: int):
+    """Find the maximal combination of nb_ints integers whose product is less or equal to value."""
+    nb_divisions = []
+    for root_degree in range(nb_ints, 0, -1):
+        max_divisor = int(value ** (1 / root_degree))
+        nb_divisions.append(max_divisor)
+        value //= max_divisor
+    return nb_divisions
