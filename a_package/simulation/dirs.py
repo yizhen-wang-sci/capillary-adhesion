@@ -37,9 +37,8 @@ class _Dir:
     def __truediv__(self, other: str | Path):
         return self._path / other
 
-    @property
-    def path(self):
-        return self._path
+    def __fspath__(self):
+        return str(self._path)
 
 
 class CaseDir(_Dir):
