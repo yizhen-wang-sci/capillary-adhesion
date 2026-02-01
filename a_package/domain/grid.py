@@ -13,6 +13,8 @@ class Grid:
 
     lengths: typing.Sequence[float]
     nb_elements: typing.Sequence[int]
+    reference_scale: float = 1.0
+    """Physical length per grid unit. Converts dimensionless grid to physical coordinates."""
 
     def __post_init__(self):
         self.element_sizes = [l / n for [l, n] in zip(self.lengths, self.nb_elements)]
@@ -29,7 +31,7 @@ class Grid:
         return np.meshgrid(self.form_index_axis(0), self.form_index_axis(1))
 
     def form_nodal_axis(self, ax_index: int, with_endpoint: bool = False):
-        d = self.element_sizes[ax_index]
+        d = self.element_sizes[ax_index] * self.reference_scale
         n = self.nb_elements[ax_index]
         if with_endpoint:
             n += 1
@@ -39,7 +41,7 @@ class Grid:
         return np.meshgrid(self.form_nodal_axis(0, with_endpoint), self.form_nodal_axis(1, with_endpoint))
 
     def form_spectral_axis(self, ax_index: int):
-        d = self.element_sizes[ax_index]
+        d = self.element_sizes[ax_index] * self.reference_scale
         n = self.nb_elements[ax_index]
         return (2 * np.pi) * fft.fftfreq(n, d)
 
