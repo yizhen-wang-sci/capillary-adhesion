@@ -151,9 +151,6 @@ class RunDir(_Dir):
         self.data_dir.mkdir(exist_ok=exist_ok)
         self.visuals_dir.mkdir(exist_ok=exist_ok)
 
-    def __truediv__(self, other: str | Path):
-        return self._path / other
-
     @property
     def input_file(self):
         return self._path / "input.cfg"
