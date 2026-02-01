@@ -60,3 +60,21 @@ class Grid:
 
     def form_spectral_mesh(self, ref_scale: float = 1.0):
         return np.meshgrid(self.form_spectral_axis(0, ref_scale), self.form_spectral_axis(1, ref_scale))
+
+    # =========================================================================
+    # Rescale by element_area
+    # =========================================================================
+
+    def rescale(self, array: np.ndarray, direction: str):
+        """
+        Rescale array by element_area.
+
+        direction='forward': multiply by element_area (e.g., integral, before fft2)
+        direction='backward': divide by element_area (e.g., after ifft2)
+        """
+        if direction == 'forward':
+            return array * self.element_area
+        elif direction == 'backward':
+            return array / self.element_area
+        else:
+            raise ValueError(f"direction must be 'forward' or 'backward', got {direction}")
