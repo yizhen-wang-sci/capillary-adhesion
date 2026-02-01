@@ -12,7 +12,8 @@ from .capillary import NodalFormCapillary
 from .contact import RigidContact
 
 
-def solve_rigid_constant_volume(grid, upper, lower, separation, volume, capillary_args, solver_args, phase_init=None):
+def solve_rigid_constant_volume(
+        grid, upper, lower, separation, volume, capillary_args, solver_args, phase_init=None, pressure_init=0.0):
     """
     Solve equilibrium at constant volume.
 
@@ -26,12 +27,7 @@ def solve_rigid_constant_volume(grid, upper, lower, separation, volume, capillar
     gap = contact.get_gap()
     capillary.set_gap(gap)
 
-    if phase_init is None:
-        rng = random.default_rng()
-        phase = rng.random((1, 1, *grid.nb_elements))
-    else:
-        phase = phase_init.copy()
-
+    # Build the capillary problem
     def volume_constraint():
         return capillary.get_volume() - volume
 
@@ -48,8 +44,14 @@ def solve_rigid_constant_volume(grid, upper, lower, separation, volume, capillar
         x_ub=capillary.phase_ub,
     )
 
-    result = optimizer.solve_minimisation(problem, x0=phase, lam0=0.0)
-    phase = np.reshape(result.primal, phase.shape)
+    # initial guess
+    if phase_init is None:
+        rng = random.default_rng()
+        phase_init = rng.random((1, 1, *grid.nb_elements))
+    init_shape = phase_init.shape
+
+    result = optimizer.solve_minimisation(problem, x0=phase_init, lam0=pressure_init)
+    phase = np.reshape(result.primal, init_shape)
 
     return gap, phase, result
 
@@ -72,12 +74,7 @@ def solve_rigid_constant_pressure(
     gap = contact.get_gap()
     capillary.set_gap(gap)
 
-    if phase_init is None:
-        rng = random.default_rng()
-        phase = rng.random((1, 1, *grid.nb_elements))
-    else:
-        phase = phase_init.copy()
-
+    # Build the capillary problem
     def helmholtz_potential():
         return capillary.get_energy() + pressure * capillary.get_volume()
 
@@ -93,7 +90,13 @@ def solve_rigid_constant_pressure(
         x_ub=capillary.phase_ub,
     )
 
-    result = solver.solve_minimisation(problem, x0=phase)
-    phase = np.reshape(result.primal, phase.shape)
+    # initial guess
+    if phase_init is None:
+        rng = random.default_rng()
+        phase_init = rng.random((1, 1, *grid.nb_elements))
+    init_shape = phase_init.shape
+
+    result = solver.solve_minimisation(problem, x0=phase_init)
+    phase = np.reshape(result.primal, init_shape)
 
     return gap, phase, result
