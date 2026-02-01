@@ -50,6 +50,8 @@ class SelfAffineRoughness:
         psd[constant] = self.C0 * self.qR ** (-2 - 2 * self.H)
         psd[self_affine] = self.C0 * wavenumber[self_affine] ** (-2 - 2 * self.H)
         psd[omitted] = 0
+        # Rewrite mean value to zero
+        psd[wavenumber == 0] = 0
 
         return psd
 
