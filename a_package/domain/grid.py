@@ -48,18 +48,14 @@ class Grid:
     # Spectral: 2π / (N * pixel_size * ref_scale) * fftfreq indices
     # =========================================================================
 
-    def form_spectral_axis(self, ax_index: int, ref_scale: float = 1.0):
-        """Return spectral wavenumbers in FFT order.
-
-        ref_scale: numeric multiplier converting grid length to physical length.
-            Caller must ensure consistent units when combining with physical quantities.
-        """
+    def form_spectral_axis(self, ax_index: int):
+        """Return spectral wavenumbers in FFT order."""
         n = self.nb_elements[ax_index]
-        d = self.element_sizes[ax_index] * ref_scale
+        d = self.element_sizes[ax_index]
         return (2 * np.pi) * fft.fftfreq(n, d)
 
-    def form_spectral_mesh(self, ref_scale: float = 1.0):
-        return np.meshgrid(self.form_spectral_axis(0, ref_scale), self.form_spectral_axis(1, ref_scale))
+    def form_spectral_mesh(self):
+        return np.meshgrid(self.form_spectral_axis(0), self.form_spectral_axis(1))
 
     # =========================================================================
     # Rescale by element_area
