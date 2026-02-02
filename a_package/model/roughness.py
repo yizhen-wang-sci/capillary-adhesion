@@ -16,12 +16,14 @@ class SelfAffineRoughness:
     """Parameters defining self-affine roughness spectrum."""
     C0: float
     """Prefactor"""
-    qR: float
-    """Roll-off (angular) wavenumber"""
-    qS: float
-    """Cut-off (angular) wavenumber"""
     H: float
     """Hurst exponent"""
+    qR: float
+    """The (angular) wavenumber below which the PSD keeps constant, above which the PSD rolls off."""
+    qS: float
+    """The (angular) wavenumber above which the PSD is negligible."""
+    qT: float = 2*np.pi
+    """The (angular) wavenumber below which the PSD is terminated. Defaults to 2π (1 cycle)."""
 
     def mapto_isotropic_psd(self, wavevector: np.ndarray, component_axis: int | None = None):
         """
@@ -41,16 +43,17 @@ class SelfAffineRoughness:
             wavenumber = linalg.norm(wavevector, ord=2, axis=component_axis)
 
         # Find three regimes
-        constant = wavenumber < self.qR
+        constant = (wavenumber >= self.qT) & (wavenumber < self.qR)
         self_affine = (wavenumber >= self.qR) & (wavenumber < self.qS)
-        omitted = wavenumber >= self.qS
+        zeroed = (wavenumber < self.qT) | (wavenumber >= self.qS)
 
         # Evaluate accordingly
         psd = np.full_like(wavenumber, np.nan, dtype=float)
         psd[constant] = self.C0 * self.qR ** (-2 - 2 * self.H)
         psd[self_affine] = self.C0 * wavenumber[self_affine] ** (-2 - 2 * self.H)
-        psd[omitted] = 0
-        # Rewrite mean value to zero
+        psd[zeroed] = 0
+
+        # Ensure mean value is zero
         psd[wavenumber == 0] = 0
 
         return psd
