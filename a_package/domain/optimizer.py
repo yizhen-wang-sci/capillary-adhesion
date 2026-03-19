@@ -155,12 +155,12 @@ class Optimizer:
                 x_diff_lb = x - num_opt.x_lb
                 i_active_lb = np.argwhere((x_diff_lb < self.active_bound_threshold) & (l_Dx > 0))
                 criteria_x_lb = x_diff_lb[i_active_lb] < self.tol_bound_constraint
-                criteria_l_Dx[i_active_lb] |= criteria_x_lb
+                criteria_l_Dx[i_active_lb] = criteria_x_lb
                 # upper bound
                 x_diff_ub = num_opt.x_ub - x
-                i_active_ub = np.argwhere((x_diff_ub < self.active_bound_threshold) & (l_Dx > 0))
-                criteria_x_ub = x_diff_lb[i_active_ub] < self.tol_bound_constraint
-                criteria_l_Dx[i_active_ub] |= criteria_x_ub
+                i_active_ub = np.argwhere((x_diff_ub < self.active_bound_threshold) & (l_Dx < 0))
+                criteria_x_ub = x_diff_ub[i_active_ub] < self.tol_bound_constraint
+                criteria_l_Dx[i_active_ub] = criteria_x_ub
 
             # Check equality constraint
             criteria_g = True
@@ -206,8 +206,8 @@ class Optimizer:
 
                 # upper bound
                 x_diff_ub = num_opt.x_ub - x_plus
-                i_active_ub = np.argwhere((x_diff_ub < self.active_bound_threshold) & (l_Dx_plus > 0))
-                criteria_x_ub = x_diff_lb[i_active_ub] < self.tol_bound_constraint
+                i_active_ub = np.argwhere((x_diff_ub < self.active_bound_threshold) & (l_Dx_plus < 0))
+                criteria_x_ub = x_diff_ub[i_active_ub] < self.tol_bound_constraint
 
                 # Tighten the squashing if any active bound does not satisfy the criteria
                 if not np.all(criteria_x_lb) or not np.all(criteria_x_ub):
