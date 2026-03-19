@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import numpy.random as random
 
-from a_package.domain import AugmentedLagrangian, BoundConstrainedSolver
+from a_package.domain import Optimizer
 from .capillary import NodalFormCapillary
 from .contact import RigidContact
 
@@ -21,7 +21,7 @@ def solve_rigid_constant_volume(
     """
     contact = RigidContact(upper, lower)
     capillary = NodalFormCapillary(grid, capillary_args)
-    optimizer = AugmentedLagrangian(**solver_args)
+    optimizer = Optimizer(**solver_args)
 
     contact.set_mean_separation(separation)
     gap = contact.get_gap()
@@ -65,9 +65,9 @@ def solve_rigid_constant_pressure(
     """
     contact = RigidContact(upper, lower)
     capillary = NodalFormCapillary(grid, capillary_args)
-    solver = BoundConstrainedSolver(
+    solver = Optimizer(
         max_iter=solver_args["max_inner_iter"],
-        tol_convergence=solver_args["tol_convergence"],
+        tol_gradient=solver_args["tol_convergence"],
     )
 
     contact.set_mean_separation(separation)
