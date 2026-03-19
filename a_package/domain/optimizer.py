@@ -82,7 +82,7 @@ class OptimizerResult(typing.TypedDict, total=False):
 class Optimizer:
 
     def __init__(self, max_loop: int=20, max_iter: int = 1000, tol_convergence: float = 1e-6,
-                 tol_eq_constraint: float = 1e-9, tol_bound_constraint=1e-6, tol_creeping: float = 1e-12):
+                 tol_eq_constraint: float = 1e-9, tol_bound_constraint=1e-9, tol_creeping: float = 1e-12):
         if max_loop < 0:
             raise ValueError("Maximum number of loop must be non-negative.")
         self.max_loop = max_loop
@@ -90,9 +90,11 @@ class Optimizer:
         self.tol_gradient = tol_convergence
         self.tol_creeping = tol_creeping
         self.tol_eq_constraint = tol_eq_constraint
-        self.tol_bound_constraint = tol_bound_constraint
         self.sufficient_eq_decrease = 1e-2
         self.eq_weight_multiplier = 3e0
+        self.tol_bound_constraint = tol_bound_constraint
+        self.active_bound_threshold = 1e-2
+        self.squashing_parameter_multiplier = 2e0
 
     def solve_minimisation(self, num_opt: typing.Union[NumOpt, NumOptEq, NumOptB, NumOptEqB], x0: typing.Sequence[float],
                            lam0: float=None, alpha0: float=None, s0: np.ndarray=None, beta0: float=None):
@@ -117,11 +119,12 @@ class Optimizer:
         # Check values
         x0 = np.asarray(x0)
         if has_bound_constraint:
-            if np.any(x0 < num_opt.x_lb) or np.any(x0 > num_opt.x_ub):
-                if s0 is None or beta0 is None:
-                    x0 = np.clip(x0, num_opt.x_lb, num_opt.x_ub)
-                else:
-                    x0 = squashing(s0, num_opt.x_lb, num_opt.x_ub, beta0)
+            if beta0 is None:
+                x0 = np.clip(x0, num_opt.x_lb, num_opt.x_ub)
+            elif s0 is None:  # and beta0 is not None
+                x0 = squashing(x0, num_opt.x_lb, num_opt.x_ub, beta0)
+            else:
+                x0 = squashing(s0, num_opt.x_lb, num_opt.x_ub, beta0)
 
         # Initial values (primal, dual, parameters)
         x_plus = x0
@@ -144,14 +147,20 @@ class Optimizer:
             num_opt.set_x(x)
             l_Dx = num_opt.get_f_Dx()
             if has_eq_constraint:
-                g_Dx = num_opt.get_g_Dx()
                 # NOTE: here the plus is aligned with augmented Lagrangian
-                l_Dx += lam * g_Dx
+                l_Dx += lam * num_opt.get_g_Dx()
             criteria_l_Dx = np.abs(l_Dx) < self.tol_gradient
             if has_bound_constraint:
-                criteria_x_lb = (x - num_opt.x_lb) < self.tol_bound_constraint
-                criteria_x_ub = (num_opt.x_ub - x) < self.tol_bound_constraint
-                criteria_l_Dx |= (criteria_x_lb | criteria_x_ub)
+                # lower bound
+                x_diff_lb = x - num_opt.x_lb
+                i_active_lb = np.argwhere((x_diff_lb < self.active_bound_threshold) & (l_Dx > 0))
+                criteria_x_lb = x_diff_lb[i_active_lb] < self.tol_bound_constraint
+                criteria_l_Dx[i_active_lb] |= criteria_x_lb
+                # upper bound
+                x_diff_ub = num_opt.x_ub - x
+                i_active_ub = np.argwhere((x_diff_ub < self.active_bound_threshold) & (l_Dx > 0))
+                criteria_x_ub = x_diff_lb[i_active_ub] < self.tol_bound_constraint
+                criteria_l_Dx[i_active_ub] |= criteria_x_ub
 
             # Check equality constraint
             criteria_g = True
@@ -179,8 +188,30 @@ class Optimizer:
 
             # Prepare for the next loop
             x_plus = result['primal']
+
             if has_bound_constraint:
-                x_plus = squashing(x_plus, num_opt.x_lb, num_opt.x_ub, beta)
+                s_plus = result['primal']
+                x_plus = squashing(s_plus, num_opt.x_lb, num_opt.x_ub, beta)
+
+            num_opt.set_x(x_plus)
+            l_Dx_plus = num_opt.get_f_Dx()
+            if has_eq_constraint:
+                l_Dx_plus += lam * num_opt.get_g_Dx()
+
+            if has_bound_constraint:
+                # lower bound
+                x_diff_lb = x_plus - num_opt.x_lb
+                i_active_lb = np.argwhere((x_diff_lb < self.active_bound_threshold) & (l_Dx_plus > 0))
+                criteria_x_lb = x_diff_lb[i_active_lb] < self.tol_bound_constraint
+
+                # upper bound
+                x_diff_ub = num_opt.x_ub - x_plus
+                i_active_ub = np.argwhere((x_diff_ub < self.active_bound_threshold) & (l_Dx_plus > 0))
+                criteria_x_ub = x_diff_lb[i_active_ub] < self.tol_bound_constraint
+
+                # Tighten the squashing if any active bound does not satisfy the criteria
+                if not np.all(criteria_x_lb) or not np.all(criteria_x_ub):
+                    beta_plus = beta * self.squashing_parameter_multiplier
 
             if has_eq_constraint and not criteria_g:
                 num_opt.set_x(x_plus)
