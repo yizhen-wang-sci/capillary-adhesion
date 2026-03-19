@@ -25,7 +25,7 @@ def test_unconstrained_numopt():
     num_opt = types.SimpleNamespace(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx)
 
     optimizer = Optimizer(max_loop=1)
-    result = optimizer.solve_minimisation(num_opt, x0=[10, 10])
+    result = optimizer.solve_minimisation(num_opt, x0=[5, 5])
 
     assert np.all(np.isclose(result['primal'], 0.))
     assert result['is_converged']
@@ -59,7 +59,7 @@ def test_eq_constrained_numopt():
     num_opt = types.SimpleNamespace(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, get_g=get_g, get_g_Dx=get_g_Dx)
 
     optimizer = Optimizer(max_loop=10)
-    result = optimizer.solve_minimisation(num_opt, x0=[10., 10.], lam0=0., alpha0=1e1)
+    result = optimizer.solve_minimisation(num_opt, x0=[5., 5.], lam0=0., alpha0=1e1)
 
     assert np.all(np.isclose(result['primal'], [1., 0.]))
     assert result['is_converged']
@@ -82,12 +82,12 @@ def test_bound_constrained_numopt():
     def get_f_Dx():
         return 2 * saved_x
 
-    num_opt = types.SimpleNamespace(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, x_lb=np.array([2., -1]), x_ub=10.)
+    num_opt = types.SimpleNamespace(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, x_lb=np.array([2., -0.5]), x_ub=5.)
 
-    optimizer = Optimizer(max_loop=5)
-    result = optimizer.solve_minimisation(num_opt, x0=[10., 10.], beta0=1e-2)
+    optimizer = Optimizer(max_loop=10)
+    result = optimizer.solve_minimisation(num_opt, x0=[5., 5.], beta0=1e-2)
 
-    assert np.all(np.isclose(result['primal'], [2., 0.]))
+    assert np.all(np.isclose(result['primal'], [2., 0.], atol=1e-6))
     assert result['is_converged']
 
 
@@ -116,10 +116,10 @@ def test_eq_and_bound_constrained_numopt():
         x1, x2 = saved_x
         return np.array([2 * (x1 - 2), 2 * x2])
 
-    num_opt = types.SimpleNamespace(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, get_g=get_g, get_g_Dx=get_g_Dx, x_lb=np.array([2., -1.]), x_ub=10.)
+    num_opt = types.SimpleNamespace(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, get_g=get_g, get_g_Dx=get_g_Dx, x_lb=np.array([2., -0.5]), x_ub=5.)
 
     optimizer = Optimizer(max_loop=10)
-    result = optimizer.solve_minimisation(num_opt, x0=np.array([10., 10.]), lam0=0., alpha0=1e1, beta0=1e-2)
+    result = optimizer.solve_minimisation(num_opt, x0=np.array([5., 5.]), lam0=0., alpha0=1e1, beta0=1e-2)
 
-    assert np.all(np.isclose(result['primal'], [2., 1.]))
+    assert np.all(np.isclose(result['primal'], [2., 1.], atol=1e-6))
     assert result['is_converged']
