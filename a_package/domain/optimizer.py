@@ -81,19 +81,19 @@ class OptimizerResult(typing.TypedDict, total=False):
 
 class Optimizer:
 
-    def __init__(self, max_loop: int=20, max_iter: int = 1000, tol_convergence: float = 1e-6,
+    def __init__(self, max_loop: int=20, max_iter: int = 1000, tol_gradient: float = 1e-6,
                  tol_eq_constraint: float = 1e-9, tol_bound_constraint=1e-9, tol_creeping: float = 1e-12):
         if max_loop < 0:
             raise ValueError("Maximum number of loop must be non-negative.")
         self.max_loop = max_loop
         self.max_iter = max_iter
-        self.tol_gradient = tol_convergence
+        self.tol_gradient = tol_gradient
         self.tol_creeping = tol_creeping
         self.tol_eq_constraint = tol_eq_constraint
         self.sufficient_eq_decrease = 1e-2
         self.eq_weight_multiplier = 3e0
         self.tol_bound_constraint = tol_bound_constraint
-        self.active_bound_threshold = 1e-2
+        self.active_bound_threshold = 1e-3
         self.squashing_parameter_multiplier = 2e0
 
     def solve_minimisation(self, num_opt: typing.Union[NumOpt, NumOptEq, NumOptB, NumOptEqB], x0: typing.Sequence[float],
