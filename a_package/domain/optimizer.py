@@ -213,11 +213,7 @@ class Optimizer:
 
             # Prepare for the next loop
             if has_eq_constraint and not criteria_g:
-                if has_bound_constraint:
-                    s = squashing(x, num_opt.x_lb, num_opt.x_ub)
-                    num_opt.set_x(s)
-                else:
-                    num_opt.set_x(x)
+                num_opt.set_x(x_plus)
                 g_plus = num_opt.get_g()
                 lam_plus = lam + alpha * g_plus
                 # Increase penalty weight of equality constraint if not much improved
