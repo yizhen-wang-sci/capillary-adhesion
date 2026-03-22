@@ -14,7 +14,7 @@ class SimulationIO:
     grid: Grid
     _io: NpyIO
 
-    def __init__(self, grid, store_dir):
+    def __init__(self, store_dir, grid=None):
         self.grid = grid
         self._io = NpyIO(store_dir)
 
