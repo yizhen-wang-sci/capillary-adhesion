@@ -90,7 +90,7 @@ class Optimizer:
         self.tol_eq_constraint = tol_eq_constraint
         self.tol_creeping = tol_creeping
 
-        self.sufficient_eq_decrease = 1e-2
+        self.sufficient_eq_decrease = 5e-2
         self.eq_weight_maximum = 2e16
         self.eq_weight_multiplier = 5e0
 
@@ -139,6 +139,22 @@ class Optimizer:
         if has_bound_constraint:
             s_plus = s0
 
+        # Print headers
+        symb_nabla = "\u2207"
+        symb_alpha = "\u03B1"
+        symb_lam = "\u03BB"
+        tabel_headers_line1 = ["Loop", "f", f"|{symb_nabla}f+{symb_lam}{symb_nabla}g|", "|g|"]
+        if has_eq_constraint:
+            tabel_headers_line1 += [f"|{symb_lam}|", f"{symb_alpha}"]
+        tabel_headers_line2 = ["Iter", f"|{symb_nabla}L|", "Message"]
+        separator = "  "
+        line_width = 80
+        logger.info(separator.join("{:<4}".format(col_name) if col_name in [
+                    "Loop"] else "{:<8}".format(col_name)for col_name in tabel_headers_line1))
+        logger.info(separator.join("{:<4}".format(col_name) if col_name in [
+                    "Iter"] else "{:<8}".format(col_name)for col_name in tabel_headers_line2))
+        logger.info("=" * line_width)
+
         # State flags
         is_converged = False
         reached_limit = False
@@ -154,21 +170,31 @@ class Optimizer:
             alpha = alpha_plus
             beta = beta_plus
 
-            # Check gradients
             num_opt.set_x(x)
+            f = num_opt.get_f()
+
+            # Compute gradients
             l_Dx = num_opt.get_f_Dx()
             if has_eq_constraint:
                 l_Dx += lam * num_opt.get_g_Dx()
-            criteria_l_Dx = np.abs(l_Dx) < self.tol_gradient
+            l_Dx_norm = np.amax(abs(l_Dx))
 
-            # Check equality constraint
-            criteria_g = True
+            # Compute equality constraint
+            g_norm = 0
             if has_eq_constraint:
-                g = num_opt.get_g()
-                criteria_g = np.abs(g) < self.tol_eq_constraint
+                # FIXME: g is considered a scalar function as of now
+                g_norm = abs(num_opt.get_g())
 
-            # When both are satisfied, the solver is converged
-            if np.all(criteria_l_Dx) and criteria_g:
+            # Print states
+            padded_literals = [f"{loop_count:>4d}", f"{f:>8.1e}", f"{l_Dx_norm:>8.1e}", f"{g_norm:>8.1e}"]
+            if has_eq_constraint:
+                padded_literals += [f"{lam:>8.1e}", f"{alpha:>8.1e}"]
+            logger.info(separator.join(padded_literals))
+
+            # Check convergence
+            criteria_l_Dx = l_Dx_norm < self.tol_gradient
+            criteria_g = g_norm < self.tol_eq_constraint
+            if criteria_l_Dx and criteria_g:
                 is_converged = True
                 break
 
@@ -185,12 +211,17 @@ class Optimizer:
                 reformed = approx_bound_by_squashing(reformed, beta)
 
             if has_bound_constraint:
-                result = solve_unconstrained(reformed, s, max_iter=self.max_iter, tol_gradient=self.tol_gradient,
-                                             tol_creeping=self.tol_creeping)
+                result = solve_unconstrained(reformed, s, max_iter=self.max_iter, tol_gradient=1e-8, tol_creeping=1e-12)
             else:
-                result = solve_unconstrained(reformed, x, max_iter=self.max_iter, tol_gradient=self.tol_gradient,
-                                             tol_creeping=self.tol_creeping)
+                result = solve_unconstrained(reformed, x, max_iter=self.max_iter, tol_gradient=1e-8, tol_creeping=1e-12)
 
+            # Print progress
+            augm_lagr_Dx_norm = np.max(abs(reformed.get_f_Dx()))
+            padded_literals = [f"{result['nit']:>4d}", f"{augm_lagr_Dx_norm:>8.1e}", result['message']]
+            logger.info(separator.join(padded_literals))
+            logger.info("-" * line_width)
+
+            # Process results
             if has_bound_constraint:
                 s_plus = result['primal']
                 x_plus = squashing(s_plus, num_opt.x_lb, num_opt.x_ub)
@@ -205,19 +236,14 @@ class Optimizer:
                 if not np.all(criteria_l_Dx) and beta > self.bound_weight_minimum:
                     beta_plus = beta * self.bound_weight_multiplier
 
-            # Creeping
-            if np.amax(np.abs(x_plus - x)) < self.tol_creeping:
-                if criteria_g:
-                    is_converged = True
-                    break
-
             # Prepare for the next loop
-            if has_eq_constraint and not criteria_g:
+            if has_eq_constraint:
                 num_opt.set_x(x_plus)
                 g_plus = num_opt.get_g()
                 lam_plus = lam + alpha * g_plus
+
                 # Increase penalty weight of equality constraint if not much improved
-                if not np.abs(g_plus) < self.sufficient_eq_decrease * np.abs(g) and alpha < self.eq_weight_maximum:
+                if not criteria_g and not abs(g_plus) < self.sufficient_eq_decrease * g_norm and alpha < self.eq_weight_maximum:
                     alpha_plus = alpha * self.eq_weight_multiplier
 
         # Print based on flags
