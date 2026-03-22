@@ -80,12 +80,12 @@ class OptimizerResult(typing.TypedDict, total=False):
 
 class Optimizer:
 
-    def __init__(self, max_loop: int=20, max_iter: int = 1000, tol_gradient: float = 1e-6,
+    def __init__(self, max_outer_loop: int=20, max_inner_iter: int = 1000, tol_gradient: float = 1e-6,
                  tol_eq_constraint: float = 1e-6, tol_creeping: float = 1e-9):
-        if max_loop < 0:
+        if max_outer_loop < 0:
             raise ValueError("Maximum number of loop must be non-negative.")
-        self.max_loop = max_loop
-        self.max_iter = max_iter
+        self.max_outer_loop = max_outer_loop
+        self.max_inner_iter = max_inner_iter
         self.tol_gradient = tol_gradient
         self.tol_eq_constraint = tol_eq_constraint
         self.tol_creeping = tol_creeping
@@ -163,7 +163,7 @@ class Optimizer:
         had_abnormal_stop = False
 
         loop_count = 0
-        for loop_count in range(self.max_loop + 1):
+        for loop_count in range(self.max_outer_loop + 1):
             # Update
             x = x_plus
             # FIXME: replace the clipping?
@@ -208,7 +208,7 @@ class Optimizer:
                 break
 
             # For last iter, no more trial
-            if loop_count == self.max_loop:
+            if loop_count == self.max_outer_loop:
                 reached_limit = True
                 break
 
@@ -220,7 +220,8 @@ class Optimizer:
                 # FIXME: replace the clipping?
                 # reformed = approx_bound_by_squashing(reformed, beta)
                 reformed = approx_bound_by_clipping(reformed)
-            result = solve_unconstrained(reformed, x, max_iter=self.max_iter, tol_gradient=1e-6, tol_creeping=self.tol_creeping)
+            result = solve_unconstrained(reformed, x, max_iter=self.max_inner_iter, tol_gradient=self.tol_gradient,
+                                         tol_creeping=self.tol_creeping)
             x_plus = result['primal']
 
             # FIXME: replace the clipping?
