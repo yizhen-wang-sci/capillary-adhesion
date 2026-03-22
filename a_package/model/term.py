@@ -19,3 +19,6 @@ class Term(StrEnum):
     perimeter = "perimeter"
     phase_init = "phase_init"
     pressure_init = "pressure_init"
+    max_volume = "max_volume"
+    domain_size = "domain_size"
+    element_count = "element_count"
