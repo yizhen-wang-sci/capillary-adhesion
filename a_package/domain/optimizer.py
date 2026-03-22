@@ -68,6 +68,7 @@ class NumOptEqB(NumOptEq, NumOptB, typing.Protocol):
 
 class OptimizerResult(typing.TypedDict, total=False):
     primal: typing.Required[np.ndarray]
+    gradient: float
     dual: float
     is_converged: typing.Required[bool]
     reached_iter_limit: typing.Required[bool]
@@ -124,12 +125,12 @@ class Optimizer:
             if alpha0 is None:
                 alpha0 = 1e0
 
-        # FIXME: using clipping as a work-around
-        # if has_bound_constraint:
-        #     if np.any(x0 > num_opt.x_ub) or np.any(x0 < num_opt.x_lb):
-        #         x0 = np.clip(x0, num_opt.x_lb, num_opt.x_ub)
-        #     if beta0 is None:
-        #         beta0 = 1e0
+        if has_bound_constraint:
+            if np.any(x0 < num_opt.x_lb) or np.any(x0 > num_opt.x_ub):
+                x0 = np.clip(x0, num_opt.x_lb, num_opt.x_ub)
+            # FIXME: replace clipping?
+            # if beta0 is None:
+            #     beta0 = 1e0
 
         # Initial values (primal, dual, parameters)
         x_plus = x0
@@ -395,12 +396,17 @@ def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int, tol_gradi
         numopt.set_x(x.reshape(x_shape))
         return numopt.get_f_Dx()
 
+    bounds = None
+    # if hasattr(numopt, "x_lb") and hasattr(numopt, "x_ub"):
+    #     bounds = [(numopt.x_lb, numopt.x_ub)] * np.size(x0)
+
     # Serial implementation using scipy
     [x_plus, f_plus, info] = scipy.optimize.fmin_l_bfgs_b(
         compute_f,
         x0,
         fprime=compute_f_Dx,
         maxiter=max_iter,
+        bounds=bounds,
         # relative decrease of 'f', in units of 'eps'
         factr=tol_creeping / np.finfo(np.float64).resolution,
         # this 'pg' should be zero at exactly a local minimizer
@@ -412,6 +418,7 @@ def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int, tol_gradi
     is_converged = info["warnflag"] == 0
     return OptimizerResult(
         primal=numopt.get_x(),
+        gradient=info["grad"],
         time=t_exec,
         nit=info["nit"],
         is_converged=is_converged,
