@@ -62,7 +62,8 @@ class SelfAffineRoughness:
 def psd_to_height(psd: np.ndarray, seed: int | None = None, spatial_axes: Sequence[int] | None = None):
     """Convert power spectral density to height field via inverse FFT.
 
-    Pass seed for reproducibility; None uses random seed.
+    seed: seed passed to RNG for reproducibility; None uses random seed.
+    spatial_axes: axes along which to apply FFT; None (by NumPy) uses the last 2 axes as spatial.
     """
     # <h^2> corresponding to <PSD>, thus, take the square-root to match overall amplitude
     amplitude = np.sqrt(psd)
@@ -72,4 +73,7 @@ def psd_to_height(psd: np.ndarray, seed: int | None = None, spatial_axes: Sequen
     phase_angle = np.exp(1j * rng.uniform(0, 2 * np.pi, psd.shape))
 
     # transform back to real space
-    return fft.ifft2(amplitude * phase_angle, axes=spatial_axes).real
+    # cancels out NumPy's prefactor of N1*N2
+    nb_grid_pts = np.multiply.reduce(np.take(psd.shape, spatial_axes))
+    # when axes=None, NumPy treat the last two axes as spatial
+    return fft.ifft2(amplitude * phase_angle, axes=spatial_axes).real * nb_grid_pts
