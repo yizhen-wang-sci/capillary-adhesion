@@ -73,7 +73,8 @@ def psd_to_height(psd: np.ndarray, seed: int | None = None, spatial_axes: Sequen
     phase_angle = np.exp(1j * rng.uniform(0, 2 * np.pi, psd.shape))
 
     # transform back to real space
+    return fft.ifft2(amplitude * phase_angle, axes=spatial_axes).real
+
     # cancels out NumPy's prefactor of N1*N2
-    nb_grid_pts = np.multiply.reduce(np.take(psd.shape, spatial_axes))
-    # when axes=None, NumPy treat the last two axes as spatial
-    return fft.ifft2(amplitude * phase_angle, axes=spatial_axes).real * nb_grid_pts
+    # FIXME: when spatial_axes=None
+    # nb_grid_pts = np.multiply.reduce(np.take(psd.shape, spatial_axes))
