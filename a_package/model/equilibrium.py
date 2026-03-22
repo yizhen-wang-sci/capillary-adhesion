@@ -65,12 +65,7 @@ def solve_rigid_constant_pressure(
     """
     contact = RigidContact(upper, lower)
     capillary = NodalFormCapillary(grid, capillary_args)
-    solver = Optimizer(
-        max_loop=solver_args["max_loop"],
-        max_iter=solver_args["max_iter"],
-        tol_gradient=solver_args["tol_gradient"],
-        tol_eq_constraint=solver_args["tol_eq_constraint"],
-    )
+    solver = Optimizer(**solver_args)
 
     contact.set_mean_separation(separation)
     gap = contact.get_gap()
