@@ -64,7 +64,7 @@ def test_eq_constrained_numopt():
     result = optimizer.solve_minimisation(num_opt, x0=[5., 5.])
     print(result)
 
-    assert np.all(np.isclose(result['primal'], [1., 0.], atol=1e-4))
+    assert np.all(np.isclose(result['primal'], [1., 0.]))
     assert result['is_converged']
 
 
