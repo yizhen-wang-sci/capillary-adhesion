@@ -23,7 +23,7 @@ class SelfAffineRoughness:
     qS: float
     """The (angular) wavenumber above which the PSD is negligible."""
     qT: float = 2*np.pi
-    """The (angular) wavenumber below which the PSD is terminated. Defaults to 2π (1 cycle)."""
+    """The (angular) wavenumber below which the PSD is terminated. Defaults to 2π (1 cycle over unit length)."""
 
     def mapto_isotropic_psd(self, wavevector: np.ndarray, component_axis: int | None = None):
         """
