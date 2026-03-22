@@ -184,8 +184,8 @@ class Optimizer:
             # FIXME: replace the clipping?
             if has_bound_constraint:
                 # Project the gradient to the bounds
-                l_Dx[(x < num_opt.x_lb) & (l_Dx > 0)] = 0
-                l_Dx[(x > num_opt.x_ub) & (l_Dx < 0)] = 0
+                l_Dx[(x <= num_opt.x_lb) & (l_Dx > 0)] = 0
+                l_Dx[(x >= num_opt.x_ub) & (l_Dx < 0)] = 0
             l_Dx_norm = np.amax(abs(l_Dx))
 
             # Compute equality constraint
@@ -306,8 +306,8 @@ def approx_bound_by_clipping(num_opt: NumOptB):
     def get_f_Dx_projected():
         f_Dx = num_opt.get_f_Dx()
         x = num_opt.get_x()
-        f_Dx[(x < num_opt.x_lb) & (f_Dx > 0)] = 0
-        f_Dx[(x > num_opt.x_ub) & (f_Dx < 0)] = 0
+        f_Dx[(x <= num_opt.x_lb) & (f_Dx > 0)] = 0
+        f_Dx[(x >= num_opt.x_ub) & (f_Dx < 0)] = 0
         return f_Dx
 
     return types.SimpleNamespace(get_x=num_opt.get_x, set_x=set_x_clipped, get_f=num_opt.get_f, get_f_Dx=get_f_Dx_projected)
