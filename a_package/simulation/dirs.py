@@ -17,7 +17,7 @@ from .metadata import compute_script_hash, get_iso_time
 logger = logging.getLogger(__name__)
 
 
-class _Dir:
+class WorkDir:
     """Just a directory.
     
     Creates the directory if not exist. Supports using '/' like a path.
@@ -41,7 +41,7 @@ class _Dir:
         return str(self._path)
 
 
-class CaseDir(_Dir):
+class CaseDir(WorkDir):
     """
     A directory to hold scripts. Supports dumping information of a run and script 
     versioning.
@@ -132,7 +132,7 @@ class CaseDir(_Dir):
             json.dump(index, fp, indent=2)
 
 
-class RunDir(_Dir):
+class RunDir(WorkDir):
     """
     A directory to work with simulation runs. Specifies some convention about file or
     folder names to hold input, output (separate data & visuals) and log.
