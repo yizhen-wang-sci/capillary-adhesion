@@ -82,7 +82,7 @@ class OptimizerResult(typing.TypedDict, total=False):
 class Optimizer:
 
     def __init__(self, max_outer_loop: int=20, max_inner_iter: int = 1000, tol_gradient: float = 1e-6,
-                 tol_eq_constraint: float = 1e-6, tol_creeping: float = 1e-9):
+                 tol_eq_constraint: float = 1e-6, tol_creeping: float = 1e-12):
         if max_outer_loop < 0:
             raise ValueError("Maximum number of loop must be non-negative.")
         self.max_outer_loop = max_outer_loop
@@ -91,9 +91,9 @@ class Optimizer:
         self.tol_eq_constraint = tol_eq_constraint
         self.tol_creeping = tol_creeping
 
-        self.sufficient_eq_decrease = 5e-2
-        self.eq_weight_maximum = 2e16
-        self.eq_weight_multiplier = 5e0
+        self.sufficient_eq_decrease = 1e-2
+        self.eq_weight_multiplier = 3e0
+        self.eq_weight_maximum = 1e10
 
         self.bound_weight_minimum = 5e-5
         self.bound_weight_multiplier = 2e-1
