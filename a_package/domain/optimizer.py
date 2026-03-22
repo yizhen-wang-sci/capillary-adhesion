@@ -123,21 +123,23 @@ class Optimizer:
                 lam0 = 0.0
             if alpha0 is None:
                 alpha0 = 1e0
-        if has_bound_constraint:
-            if np.any(x0 > num_opt.x_ub) or np.any(x0 < num_opt.x_lb):
-                x0 = np.clip(x0, num_opt.x_lb, num_opt.x_ub)
-            if beta0 is None:
-                beta0 = 1e0
+
+        # FIXME: using clipping as a work-around
+        # if has_bound_constraint:
+        #     if np.any(x0 > num_opt.x_ub) or np.any(x0 < num_opt.x_lb):
+        #         x0 = np.clip(x0, num_opt.x_lb, num_opt.x_ub)
+        #     if beta0 is None:
+        #         beta0 = 1e0
 
         # Initial values (primal, dual, parameters)
         x_plus = x0
-        if has_bound_constraint:
-            s0 = inverse_squashing(x0, num_opt.x_lb, num_opt.x_ub)
         lam_plus = lam0
         alpha_plus = alpha0
         beta_plus = beta0
-        if has_bound_constraint:
-            s_plus = s0
+        # FIXME: using clipping as a work-around
+        # if has_bound_constraint:
+        #     s0 = inverse_squashing(x0, num_opt.x_lb, num_opt.x_ub)
+        #     s_plus = s0
 
         # Print headers
         symb_nabla = "\u2207"
@@ -146,7 +148,7 @@ class Optimizer:
         tabel_headers_line1 = ["Loop", "f", f"|{symb_nabla}f+{symb_lam}{symb_nabla}g|", "|g|"]
         if has_eq_constraint:
             tabel_headers_line1 += [f"|{symb_lam}|", f"{symb_alpha}"]
-        tabel_headers_line2 = ["Iter", f"|{symb_nabla}L|", "Message"]
+        tabel_headers_line2 = ["Iter", "L", f"|{symb_nabla}L|", "Message"]
         separator = "  "
         line_width = 80
         logger.info(separator.join("{:<4}".format(col_name) if col_name in [
@@ -164,8 +166,9 @@ class Optimizer:
         for loop_count in range(self.max_loop + 1):
             # Update
             x = x_plus
-            if has_bound_constraint:
-                s = s_plus
+            # FIXME: replace the clipping?
+            # if has_bound_constraint:
+            #     s = s_plus
             lam = lam_plus
             alpha = alpha_plus
             beta = beta_plus
@@ -176,7 +179,13 @@ class Optimizer:
             # Compute gradients
             l_Dx = num_opt.get_f_Dx()
             if has_eq_constraint:
+                # Add the contribution of equality constraint gradient
                 l_Dx += lam * num_opt.get_g_Dx()
+            # FIXME: replace the clipping?
+            if has_bound_constraint:
+                # Project the gradient to the bounds
+                l_Dx[(x < num_opt.x_lb) & (l_Dx > 0)] = 0
+                l_Dx[(x > num_opt.x_ub) & (l_Dx < 0)] = 0
             l_Dx_norm = np.amax(abs(l_Dx))
 
             # Compute equality constraint
@@ -208,33 +217,36 @@ class Optimizer:
             if has_eq_constraint:
                 reformed = approx_eq_by_augmented_lagrangian(reformed, lam, alpha)
             if has_bound_constraint:
-                reformed = approx_bound_by_squashing(reformed, beta)
+                # FIXME: replace the clipping?
+                # reformed = approx_bound_by_squashing(reformed, beta)
+                reformed = approx_bound_by_clipping(reformed)
+            result = solve_unconstrained(reformed, x, max_iter=self.max_iter, tol_gradient=1e-6, tol_creeping=self.tol_creeping)
+            x_plus = result['primal']
 
-            if has_bound_constraint:
-                result = solve_unconstrained(reformed, s, max_iter=self.max_iter, tol_gradient=1e-8, tol_creeping=1e-12)
-            else:
-                result = solve_unconstrained(reformed, x, max_iter=self.max_iter, tol_gradient=1e-8, tol_creeping=1e-12)
+            # FIXME: replace the clipping?
+            # if has_bound_constraint:
+            #     result = solve_unconstrained(reformed, s, max_iter=self.max_iter, tol_gradient=1e-8, tol_creeping=1e-12)
+            #     s_plus = result['primal']
+            #     x_plus = squashing(s_plus, num_opt.x_lb, num_opt.x_ub)
+            # else:
+            #     result = solve_unconstrained(reformed, x, max_iter=self.max_iter, tol_gradient=1e-8, tol_creeping=1e-12)
+            #     x_plus = result['primal']
 
             # Print progress
-            augm_lagr_Dx_norm = np.max(abs(reformed.get_f_Dx()))
-            padded_literals = [f"{result['nit']:>4d}", f"{augm_lagr_Dx_norm:>8.1e}", result['message']]
+            augm_lagr = reformed.get_f()
+            augm_lagr_Dx_norm = np.amax(abs(reformed.get_f_Dx()))
+            padded_literals = [f"{result['nit']:>4d}", f"{augm_lagr:>8.1e}", f"{augm_lagr_Dx_norm:>8.1e}", result['message']]
             logger.info(separator.join(padded_literals))
             logger.info("-" * line_width)
-
-            # Process results
-            if has_bound_constraint:
-                s_plus = result['primal']
-                x_plus = squashing(s_plus, num_opt.x_lb, num_opt.x_ub)
-            else:
-                x_plus = result['primal']
 
             if result['had_abnormal_stop']:
                 had_abnormal_stop = True
                 break
 
-            if has_bound_constraint:
-                if not np.all(criteria_l_Dx) and beta > self.bound_weight_minimum:
-                    beta_plus = beta * self.bound_weight_multiplier
+            # FIXME: replace the clipping?
+            # if has_bound_constraint:
+            #     if not np.all(criteria_l_Dx) and beta > self.bound_weight_minimum:
+            #         beta_plus = beta * self.bound_weight_multiplier
 
             # Prepare for the next loop
             if has_eq_constraint:
@@ -282,6 +294,22 @@ def approx_eq_by_augmented_lagrangian(num_opt: typing.Union[NumOptEq, NumOptEqB]
         pass
 
     return types.SimpleNamespace(**reformed)
+
+
+def approx_bound_by_clipping(num_opt: NumOptB):
+
+    def set_x_clipped(x: np.ndarray):
+        nonlocal num_opt
+        num_opt.set_x(np.clip(x, num_opt.x_lb, num_opt.x_ub))
+
+    def get_f_Dx_projected():
+        f_Dx = num_opt.get_f_Dx()
+        x = num_opt.get_x()
+        f_Dx[(x < num_opt.x_lb) & (f_Dx > 0)] = 0
+        f_Dx[(x > num_opt.x_ub) & (f_Dx < 0)] = 0
+        return f_Dx
+
+    return types.SimpleNamespace(get_x=num_opt.get_x, set_x=set_x_clipped, get_f=num_opt.get_f, get_f_Dx=get_f_Dx_projected)
 
 
 def approx_bound_by_squashing(num_opt: NumOptB, beta: float=1e-2):

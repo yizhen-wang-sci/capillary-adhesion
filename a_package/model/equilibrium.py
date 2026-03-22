@@ -40,9 +40,8 @@ def solve_rigid_constant_volume(
         get_f_Dx=capillary.get_energy_jacobian,
         get_g=volume_constraint,
         get_g_Dx=volume_constraint_jacobian,
-        # FIXME: does this bound really matter?
-        # x_lb=capillary.phase_lb,
-        # x_ub=capillary.phase_ub,
+        x_lb=capillary.phase_lb,
+        x_ub=capillary.phase_ub,
     )
 
     # initial guess
@@ -89,9 +88,8 @@ def solve_rigid_constant_pressure(
         set_x=capillary.set_phase,
         get_f=helmholtz_potential,
         get_f_Dx=helmholtz_potential_jacobian,
-        # FIXME: does this bound really matter?
-        # x_lb=capillary.phase_lb,
-        # x_ub=capillary.phase_ub,
+        x_lb=capillary.phase_lb,
+        x_ub=capillary.phase_ub,
     )
 
     # initial guess
