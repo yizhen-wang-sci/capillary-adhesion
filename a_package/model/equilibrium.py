@@ -40,8 +40,9 @@ def solve_rigid_constant_volume(
         get_f_Dx=capillary.get_energy_jacobian,
         get_g=volume_constraint,
         get_g_Dx=volume_constraint_jacobian,
-        x_lb=capillary.phase_lb,
-        x_ub=capillary.phase_ub,
+        # FIXME: does this bound really matter?
+        # x_lb=capillary.phase_lb,
+        # x_ub=capillary.phase_ub,
     )
 
     # initial guess
@@ -51,7 +52,7 @@ def solve_rigid_constant_volume(
     init_shape = phase_init.shape
 
     result = optimizer.solve_minimisation(problem, x0=phase_init, lam0=pressure_init)
-    phase = np.reshape(result.primal, init_shape)
+    phase = np.reshape(result['primal'], init_shape)
 
     return gap, phase, result
 
@@ -66,8 +67,10 @@ def solve_rigid_constant_pressure(
     contact = RigidContact(upper, lower)
     capillary = NodalFormCapillary(grid, capillary_args)
     solver = Optimizer(
-        max_iter=solver_args["max_inner_iter"],
-        tol_gradient=solver_args["tol_convergence"],
+        max_loop=solver_args["max_loop"],
+        max_iter=solver_args["max_iter"],
+        tol_gradient=solver_args["tol_gradient"],
+        tol_eq_constraint=solver_args["tol_eq_constraint"],
     )
 
     contact.set_mean_separation(separation)
@@ -86,8 +89,9 @@ def solve_rigid_constant_pressure(
         set_x=capillary.set_phase,
         get_f=helmholtz_potential,
         get_f_Dx=helmholtz_potential_jacobian,
-        x_lb=capillary.phase_lb,
-        x_ub=capillary.phase_ub,
+        # FIXME: does this bound really matter?
+        # x_lb=capillary.phase_lb,
+        # x_ub=capillary.phase_ub,
     )
 
     # initial guess
@@ -97,6 +101,6 @@ def solve_rigid_constant_pressure(
     init_shape = phase_init.shape
 
     result = solver.solve_minimisation(problem, x0=phase_init)
-    phase = np.reshape(result.primal, init_shape)
+    phase = np.reshape(result['primal'], init_shape)
 
     return gap, phase, result
