@@ -22,12 +22,15 @@ class Grid:
     # Index: 0, 1, 2, ..., N-1
     # =========================================================================
 
-    def form_index_axis(self, ax_index: int):
+    def form_index_axis(self, ax_index: int, endpoint: bool = False):
         """Return indices: 0, 1, 2, ..., N-1."""
-        return np.arange(self.nb_elements[ax_index])
+        axis = np.arange(self.nb_elements[ax_index])
+        if endpoint:
+            axis = np.append(axis, self.nb_elements[ax_index])
+        return axis
 
-    def form_index_mesh(self):
-        return np.meshgrid(self.form_index_axis(0), self.form_index_axis(1))
+    def form_index_mesh(self, endpoint: bool = False):
+        return np.meshgrid(self.form_index_axis(0, endpoint), self.form_index_axis(1, endpoint))
 
     # =========================================================================
     # Spatial: 0, d, 2d, ..., (N-1)d
