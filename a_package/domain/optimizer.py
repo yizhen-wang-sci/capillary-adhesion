@@ -148,7 +148,7 @@ class Optimizer:
         symb_lam = "\u03BB"
         tabel_headers_line1 = ["Loop", "f", f"|{symb_nabla}f+{symb_lam}{symb_nabla}g|", "|g|"]
         if has_eq_constraint:
-            tabel_headers_line1 += [f"|{symb_lam}|", f"{symb_alpha}"]
+            tabel_headers_line1 += [f"{symb_lam}", f"{symb_alpha}"]
         tabel_headers_line2 = ["Iter", "L", f"|{symb_nabla}L|", "Message"]
         separator = "  "
         line_width = 80

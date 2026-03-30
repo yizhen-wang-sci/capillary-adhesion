@@ -24,7 +24,7 @@ class WorkDir:
     """
 
     def __init__(self, path: str | Path, exist_ok: bool = True):
-        self._path = Path(path).absolute()
+        self._path = Path(path).resolve()
         if self._path.is_file():
             raise FileExistsError(f"{self._path} is occupied by a file.")
         try:
