@@ -50,8 +50,9 @@ def solve_rigid_constant_volume(
         phase_init = rng.random((1, 1, *grid.nb_elements))
     init_shape = phase_init.shape
 
-    result = optimizer.solve_minimisation(problem, x0=phase_init, lam0=pressure_init)
+    result = optimizer.solve_minimisation(problem, x0=phase_init, lam0=-pressure_init)
     phase = np.reshape(result['primal'], init_shape)
+    pressure = -result['dual']
 
     return gap, phase, result
 
