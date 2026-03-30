@@ -226,5 +226,9 @@ class NodalFormCapillary:
         return self._quadrature.integrate(self._grid, integrand).item()
 
     def get_max_volume(self):
-        """Compute maximum available volume (when gap fully filled with liquid)."""
+        """Compute maximum available volume."""
         return self._quadrature.integrate(self._grid, self._quadr_gap).item()
+
+    def get_liquid_area(self):
+        """Compute area of liquid-solid interface."""
+        return self._quadrature.integrate(self._grid, self._quadr_phase).item()
