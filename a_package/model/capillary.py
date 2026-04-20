@@ -31,7 +31,7 @@ class CapillaryBridge:
     This class is private; use NodalFormCapillary for optimization.
     """
 
-    def __init__(self, eta: float, theta: float):
+    def __init__(self, eta: float, theta: float, epsilon: float):
         """
         Parameters
         ----------
@@ -39,11 +39,14 @@ class CapillaryBridge:
             Interface thickness of the diffuse interface model.
         theta : float
             Contact angle at the liquid-solid interface, in radians.
+        epsilon: float
+            An extra prefactor on the perimeter term.
         """
         self._eta = eta
         self._theta = theta
         self._curv = 0.5 * (abs(np.sin(theta)) + np.asin(np.cos(theta)) / np.cos(theta))
         self._gamma = -np.cos(theta)
+        self._epsilon = epsilon
 
     @property
     def phase_vapour(self):
@@ -65,7 +68,7 @@ class CapillaryBridge:
         connected by two phases. Therefore, we set a prefactor equal to the
         inverse of that proportion, then that value would exactly be the perimeter.
         """
-        return 3.
+        return 3. * self._epsilon
 
     def compute_local_perimeter(self, phase: Field, phase_grad: Field):
         """Compute local perimeter density of liquid-vapour interface."""
