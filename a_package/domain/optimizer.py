@@ -99,7 +99,7 @@ class Optimizer:
         self.bound_weight_multiplier = 2e-1
 
     def solve_minimisation(self, num_opt: typing.Union[NumOpt, NumOptEq, NumOptB, NumOptEqB], x0: typing.Sequence[float],
-                           lam0: float=None, alpha0: float=None, beta0: float=None):
+                           lam0: float=None, alpha0: float=None, beta0: float=None, callback=None):
         """
         :param num_opt: NumOpt, NumOptEq, NumOptB, NumOptEqB
         :param x0: Initial guess.
@@ -222,7 +222,7 @@ class Optimizer:
                 # reformed = approx_bound_by_squashing(reformed, beta)
                 reformed = approx_bound_by_clipping(reformed)
             result = solve_unconstrained(reformed, x, max_iter=self.max_inner_iter, tol_gradient=self.tol_gradient,
-                                         tol_creeping=self.tol_creeping)
+                                         tol_creeping=self.tol_creeping, callback=callback)
             x_plus = result['primal']
 
             # FIXME: replace the clipping?
@@ -368,7 +368,7 @@ def barrier_squashed_Dx(x: np.ndarray, x_lb: float, x_ub: float):
     return x - x_c
 
 
-def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int, tol_gradient: float, tol_creeping: float):
+def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int, tol_gradient: float, tol_creeping: float, callback=None):
     """
     Solve unconstrained minimization using L-BFGS.
 
@@ -411,6 +411,7 @@ def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int, tol_gradi
         factr=tol_creeping / np.finfo(np.float64).resolution,
         # this 'pg' should be zero at exactly a local minimizer
         pgtol=tol_gradient,
+        callback=callback,
     )
 
     t_exec += timeit.default_timer()
