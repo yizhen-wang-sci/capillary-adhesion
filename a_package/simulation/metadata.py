@@ -6,6 +6,7 @@ Provides hashing and timestamping.
 
 import hashlib
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -39,13 +40,17 @@ def get_iso_time():
 
 def get_git_hash():
     """Get current git commit hash, or None if not in a git repo."""
+    cwd = os.getcwd()
     try:
+        os.chdir(os.path.dirname(os.path.abspath(__file__)))
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             capture_output=True,
             text=True,
             check=True,
         )
+        os.chdir(cwd)
         return result.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
+        os.chdir(cwd)
         return None
