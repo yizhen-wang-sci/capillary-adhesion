@@ -1,25 +1,49 @@
 """
-Directory management.
+Directory management for organizing simulations.
 
-Provides CaseDir and RunDir for organizing simulation.
+Structure:
+ROOT
+├─ {case1}
+│ ├─ {task1}--{attempt1}
+│ │ ├─ metadata.json
+│ │ ├─ {run1}
+│ │ │ ├─ input.cfg
+│ │ │ ├─ data/
+│ │ │ ├─ log.txt
+│ │ │ └─ ...
+│ │ ├─ {runX}/
+│ │ ├─ *.* (Any files, be it scripts, configs, figures, animations, etc.)
+│ │ └─ ...
+│ ├─ {taskX}--{attemptX}/
+│ └─ ...
+├─ {caseX}/
+└─ ...
+
+Usage:
+    case = CaseDir("cases/my_setup")
+    work = case.new_work("to_do", notes="first try")
+    # or work = case.continue_work("to_do", attempt=1)
+    work.add_metadata({"cmd": sys.argv})
+    work.copy_file(__file__)
+    rin, rdata, rlog = work.access_run_records("run-01", create_new=True)
 """
 
-import contextlib
 import json
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 
-from .metadata import compute_script_hash, get_iso_time
+from .metadata import get_git_hash, get_iso_time
 
 
 logger = logging.getLogger(__name__)
 
 
-class WorkDir:
-    """Just a directory.
-    
+class _Dir:
+    """Just a directory path with some convenience methods.
+
     Creates the directory if not exist. Supports using '/' like a path.
     """
 
@@ -41,115 +65,95 @@ class WorkDir:
         return str(self._path)
 
 
-class CaseDir(WorkDir):
+class CaseDir(_Dir):
     """
-    A directory to hold scripts. Supports dumping information of a run and script 
-    versioning.
-
-    Directory structure:
-        case_dir/
-        ├── script.py, ...  One or more script files.
-        ├── INDEX.json      A file for script to dump information.
-        ├── version.json    A file for use with script versioning.
-        └── ...             Any other stuff
+    The top-level directories. Each case shall have a distinct physical setup. It
+    contains multiple subdirectories organized by task name and attempt number
+    to keep track of progress.
     """
 
-    @property
-    def run_index(self):
-        return self._path / "INDEX.json"
+    name_pattern = re.compile(r"([\w-]+)--(\d+)(?:--[\w-]+)?")
+    """
+    Pattern to match work directory names: '{task}--{attempt}--{notes}', where '--{notes}' is optional.
+    """
 
-    @property
-    def version_index(self):
-        return self._path / "version.json"
+    def new_work(self, task: str, notes: str = ""):
+        task = self._format_str(task)
 
-    @contextlib.contextmanager
-    def bookkeep(self):
-        """
-        Yield a dict to add information during a run. Time is automatically recorded.
-        """
-        entry = {}
+        attempts = []
+        for entry in self._path.iterdir():
+            match = self.name_pattern.fullmatch(entry.name)
+            if match and match.group(1) == task:
+                attempt = int(match.group(2))
+                attempts.append(attempt)
+        nb_attempts = max(attempts, default=0)
+        next_attempt = nb_attempts + 1
+
+        dir_name = "--".join([task, self._format_num(next_attempt), self._format_str(notes)])
+        return WorkDir(self._path / dir_name, exist_ok=False)
+
+    def continue_work(self, task: str, attempt: int):
+        task = self._format_str(task)
+
+        for entry in self._path.iterdir():
+            match = self.name_pattern.fullmatch(entry.name)
+            if match and match.group(1) == task and int(match.group(2)) == attempt:
+                return WorkDir(entry, exist_ok=True)
+
+        raise FileNotFoundError(f"No directory found for task '{task}' and attempt {self._format_num(attempt)}")
+
+    @staticmethod
+    def _format_str(s: str) -> str:
+        return s.strip().lower().replace(" ", "-")
+
+    @staticmethod
+    def _format_num(n: int) -> str:
+        return f"{n:02d}"
+
+
+class WorkDir(_Dir):
+    """
+    A directory to store self-contained simulation files (scripts, configs, run dumps, etc.)
+    and necessary metadata.
+    """
+
+    def __init__(self, path: str | Path, exist_ok: bool = True):
+        super().__init__(path, exist_ok)
+
+    def add_metadata(self, new: dict):
+        metadata_file = self._path / "metadata.json"
+
         try:
-            entry["time_start"] = get_iso_time()
-            yield entry
-        finally:
-            entry["time_stop"] = get_iso_time()
-            index = self._load_run_index()
-            index.append(entry)
-            self._save_run_index(index)
-
-    def _load_run_index(self):
-        try:
-            with open(self.run_index, "r", encoding="utf-8") as fp:
-                return json.load(fp)
+            with open(metadata_file, "r", encoding="utf-8") as fp:
+                metadata = json.load(fp)
         except FileNotFoundError:
-            return []
+            metadata = {}
 
-    def _save_run_index(self, index):
-        with open(self.run_index, "w", encoding="utf-8") as fp:
-            json.dump(index, fp, indent=2, sort_keys=False)
+        metadata.update(new)
 
+        with open(metadata_file, "w", encoding="utf-8") as fp:
+            json.dump(metadata, fp, indent=2, sort_keys=False)
 
-    def copy_script(self, src, version: bool = False):
-        """Copy script to case directory.
-
-        If version=True, appends version suffix (e.g. --v1, --v2) based on
-        script content hash. Same content gets same version number. Scripts with
-        different filenames are versioned separately.
-        """
+    def copy_file(self, src):
         src = os.path.abspath(src)
-        _, script_file = os.path.split(src)
-        script_name, script_ext = os.path.splitext(script_file)
-
-        if version:
-            nb_hex_digits = 8
-            hash_hex = compute_script_hash(src)[:nb_hex_digits]
-            version_number = self._get_or_create_version(script_file, hash_hex)
-            script_name += f"--v{version_number}"
-
-        dst = self._path / f"{script_name}{script_ext}"
+        _, file_name = os.path.split(src)
+        dst = self._path / f"{file_name}"
         return shutil.copy2(src, dst)
 
-    def _get_or_create_version(self, script_file: str, hash_hex: str):
-        index = self._load_version_index()
-        versions = index.setdefault(script_file, {})
-        if hash_hex in versions:
-            return versions[hash_hex]["version"]
-        # if new, create an incremental one
-        version_number = len(versions) + 1
-        versions[hash_hex] = {"version": version_number, "created": get_iso_time()}
-        self._save_version_index(index)
-        return version_number
-
-    def _load_version_index(self):
-        try:
-            with open(self.version_index, "r", encoding="utf-8") as fp:
-                return json.load(fp)
-        except FileNotFoundError:
-            return {}
-
-    def _save_version_index(self, index):
-        with open(self.version_index, "w", encoding="utf-8") as fp:
-            json.dump(index, fp, indent=2)
+    def access_run_records(self, name: str, create_new: bool = False):
+        run_dir = RunDir(self._path / name, exist_ok=not create_new)
+        return run_dir.input_file, run_dir.data_dir, run_dir.log_file
 
 
-class RunDir(WorkDir):
+class RunDir(_Dir):
     """
-    A directory to work with simulation runs. Specifies some convention about file or
-    folder names to hold input, output (separate data & visuals) and log.
-
-    Directory structure:
-        run_dir/
-        ├── input.cfg   Parameters and configuration 
-        ├── data/       Simulation output data
-        ├── visuals/    Generated plots and animations
-        ├── log.txt     Execution log
-        └── ...         Any other stuff
+    A directory for a single simulation run to record the standard IO (inputs, data, logs).
+    It defines the layout and naming convention for those records.
     """
 
     def __init__(self, path: str | Path, exist_ok: bool = True):
         super().__init__(path, exist_ok)
         self.data_dir.mkdir(exist_ok=exist_ok)
-        self.visuals_dir.mkdir(exist_ok=exist_ok)
 
     @property
     def input_file(self):
@@ -158,10 +162,6 @@ class RunDir(WorkDir):
     @property
     def data_dir(self):
         return self._path / "data"
-
-    @property
-    def visuals_dir(self):
-        return self._path / "visuals"
 
     @property
     def log_file(self):
