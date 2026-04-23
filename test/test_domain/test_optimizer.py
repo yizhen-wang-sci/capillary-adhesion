@@ -3,7 +3,7 @@ import types
 import numpy as np
 import pytest
 
-from a_package.domain.optimizer import Optimizer
+from a_package.domain.optimizer import AugmentedLagrangian
 
 
 def test_unconstrained_numopt():
@@ -25,7 +25,7 @@ def test_unconstrained_numopt():
 
     num_opt = types.SimpleNamespace(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx)
 
-    optimizer = Optimizer(max_outer_loop=1)
+    optimizer = AugmentedLagrangian(max_outer_loop=1)
     result = optimizer.solve_minimisation(num_opt, x0=[5, 5])
     print(result)
 
@@ -60,7 +60,7 @@ def test_eq_constrained_numopt():
 
     num_opt = types.SimpleNamespace(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, get_g=get_g, get_g_Dx=get_g_Dx)
 
-    optimizer = Optimizer(max_outer_loop=30)
+    optimizer = AugmentedLagrangian(max_outer_loop=30)
     result = optimizer.solve_minimisation(num_opt, x0=[5., 5.])
     print(result)
 
@@ -88,7 +88,7 @@ def test_bound_constrained_numopt():
 
     num_opt = types.SimpleNamespace(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, x_lb=np.array([2., -0.5]), x_ub=5.)
 
-    optimizer = Optimizer(max_outer_loop=10)
+    optimizer = AugmentedLagrangian(max_outer_loop=10)
     result = optimizer.solve_minimisation(num_opt, x0=[5., 5.])
     print(result)
 
@@ -124,7 +124,7 @@ def test_eq_and_bound_constrained_numopt():
 
     num_opt = types.SimpleNamespace(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, get_g=get_g, get_g_Dx=get_g_Dx, x_lb=np.array([2., -0.5]), x_ub=5.)
 
-    optimizer = Optimizer(max_outer_loop=50)
+    optimizer = AugmentedLagrangian(max_outer_loop=50)
     result = optimizer.solve_minimisation(num_opt, x0=np.array([5., 5.]), beta0=1e1)
     print(result)
 

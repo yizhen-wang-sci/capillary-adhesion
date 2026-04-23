@@ -6,6 +6,7 @@ import types
 import logging
 import timeit
 import typing
+from abc import ABC, abstractmethod
 
 import numpy as np
 import scipy.optimize
@@ -79,7 +80,14 @@ class OptimizerResult(typing.TypedDict, total=False):
     message: str
 
 
-class Optimizer:
+class Optimizer(ABC):
+
+    @abstractmethod
+    def solve_minimisation(self, num_opt: typing.Union[NumOpt, NumOptEq, NumOptB, NumOptEqB], x0: typing.Sequence[float], *args, **kwargs):
+        raise NotImplementedError()
+
+
+class AugmentedLagrangian(Optimizer):
 
     def __init__(self, max_outer_loop: int=20, max_inner_iter: int = 1000, tol_gradient: float = 1e-6,
                  tol_eq_constraint: float = 1e-6, tol_creeping: float = 1e-12):
