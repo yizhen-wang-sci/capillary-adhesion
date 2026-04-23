@@ -6,13 +6,13 @@ ROOT
 ├─ {case1}
 │ ├─ {task1}--{attempt1}
 │ │ ├─ metadata.json
+│ │ ├─ *.* (Files for simulation, can be script, config, figure, animation, etc.)
 │ │ ├─ {run1}
 │ │ │ ├─ input.cfg
 │ │ │ ├─ data/
 │ │ │ ├─ log.txt
 │ │ │ └─ ...
 │ │ ├─ {runX}/
-│ │ ├─ *.* (Any files, be it scripts, configs, figures, animations, etc.)
 │ │ └─ ...
 │ ├─ {taskX}--{attemptX}/
 │ └─ ...
@@ -72,7 +72,7 @@ class CaseDir(_Dir):
     to keep track of progress.
     """
 
-    name_pattern = re.compile(r"([\w-]+)--(\d+)(?:--[\w-]+)?")
+    name_pattern = re.compile(r"([\w-]+)--(\d+)(--[\S ]+)?")
     """
     Pattern to match work directory names: '{task}--{attempt}--{notes}', where '--{notes}' is optional.
     """
@@ -89,7 +89,7 @@ class CaseDir(_Dir):
         nb_attempts = max(attempts, default=0)
         next_attempt = nb_attempts + 1
 
-        dir_name = "--".join([task, self._format_num(next_attempt), self._format_str(notes)])
+        dir_name = "--".join([task, self._format_num(next_attempt), notes])
         return WorkDir(self._path / dir_name, exist_ok=False)
 
     def continue_work(self, task: str, attempt: int):
@@ -104,7 +104,7 @@ class CaseDir(_Dir):
 
     @staticmethod
     def _format_str(s: str) -> str:
-        return s.strip().lower().replace(" ", "-")
+        return s.strip().casefold().replace(" ", "-")
 
     @staticmethod
     def _format_num(n: int) -> str:
