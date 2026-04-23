@@ -68,7 +68,7 @@ class CapillaryBridge:
         connected by two phases. Therefore, we set a prefactor equal to the
         inverse of that proportion, then that value would exactly be the perimeter.
         """
-        return 3. * self._epsilon
+        return 3
 
     def compute_local_perimeter(self, phase: Field, phase_grad: Field):
         """Compute local perimeter density of liquid-vapour interface."""
@@ -77,7 +77,7 @@ class CapillaryBridge:
 
     def compute_local_energy(self, gap: Field, phase: Field, phase_grad: Field):
         """Compute local energy density (liquid-vapour + liquid-solid contributions)."""
-        liquid_vapour = self.compute_local_perimeter(phase, phase_grad) * gap * self._curv
+        liquid_vapour = self.compute_local_perimeter(phase, phase_grad) * gap * self._curv * self._epsilon
         # FIXME: switch on whether to use small-slope-approx.?
         # upper and lower surface, hence the 2. (height gradient square is one order higher and omitted)
         liquid_solid = 2.0 * phase
@@ -96,9 +96,9 @@ class CapillaryBridge:
     def compute_local_energy_jacobian(self, gap: Field, phase: Field, phase_grad: Field):
         """Compute derivatives of local energy w.r.t. phase and phase gradient."""
         liquid_vapour_D_phase = (self.perimeter_prefactor * (1 / self._eta)
-                                 * self.double_well_penalty_derivative(phase) * gap * self._curv)
+                                 * self.double_well_penalty_derivative(phase) * gap * self._curv * self._epsilon)
         liquid_vapour_D_phase_grad = (self.perimeter_prefactor * self._eta
-                                      * self.square_penalty_derivative(phase_grad) * gap * self._curv)
+                                      * self.square_penalty_derivative(phase_grad) * gap * self._curv * self._epsilon)
 
         liquid_solid_D_phase = 2.0
 
