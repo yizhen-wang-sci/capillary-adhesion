@@ -12,17 +12,27 @@ def formulate_constant_volume_phase_problem(capillary: NodalFormCapillary, volum
     s.t. volume(phase) == volume
     """
 
-    def volume_constraint():
-        return capillary.get_volume() - volume
+    # def volume_constraint():
+    #     return capillary.get_volume() - volume
+    #
+    # volume_constraint_jacobian = capillary.get_volume_jacobian
+    #
+    # return Problem(get_x=capillary.get_phase,
+    #                set_x=capillary.set_phase,
+    #                get_f=capillary.get_energy,
+    #                get_f_Dx=capillary.get_energy_jacobian,
+    #                get_g=volume_constraint,
+    #                get_g_Dx=volume_constraint_jacobian,
+    #                x_lb=capillary.phase_lb,
+    #                x_ub=capillary.phase_ub)
 
-    volume_constraint_jacobian = capillary.get_volume_jacobian
-
+    # Exploit the linearity in the volume Jacobian
     return Problem(get_x=capillary.get_phase,
                    set_x=capillary.set_phase,
                    get_f=capillary.get_energy,
                    get_f_Dx=capillary.get_energy_jacobian,
-                   get_g=volume_constraint,
-                   get_g_Dx=volume_constraint_jacobian,
+                   A=capillary.get_volume_jacobian(),
+                   b=volume,
                    x_lb=capillary.phase_lb,
                    x_ub=capillary.phase_ub)
 
