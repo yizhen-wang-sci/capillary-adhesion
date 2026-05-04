@@ -6,6 +6,7 @@ import logging
 import timeit
 import typing
 from abc import ABC, abstractmethod
+from typing import Callable
 
 import numpy as np
 import NuMPI.Optimization
@@ -15,96 +16,76 @@ import scipy.optimize
 logger = logging.getLogger(__name__)
 
 
-class Unconstrained(typing.Protocol):
-    """Numerical optimization problem, unconstrained.
-
-    x* = arg min f(x)
-    """
-
-    def get_x(self) -> np.ndarray: ...
-
-    def set_x(self, x: np.ndarray): ...
-
-    def get_f(self) -> float: ...
-
-    def get_f_Dx(self) -> np.ndarray: ...
-
-
-class LinEqConstraint(typing.Protocol):
-    """Linear equality constraint.
-
-    s.t. A x - b == 0
-    """
-
-    @property
-    def A(self) -> np.ndarray:...
-
-    @property
-    def b(self) -> float:...
-
-
-class EqConstraint(typing.Protocol):
-    """Equality constraint.
-
-    s.t. g(x) == 0
-    """
-
-    def get_g(self) -> float: ...
-
-    def get_g_Dx(self) -> np.ndarray: ...
-
-
-class BoundsConstraint(typing.Protocol):
-    """Simple bounds (inequality) constraint.
-
-    s.t. x_lb <= x <= x_ub
-    """
-
-    @property
-    def x_lb(self) -> float:...
-
-    @property
-    def x_ub(self) -> float:...
-
-
-class Problem(Unconstrained, LinEqConstraint, EqConstraint, BoundsConstraint):
-    """An adaptor that translates classes to numerical optimization problems with optional constraints.
+class Problem:
+    """Numerical optimization problem with optional constraints.
 
     x* = arg min f(x)
     s.t. A x - b == 0 (linear equality constraints)
-    g(x) == 0 (equality constraints)
-    x_lb <= x <= x_ub (simple bounds)
+    s.t. g(x) == 0 (equality constraints)
+    s.t. x_lb <= x <= x_ub (simple bounds)
+
+    Accessing constraints not provided at instantiation raises AttributeError.
+    Return values are reshaped to the conventions optimizers expect.
+    So far, b, g, x_lb, and x_ub are assumed to be scalars.
     """
 
-    def __init__(self, get_x, set_x, get_f, get_f_Dx, A=None, b=None, get_g=None, get_g_Dx=None, x_lb=None, x_ub=None):
-        self.get_x = get_x
-        self.set_x = set_x
-        self.get_f = get_f
-        self.get_f_Dx = get_f_Dx
+    def __init__(self,
+                 get_x: Callable[[], np.ndarray],
+                 set_x: Callable[[np.ndarray], None],
+                 get_f: Callable[[], float],
+                 get_f_Dx: Callable[[], np.ndarray],
+                 A: np.ndarray | None = None,
+                 b: float | None = None,
+                 get_g: Callable[[], float] | None = None,
+                 get_g_Dx: Callable[[], np.ndarray] | None = None,
+                 x_lb: float | None = None,
+                 x_ub: float | None = None):
+        self._get_x = get_x
+        self._set_x = set_x
+        self._get_f = get_f
+        self._get_f_Dx = get_f_Dx
         if A is not None:
             self._A = A
         if b is not None:
             self._b = b
         if get_g is not None:
-            self.g = get_g
+            self._get_g = get_g
         if get_g_Dx is not None:
-            self.g_Dx = get_g_Dx
+            self._get_g_Dx = get_g_Dx
         if x_lb is not None:
             self._x_lb = x_lb
         if x_ub is not None:
             self._x_ub = x_ub
 
     @property
-    def has_linear_constraints(self) -> bool:
+    def has_linear_constraints(self):
         return hasattr(self, "_A") and hasattr(self, "_b")
 
     @property
-    def has_equality_constraints(self) -> bool:
-        return hasattr(self, "get_g") and hasattr(self, "get_g_Dx")
+    def has_equality_constraints(self):
+        return hasattr(self, "_get_g") and hasattr(self, "_get_g_Dx")
 
     @property
-    def has_bounds(self) -> bool:
+    def has_bounds(self):
         return hasattr(self, "_x_lb") and hasattr(self, "_x_ub")
+
+    def get_x(self):
+        return np.asarray(self._get_x()).ravel()
+
+    def set_x(self, x):
+        """Set x, skipping the underlying call when x is unchanged.
+
+        Caching matters because optimizers typically re-query f and its
+        gradient at the same point during backtracking.
+        """
+        if np.any(np.asarray(x).ravel() != self.get_x()):
+            self._set_x(x)
+
+    def get_f(self):
+        return np.asarray(self._get_f()).item()
+
+    def get_f_Dx(self):
+        return np.asarray(self._get_f_Dx()).ravel()
 
     @property
     def A(self):
@@ -113,6 +94,12 @@ class Problem(Unconstrained, LinEqConstraint, EqConstraint, BoundsConstraint):
     @property
     def b(self):
         return self._b
+
+    def get_g(self):
+        return np.asarray(self._get_g()).item()
+
+    def get_g_Dx(self):
+        return np.asarray(self._get_g_Dx()).ravel()
 
     @property
     def x_lb(self):
@@ -498,9 +485,6 @@ class ProjectedLbfgs(Optimizer):
         self.tol_gradient = tol_gradient
 
     def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
-        if not problem.has_linear_constraints:
-            raise ValueError("This optimizer is written specifically for problems with linear equality constraint.")
-
         linear_constraint = NuMPI.Optimization.LinearConstraint(problem.A, problem.b, None)
 
         def compute_f(x):
@@ -518,9 +502,10 @@ class ProjectedLbfgs(Optimizer):
             bounds_lo = None
             bounds_hi = None
 
+        init_shape = x0.shape
         result = NuMPI.Optimization.l_bfgs_projected(
             compute_f,
-            x0,
+            x0.ravel(),
             linear_constraint,
             jac=compute_f_Dx,
             bounds_lo=bounds_lo,
@@ -529,6 +514,5 @@ class ProjectedLbfgs(Optimizer):
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
         )
-
-        return OptimizerResult(x=result['x'], dual=result['multiplier'], success=result['success'],
+        return OptimizerResult(x=result['x'].reshape(init_shape), dual=result['multiplier'], success=result['success'],
                                message=result['message'], nit=result['nit'])

@@ -14,7 +14,7 @@ import logging
 
 import numpy as np
 
-from a_package.domain import Grid, Field, adapt_shape, field_component_ax, FirstOrderElement, Quadrature, centroid_quadrature
+from a_package.domain import Grid, Field, field_component_ax, FirstOrderElement, Quadrature, centroid_quadrature
 
 
 logger = logging.getLogger(__name__)
@@ -27,8 +27,7 @@ logger = logging.getLogger(__name__)
 class CapillaryBridge:
     """Pure physics model for capillary bridge.
 
-    Numerics-free: only Field → Field relations.
-    This class is private; use NodalFormCapillary for optimization.
+    Minimal numerics info: it only touches the component axis and keeps the axis after reduction.
     """
 
     def __init__(self, eta: float, theta: float, epsilon: float):
@@ -148,13 +147,17 @@ class NodalFormCapillary:
         self._quadr_phase: Field = None
         self._quadr_phase_gradient: Field = None
 
+    @property
+    def grid_shape(self):
+        return self._grid.nb_elements
+
     def get_gap(self):
         """Return nodal gap field."""
         return self._nodal_gap
 
-    def set_gap(self, value):
+    def set_gap(self, value: np.ndarray):
         """Set nodal gap and update quadrature-point values."""
-        self._nodal_gap = adapt_shape(value)
+        self._nodal_gap = np.reshape(value, (1, 1, *self._grid.nb_elements))
         self._quadr_gap = self._fem.interpolate_value(self._nodal_gap)
 
     @property
@@ -166,10 +169,10 @@ class NodalFormCapillary:
         """Return nodal phase field."""
         return self._nodal_phase
 
-    def set_phase(self, value):
+    def set_phase(self, value: np.ndarray):
         """Set nodal phase and update quadrature-point values and gradients."""
-        value[self.gap_is_closed] = 0.
-        self._nodal_phase = value
+        self._nodal_phase = np.reshape(value, (1, 1, *self._grid.nb_elements))
+        self._nodal_phase[self.gap_is_closed] = 0.
         self._quadr_phase = self._fem.interpolate_value(self._nodal_phase)
         self._quadr_phase_gradient = self._fem.interpolate_gradient(self._nodal_phase)
 
@@ -209,7 +212,7 @@ class NodalFormCapillary:
             self._grid, energy_D_phase)) + self._fem.propag_sens_gradient(self._quadrature.propag_integral_weight(
                 self._grid, energy_D_phase_grad))
         jacobian[self.gap_is_closed] = 0
-        return jacobian
+        return jacobian.squeeze()
 
     def get_volume(self):
         """Compute total liquid volume."""
@@ -221,7 +224,7 @@ class NodalFormCapillary:
         [volume_D_phase] = self._bridge.compute_local_volume_jacobian(self._quadr_gap, self._quadr_phase)
         jacobian = self._fem.propag_sens_value(self._quadrature.propag_integral_weight(self._grid, volume_D_phase))
         jacobian[self.gap_is_closed] = 0
-        return jacobian
+        return jacobian.squeeze()
 
     def get_perimeter(self):
         """Compute total perimeter of liquid-vapour interface."""
