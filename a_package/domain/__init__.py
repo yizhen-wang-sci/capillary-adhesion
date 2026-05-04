@@ -15,4 +15,4 @@ from .field import Field, adapt_shape, field_component_ax, field_element_axs
 from .io import NpyIO
 from .fem import FirstOrderElement
 from .quadrature import Quadrature, centroid_quadrature
-from .optimizer import Optimizer
+from .optimizer import Optimizer, Problem, AugmentedLagrangian
