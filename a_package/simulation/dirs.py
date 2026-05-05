@@ -3,29 +3,29 @@ Directory management for organizing simulations.
 
 Structure:
 ROOT
-├─ {case1}
-│ ├─ {task1}--{attempt1}
+├─ case1
+│ ├─ run1
 │ │ ├─ metadata.json
 │ │ ├─ *.* (Files for simulation, can be script, config, figure, animation, etc.)
-│ │ ├─ {run1}
+│ │ ├─ record1
 │ │ │ ├─ input.cfg
 │ │ │ ├─ data/
 │ │ │ ├─ log.txt
 │ │ │ └─ ...
-│ │ ├─ {runX}/
+│ │ ├─ recordX/
 │ │ └─ ...
-│ ├─ {taskX}--{attemptX}/
+│ ├─ runX/
 │ └─ ...
-├─ {caseX}/
+├─ caseX/
 └─ ...
 
 Usage:
     case = CaseDir("cases/my_setup")
-    work = case.new_work("to_do", notes="first try")
-    # or work = case.continue_work("to_do", attempt=1)
-    work.add_metadata({"cmd": sys.argv})
-    work.copy_file(__file__)
-    rin, rdata, rlog = work.access_run_records("run-01", create_new=True)
+    run = case.new_run("to_do", notes="first try")
+    # or run = case.continue_run("to_do", attempt=1)
+    run.add_metadata({"cmd": sys.argv})
+    run.copy_file(__file__)
+    rin, rdata, rlog = work.access_record("run-01", create_new=True)
 """
 
 import json
@@ -77,7 +77,7 @@ class CaseDir(_Dir):
     Pattern to match work directory names: '{task}--{attempt}--{notes}', where '--{notes}' is optional.
     """
 
-    def new_work(self, task: str, notes: str = ""):
+    def new_run(self, task: str, notes: str = ""):
         task = self._format_str(task)
 
         attempts = []
@@ -90,15 +90,15 @@ class CaseDir(_Dir):
         next_attempt = nb_attempts + 1
 
         dir_name = "--".join([task, self._format_num(next_attempt), notes])
-        return WorkDir(self._path / dir_name, exist_ok=False)
+        return RunDir(self._path / dir_name, exist_ok=False)
 
-    def continue_work(self, task: str, attempt: int):
+    def continue_run(self, task: str, attempt: int):
         task = self._format_str(task)
 
         for entry in self._path.iterdir():
             match = self.name_pattern.fullmatch(entry.name)
             if match and match.group(1) == task and int(match.group(2)) == attempt:
-                return WorkDir(entry, exist_ok=True)
+                return RunDir(entry, exist_ok=True)
 
         raise FileNotFoundError(f"No directory found for task '{task}' and attempt {self._format_num(attempt)}")
 
@@ -111,10 +111,10 @@ class CaseDir(_Dir):
         return f"{n:02d}"
 
 
-class WorkDir(_Dir):
+class RunDir(_Dir):
     """
-    A directory to store self-contained simulation files (scripts, configs, run dumps, etc.)
-    and necessary metadata.
+    A directory to store self-contained simulation, including files (scripts, configs, run dumps, etc.),
+    necessary metadata (git hash of the code, etc.) and run records (as subdirectories).
     """
 
     def __init__(self, path: str | Path, exist_ok: bool = True):
@@ -140,14 +140,14 @@ class WorkDir(_Dir):
         dst = self._path / f"{file_name}"
         return shutil.copy2(src, dst)
 
-    def access_run_records(self, name: str, create_new: bool = False):
-        run_dir = RunDir(self._path / name, exist_ok=not create_new)
-        return run_dir.input_file, run_dir.data_dir, run_dir.log_file
+    def access_record(self, name: str, create_new: bool = False):
+        record = RecordDir(self._path / name, exist_ok=not create_new)
+        return record.input_file, record.data_dir, record.log_file
 
 
-class RunDir(_Dir):
+class RecordDir(_Dir):
     """
-    A directory for a single simulation run to record the standard IO (inputs, data, logs).
+    A directory to record the standard IO (inputs, data, logs) during simulation runs.
     It defines the layout and naming convention for those records.
     """
 
