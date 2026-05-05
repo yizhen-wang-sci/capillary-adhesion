@@ -1,6 +1,12 @@
 """
 Directory management for organizing simulations.
 
+FIXME:
+CaseDir handles potentially multiple layers of subdirectories. More precisely, it only deal with folders. Remove the
+"task and attempt" concept.
+But using numbers to keep different runs separate is a nice way to keep separate versions of the code.
+
+
 Structure:
 ROOT
 ├─ case1
