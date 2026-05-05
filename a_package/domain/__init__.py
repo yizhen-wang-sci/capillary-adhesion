@@ -11,7 +11,7 @@ Provides:
 """
 
 from .grid import Grid
-from .field import Field, adapt_shape, field_component_ax, field_element_axs
+from .field import Field, adapt_shape, field_component_ax, field_sub_pt_ax, field_element_axs
 from .io import NpyIO
 from .fem import FirstOrderElement
 from .quadrature import Quadrature, centroid_quadrature
