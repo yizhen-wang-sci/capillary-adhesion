@@ -5,8 +5,7 @@ Solving the numerical optimization problem. No physics meaning in this file.
 import logging
 import timeit
 import typing
-from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Callable, Protocol
 
 import numpy as np
 import NuMPI.Optimization
@@ -125,9 +124,8 @@ class OptimizerResult(typing.TypedDict, total=False):
     time: float
 
 
-class Optimizer(ABC):
+class Optimizer(Protocol):
 
-    @abstractmethod
     def solve_minimisation(self, problem: Problem, x0: np.ndarray, *args, callback=None, **kwargs) -> OptimizerResult:
         pass
 
@@ -515,4 +513,43 @@ class ProjectedLbfgs(Optimizer):
             gtol=self.tol_gradient,
         )
         return OptimizerResult(x=result['x'].reshape(init_shape), dual=result['multiplier'], success=result['success'],
+                               message=result['message'], nit=result['nit'])
+
+
+class BoundedLbfgs(Optimizer):
+    """Can handle linear equality constraint and box inequality constraint."""
+
+    def __init__(self, max_inner_iter: int = 1000, tol_gradient: float = 1e-6):
+        self.max_inner_iter = max_inner_iter
+        self.tol_gradient = tol_gradient
+
+    def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
+
+        def compute_f(x):
+            problem.set_x(x)
+            return problem.get_f()
+
+        def compute_f_Dx(x):
+            problem.set_x(x)
+            return problem.get_f_Dx()
+
+        if problem.has_bounds:
+            bounds_lo = problem.x_lb
+            bounds_hi = problem.x_ub
+        else:
+            bounds_lo = None
+            bounds_hi = None
+
+        init_shape = x0.shape
+        result = NuMPI.Optimization.l_bfgs_bounded(
+            compute_f,
+            x0.ravel(),
+            jac=compute_f_Dx,
+            bounds_lo=bounds_lo,
+            bounds_hi=bounds_hi,
+            callback=callback,
+            maxiter=self.max_inner_iter,
+            gtol=self.tol_gradient,
+        )
+        return OptimizerResult(x=result['x'].reshape(init_shape), success=result['success'],
                                message=result['message'], nit=result['nit'])
