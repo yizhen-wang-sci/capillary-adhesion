@@ -18,11 +18,11 @@ Defaults: `TaggedIndex` for Runs, `ParameterCombo` for Records.
 
 Structure:
 
-    <workspace>/
-    ├─ <run-name>/                (Run: scripts and configs)
+    <work-dir>/
+    ├─ <run-name>/                (Run: scripts, configs, figures, animations, etc.)
     │  ├─ metadata.json
     │  ├─ *.* (simulation files)
-    │  ├─ <record-name>/          (Record: outcome of one execution)
+    │  ├─ <record-name>/          (Record: outcome of one execution, one run can have multiple records)
     │  │  ├─ input.cfg
     │  │  ├─ data/
     │  │  └─ log.txt
@@ -197,14 +197,12 @@ class _Catalog:
     """A view over subdirectories matching a naming convention.
 
     Used internally by `WorkDir` (for Runs) and `_RunDir` (for Records) to
-    enumerate and query their children. Not part of the public API. Returns
-    raw `Path` objects; the calling layer wraps them in the concrete child
-    type it knows about.
+    index and query their subdirectories. Not part of the public API.
+    Returns raw `Path` objects; the calling layer wraps them in the concrete type
+    it knows about.
 
     Query matching uses direct equality on the values returned by the
-    convention's `parse`. Pass query values in the same types `parse` returns:
-    `TaggedIndex` always returns `index` as int; `ParameterCombo` returns
-    strings unless you've configured `types` on it.
+    `NameingConvention.parse`.
     """
 
     def __init__(self, parent_path: Path, naming: NamingConvention):
@@ -283,7 +281,7 @@ class WorkDir(_Dir):
 
         wd  = WorkDir("results/heat_transfer")
         run = wd.new_run(tag="baseline", notes="initial")
-        rec = run.new_record(Re=100, mesh="fine")
+        rec = run.new_record(theta=90, grid_size=1024)
     """
 
     def __init__(
