@@ -6,10 +6,13 @@ Provides hashing and timestamping.
 
 import hashlib
 import json
-import os
+import logging
 import subprocess
 import time
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 
 def compute_script_hash(script_path: Path | str):
@@ -40,17 +43,20 @@ def get_iso_time():
 
 def get_git_hash():
     """Get current git commit hash, or None if not in a git repo."""
-    cwd = os.getcwd()
+    package_root = Path(__file__).parent.parent.resolve()
+    extra_args = dict(capture_output=True,  # capture stdout and stderr
+                      text=True,            # decode to str
+                      cwd=package_root,     # run in package root
+                      check=True)           # raise error if command fails
+
     try:
-        os.chdir(os.path.dirname(os.path.abspath(__file__)))
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        os.chdir(cwd)
+        # Print warning information if there are uncommitted changes
+        result = subprocess.run(["git", "status", "--porcelain"], **extra_args)
+        if result.stdout:
+            logger.warning("WARNING: Uncommitted changes detected. This may affect reproducibility.")
+        # Get current git commit hash
+        result = subprocess.run(["git", "rev-parse", "HEAD"], **extra_args)
         return result.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        os.chdir(cwd)
+    except subprocess.CalledProcessError:
+        logger.warning("WARNING: Not in a git repository.")
         return None
