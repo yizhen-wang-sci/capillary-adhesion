@@ -30,7 +30,7 @@ class CapillaryBridge:
     Minimal numerics info: it only touches the component axis and keeps the axis after reduction.
     """
 
-    def __init__(self, eta: float, theta: float, epsilon: float):
+    def __init__(self, eta: float, theta: float, epsilon: float=1.0):
         """
         Parameters
         ----------
