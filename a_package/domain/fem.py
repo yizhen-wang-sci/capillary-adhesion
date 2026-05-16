@@ -15,14 +15,14 @@ class FirstOrderElement:
     """
 
     def __init__(self, grid: Grid, sub_pt_coords: np.ndarray):
-        self.grid_shape = grid.nb_elements
+        self.grid_shape = grid.nb_domain_grid_pts
         self.nb_sub_pts = sub_pt_coords.shape[0]
 
         fe_pixel = LinearFiniteElementPixel()
         val_interp_coeffs = fe_pixel.compute_value_interpolation_coefficients(sub_pt_coords)
         grad_interp_coeffs = fe_pixel.compute_gradient_interpolation_coefficients(sub_pt_coords)
 
-        [M, N] = grid.nb_elements
+        [M, N] = grid.nb_domain_grid_pts
         MN = M * N
 
         # mapping nodal value to the value at target points

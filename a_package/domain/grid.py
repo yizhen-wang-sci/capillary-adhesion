@@ -11,11 +11,11 @@ import numpy.fft as fft
 class Grid:
     """A discrete space in 2D."""
 
-    lengths: typing.Sequence[float]
-    nb_elements: typing.Sequence[int]
+    lateral_sizes: typing.Sequence[float]
+    nb_domain_grid_pts: typing.Sequence[int]
 
     def __post_init__(self):
-        self.element_sizes = [l / n for [l, n] in zip(self.lengths, self.nb_elements)]
+        self.element_sizes = [l / n for [l, n] in zip(self.lateral_sizes, self.nb_domain_grid_pts)]
         self.element_area = functools.reduce(operator.mul, self.element_sizes, 1.)
 
     # =========================================================================
@@ -24,9 +24,9 @@ class Grid:
 
     def form_index_axis(self, ax_index: int, endpoint: bool = False):
         """Return indices: 0, 1, 2, ..., N-1."""
-        axis = np.arange(self.nb_elements[ax_index])
+        axis = np.arange(self.nb_domain_grid_pts[ax_index])
         if endpoint:
-            axis = np.append(axis, self.nb_elements[ax_index])
+            axis = np.append(axis, self.nb_domain_grid_pts[ax_index])
         return axis
 
     def form_index_mesh(self, endpoint: bool = False):
@@ -39,7 +39,7 @@ class Grid:
     def form_spatial_axis(self, ax_index: int, with_endpoint: bool = False):
         """Return spatial coordinates: 0, d, 2d, ..., (N-1)d."""
         d = self.element_sizes[ax_index]
-        n = self.nb_elements[ax_index]
+        n = self.nb_domain_grid_pts[ax_index]
         if with_endpoint:
             n += 1
         return np.arange(n) * d
@@ -53,7 +53,7 @@ class Grid:
 
     def form_spectral_axis(self, ax_index: int):
         """Return spectral wavenumbers in FFT order."""
-        n = self.nb_elements[ax_index]
+        n = self.nb_domain_grid_pts[ax_index]
         d = self.element_sizes[ax_index]
         return (2 * np.pi) * fft.fftfreq(n, d)
 

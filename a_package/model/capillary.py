@@ -149,7 +149,7 @@ class NodalFormCapillary:
 
     @property
     def grid_shape(self):
-        return self._grid.nb_elements
+        return self._grid.nb_domain_grid_pts
 
     def get_gap(self):
         """Return nodal gap field."""
@@ -157,7 +157,7 @@ class NodalFormCapillary:
 
     def set_gap(self, value: np.ndarray):
         """Set nodal gap and update quadrature-point values."""
-        self._nodal_gap = np.reshape(value, (1, 1, *self._grid.nb_elements))
+        self._nodal_gap = np.reshape(value, (1, 1, *self._grid.nb_domain_grid_pts))
         self._quadr_gap = self._fem.interpolate_value(self._nodal_gap)
 
     @property
@@ -171,7 +171,7 @@ class NodalFormCapillary:
 
     def set_phase(self, value: np.ndarray):
         """Set nodal phase and update quadrature-point values and gradients."""
-        self._nodal_phase = np.reshape(value, (1, 1, *self._grid.nb_elements))
+        self._nodal_phase = np.reshape(value, (1, 1, *self._grid.nb_domain_grid_pts))
         self._nodal_phase[self.gap_is_closed] = 0.
         self._quadr_phase = self._fem.interpolate_value(self._nodal_phase)
         self._quadr_phase_gradient = self._fem.interpolate_gradient(self._nodal_phase)
