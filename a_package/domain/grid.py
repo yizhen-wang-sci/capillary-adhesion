@@ -8,7 +8,11 @@ import muGrid
 
 
 class Grid:
-    """A discrete space in 2D."""
+    """A discrete space in 2D.
+
+    A thin wrapper of muGrid instances.
+    Since muGrid doesn't know the domain lengths, we provide them here.
+    """
 
     def __init__(self, lengths: Sequence[float], nb_grid_pts: Sequence[int]):
         assert len(lengths) == len(nb_grid_pts), "lengths and nb_grid_pts must have compatible dimensions."
@@ -24,8 +28,6 @@ class Grid:
                   nb_ghost_layers: Sequence[int] | None = None,
                   communicator=None):
 
-        return muGrid.GlobalFieldCollection(self.nb_domain_grid_pts)
-
         # nb_subdomains, set it equivalent to non-decomposed case by default
         if nb_subdomains is None:
             nb_subdomains = [1] * self.nb_spatial_dim
@@ -37,8 +39,8 @@ class Grid:
         # Wrap the communicator in a muGrid.Communicator object
         communicator = muGrid.Communicator(communicator)
 
-        # return muGrid.CartesianDecomposition(
-        #     communicator, self.nb_domain_grid_pts, tuple(nb_subdomains), tuple(nb_ghost_layers), tuple(nb_ghost_layers))
+        return muGrid.CartesianDecomposition(
+            communicator, self.nb_domain_grid_pts, tuple(nb_subdomains), tuple(nb_ghost_layers), tuple(nb_ghost_layers))
 
     # =========================================================================
     # Index: 0, 1, 2, ..., N-1

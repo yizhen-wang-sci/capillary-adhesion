@@ -129,7 +129,8 @@ class CapillaryBridge:
         self._fem = FirstOrderElement(grid, self._quadrature.quad_pt_coords)
 
         # fields
-        self._collection = grid.decompose()
+        self._decomposition = grid.decompose()
+        self._collection = self._decomposition.collection
         self._collection.set_nb_sub_pts("quadr", self._quadrature.nb_quad_pts)
         self._nodal_gap = muGrid.Field(self._collection.real_field("nodal_gap", 1, "pixel"))
         self._quadr_gap = muGrid.Field(self._collection.real_field("quadr_gap", 1, "quadr"))
@@ -148,6 +149,7 @@ class CapillaryBridge:
     def set_gap(self, value: np.ndarray):
         """Set nodal gap and update quadrature-point values."""
         self._nodal_gap.s[...] = np.reshape(value, (1, 1, *self._grid.nb_domain_grid_pts))
+        self._decomposition.communicate_ghosts(self._nodal_gap)
         self._quadr_gap.s[...] = self._fem.interpolate_value(self._nodal_gap.s)
 
     @property
@@ -163,6 +165,7 @@ class CapillaryBridge:
         """Set nodal phase and update quadrature-point values and gradients."""
         self._nodal_phase.s[...] = np.reshape(value, (1, 1, *self._grid.nb_domain_grid_pts))
         self._nodal_phase.s[self.gap_is_closed] = 0.
+        self._decomposition.communicate_ghosts(self._nodal_phase)
         self._quadr_phase.s[...] = self._fem.interpolate_value(self._nodal_phase.s)
         self._quadr_phase_gradient.s[...] = self._fem.interpolate_gradient(self._nodal_phase.s)
 
