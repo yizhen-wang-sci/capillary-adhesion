@@ -3,10 +3,10 @@ Equilibrium formulations for capillary contact problems.
 """
 
 from a_package.domain import Problem
-from .capillary import NodalFormCapillary
+from .capillary import CapillaryBridge
 
 
-def formulate_constant_volume_phase_problem(capillary: NodalFormCapillary, volume: float):
+def formulate_constant_volume_phase_problem(capillary: CapillaryBridge, volume: float):
     """
     min energy(phase)
     s.t. volume(phase) == volume
@@ -37,7 +37,7 @@ def formulate_constant_volume_phase_problem(capillary: NodalFormCapillary, volum
                    x_ub=capillary.phase_ub)
 
 
-def formulate_constant_pressure_phase_problem(capillary: NodalFormCapillary, pressure: float):
+def formulate_constant_pressure_phase_problem(capillary: CapillaryBridge, pressure: float):
     """
     min energy(phase) - pressure * volume(phase)
     """

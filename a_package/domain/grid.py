@@ -1,22 +1,44 @@
-import typing
 import functools
 import operator
-import dataclasses as dc
+from typing import Sequence
 
 import numpy as np
 import numpy.fft as fft
+import muGrid
 
 
-@dc.dataclass
 class Grid:
     """A discrete space in 2D."""
 
-    lateral_sizes: typing.Sequence[float]
-    nb_domain_grid_pts: typing.Sequence[int]
+    def __init__(self, lengths: Sequence[float], nb_grid_pts: Sequence[int]):
+        assert len(lengths) == len(nb_grid_pts), "lengths and nb_grid_pts must have compatible dimensions."
+        self.domain_lengths = tuple(lengths)
+        self.nb_domain_grid_pts = tuple(nb_grid_pts)
 
-    def __post_init__(self):
-        self.element_sizes = [l / n for [l, n] in zip(self.lateral_sizes, self.nb_domain_grid_pts)]
+        self.nb_spatial_dim = len(self.nb_domain_grid_pts)
+        self.element_sizes = [l / n for [l, n] in zip(self.domain_lengths, self.nb_domain_grid_pts)]
         self.element_area = functools.reduce(operator.mul, self.element_sizes, 1.)
+
+    def decompose(self,
+                  nb_subdomains: Sequence[int] | None = None,
+                  nb_ghost_layers: Sequence[int] | None = None,
+                  communicator=None):
+
+        return muGrid.GlobalFieldCollection(self.nb_domain_grid_pts)
+
+        # nb_subdomains, set it equivalent to non-decomposed case by default
+        if nb_subdomains is None:
+            nb_subdomains = [1] * self.nb_spatial_dim
+
+        # ghost layers, set all to 1 by default
+        if nb_ghost_layers is None:
+            nb_ghost_layers = [1] * self.nb_spatial_dim
+
+        # Wrap the communicator in a muGrid.Communicator object
+        communicator = muGrid.Communicator(communicator)
+
+        # return muGrid.CartesianDecomposition(
+        #     communicator, self.nb_domain_grid_pts, tuple(nb_subdomains), tuple(nb_ghost_layers), tuple(nb_ghost_layers))
 
     # =========================================================================
     # Index: 0, 1, 2, ..., N-1
@@ -36,16 +58,16 @@ class Grid:
     # Spatial: 0, d, 2d, ..., (N-1)d
     # =========================================================================
 
-    def form_spatial_axis(self, ax_index: int, with_endpoint: bool = False):
+    def form_spatial_axis(self, ax_index: int, endpoint: bool = False):
         """Return spatial coordinates: 0, d, 2d, ..., (N-1)d."""
         d = self.element_sizes[ax_index]
         n = self.nb_domain_grid_pts[ax_index]
-        if with_endpoint:
+        if endpoint:
             n += 1
         return np.arange(n) * d
 
-    def form_spatial_mesh(self, with_endpoint: bool = False):
-        return np.meshgrid(self.form_spatial_axis(0, with_endpoint), self.form_spatial_axis(1, with_endpoint))
+    def form_spatial_mesh(self, endpoint: bool = False):
+        return np.meshgrid(self.form_spatial_axis(0, endpoint), self.form_spatial_axis(1, endpoint))
 
     # =========================================================================
     # Spectral: 2π / (N * pixel_size * ref_scale) * fftfreq indices
@@ -60,20 +82,12 @@ class Grid:
     def form_spectral_mesh(self):
         return np.meshgrid(self.form_spectral_axis(0), self.form_spectral_axis(1))
 
-    # =========================================================================
-    # Rescale by element_area
-    # =========================================================================
 
-    def rescale(self, array: np.ndarray, direction: str):
-        """
-        Rescale array by element_area.
-
-        direction='forward': multiply by element_area (e.g., integral, before fft2)
-        direction='backward': divide by element_area (e.g., after ifft2)
-        """
-        if direction == 'forward':
-            return array * self.element_area
-        elif direction == 'backward':
-            return array / self.element_area
-        else:
-            raise ValueError(f"direction must be 'forward' or 'backward', got {direction}")
+def factorize_closest(value: int, nb_ints: int):
+    """Find the maximal combination of nb_ints integers whose product is less or equal to value."""
+    nb_divisions = []
+    for root_degree in range(nb_ints, 0, -1):
+        max_divisor = int(value ** (1 / root_degree))
+        nb_divisions.append(max_divisor)
+        value //= max_divisor
+    return nb_divisions
