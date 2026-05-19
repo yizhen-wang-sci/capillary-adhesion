@@ -16,7 +16,7 @@ class Grid:
 
     def __init__(self, nb_grid_pts: Sequence[int], lengths: Sequence[float] | None = None):
         if lengths is None:
-            lengths = [1.0] * len(nb_grid_pts)
+            lengths = (1.0,) * len(nb_grid_pts)
         if len(lengths) != len(nb_grid_pts):
             raise ValueError("lengths and nb_grid_pts must have compatible dimensions.")
         self.domain_lengths = tuple(lengths)
@@ -33,11 +33,11 @@ class Grid:
 
         # default value of nb_subdomains, set to all 1 so it is equivalent to no decomposition
         if nb_subdomains is None:
-            nb_subdomains = [1] * self.nb_spatial_dim
+            nb_subdomains = (1,) * self.nb_spatial_dim
 
         # default value of nb_ghost_layers, set to all 0 so it is equivalent to no decomposition
         if nb_ghost_layers is None:
-            nb_ghost_layers = [0] * self.nb_spatial_dim
+            nb_ghost_layers = (0,) * self.nb_spatial_dim
 
         # Wrap the communicator in a muGrid.Communicator object. The constructor has a mechanism
         # to avoid overhead if the communicator is already a muGrid.Communicator object.
