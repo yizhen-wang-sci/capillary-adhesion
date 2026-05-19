@@ -7,7 +7,7 @@ import logging
 import numpy as np
 import muGrid
 
-from a_package.domain import Grid, FirstOrderElement, Quadrature, centroid_quadrature
+from a_package.domain import Grid, FirstOrderElement, Quadrature, centroid_quadrature, factorize_closest
 from a_package.domain import Field, field_component_ax
 
 
@@ -120,23 +120,39 @@ class CapillaryBridge:
     All its methods accept and return nodal values, and it handles the interpolation and integral.
     """
 
-    def __init__(self, grid: Grid, phase_mixture, quadrature: Quadrature = centroid_quadrature):
+    def __init__(self, grid: Grid, phase_mixture, quadrature: Quadrature = centroid_quadrature, communicator=None):
         self._grid = grid
         self._mixture = phase_mixture
 
         # numeric helpers
         self._quadrature = quadrature
-        self._fem = FirstOrderElement(grid, self._quadrature.quad_pt_coords)
+        self._fem = FirstOrderElement(self._quadrature.quad_pt_coords, grid.element_sizes)
+
+        # wrap communicator in muGrid.Communicator. The constructor has a mechanism to avoid
+        # overhead if the communicator is already a muGrid.Communicator object.
+        communicator = muGrid.Communicator(communicator)
+
+        # decomopsition and field collection setup
+        self._decomposition = grid.decompose(factorize_closest(communicator.size, 2),
+                                             nb_ghost_layers=(1, 1), communicator=communicator)
+        self._collection = self._decomposition.collection
+        self._collection.set_nb_sub_pts("nodal", 1)
+        self._collection.set_nb_sub_pts("quadr", self._quadrature.nb_quad_pts)
 
         # fields
-        self._decomposition = grid.decompose()
-        self._collection = self._decomposition.collection
-        self._collection.set_nb_sub_pts("quadr", self._quadrature.nb_quad_pts)
-        self._nodal_gap = muGrid.Field(self._collection.real_field("nodal_gap", 1, "pixel"))
+        self._nodal_gap = muGrid.Field(self._collection.real_field("nodal_gap", 1, "nodal"))
         self._quadr_gap = muGrid.Field(self._collection.real_field("quadr_gap", 1, "quadr"))
-        self._nodal_phase = muGrid.Field(self._collection.real_field("nodal_phase", 1, "pixel"))
+        self._nodal_phase = muGrid.Field(self._collection.real_field("nodal_phase", 1, "nodal"))
         self._quadr_phase = muGrid.Field(self._collection.real_field("quadr_phase", 1, "quadr"))
         self._quadr_phase_gradient = muGrid.Field(self._collection.real_field("quadr_phase_gradient", 2, "quadr"))
+
+        # more fields for backward propagation
+        self._quadr_value_1 = muGrid.Field(self._collection.real_field("quadr_value_1", 1, "quadr"))
+        self._quadr_value_1_back_sens = muGrid.Field(self._collection.real_field("quadr_value_1_back_sens", 1, "nodal"))
+        self._quadr_value_2 = muGrid.Field(self._collection.real_field("quadr_value_2", 1, "quadr"))
+        self._quadr_value_2_back_sens = muGrid.Field(self._collection.real_field("quadr_value_2_back_sens", 1, "nodal"))
+        self._quadr_gradient = muGrid.Field(self._collection.real_field("quadr_gradient", 2, "quadr"))
+        self._quadr_gradient_back_sens = muGrid.Field(self._collection.real_field("quadr_gradient_back_sens", 1, "nodal"))
 
     @property
     def grid_shape(self):
@@ -150,7 +166,7 @@ class CapillaryBridge:
         """Set nodal gap and update quadrature-point values."""
         self._nodal_gap.s[...] = np.reshape(value, (1, 1, *self._grid.nb_domain_grid_pts))
         self._decomposition.communicate_ghosts(self._nodal_gap)
-        self._quadr_gap.s[...] = self._fem.interpolate_value(self._nodal_gap.s)
+        self._fem.interpolate_value(self._nodal_gap, self._quadr_gap)
 
     @property
     def gap_is_closed(self):
@@ -166,8 +182,8 @@ class CapillaryBridge:
         self._nodal_phase.s[...] = np.reshape(value, (1, 1, *self._grid.nb_domain_grid_pts))
         self._nodal_phase.s[self.gap_is_closed] = 0.
         self._decomposition.communicate_ghosts(self._nodal_phase)
-        self._quadr_phase.s[...] = self._fem.interpolate_value(self._nodal_phase.s)
-        self._quadr_phase_gradient.s[...] = self._fem.interpolate_gradient(self._nodal_phase.s)
+        self._fem.interpolate_value(self._nodal_phase, self._quadr_phase)
+        self._fem.interpolate_gradient(self._nodal_phase, self._quadr_phase_gradient)
 
     @property
     def phase_lb(self):
@@ -200,11 +216,18 @@ class CapillaryBridge:
 
     def get_energy_jacobian(self):
         """Compute gradient of energy w.r.t. nodal phase."""
-        [energy_D_phase, energy_D_phase_grad] = self._mixture.compute_local_energy_jacobian(
+        [energy_D_phase, energy_D_phase_gradient] = self._mixture.compute_local_energy_jacobian(
             self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s)
-        jacobian = self._fem.propag_sens_value(self._quadrature.propag_integral_weight(
-            self._grid, energy_D_phase)) + self._fem.propag_sens_gradient(self._quadrature.propag_integral_weight(
-                self._grid, energy_D_phase_grad))
+
+        self._quadr_value_1.s[...] = self._quadrature.propag_integral_weight(self._grid, energy_D_phase)
+        self._decomposition.communicate_ghosts(self._quadr_value_1)
+        self._fem.propag_sens_value(self._quadr_value_1, self._quadr_value_1_back_sens)
+
+        self._quadr_gradient.s[...] = self._quadrature.propag_integral_weight(self._grid, energy_D_phase_gradient)
+        self._decomposition.communicate_ghosts(self._quadr_gradient)
+        self._fem.propag_sens_gradient(self._quadr_gradient, self._quadr_gradient_back_sens)
+
+        jacobian = self._quadr_value_1_back_sens.s + self._quadr_gradient_back_sens.s
         jacobian[self.gap_is_closed] = 0
         return jacobian.squeeze()
 
@@ -216,7 +239,12 @@ class CapillaryBridge:
     def get_volume_jacobian(self):
         """Compute gradient of volume w.r.t. nodal phase."""
         [volume_D_phase] = self._mixture.compute_local_volume_jacobian(self._quadr_gap.s, self._quadr_phase.s)
-        jacobian = self._fem.propag_sens_value(self._quadrature.propag_integral_weight(self._grid, volume_D_phase))
+
+        self._quadr_value_2.s[...] = self._quadrature.propag_integral_weight(self._grid, volume_D_phase)
+        self._decomposition.communicate_ghosts(self._quadr_value_2)
+        self._fem.propag_sens_value(self._quadr_value_2, self._quadr_value_2_back_sens)
+
+        jacobian = self._quadr_value_2_back_sens.s.copy()
         jacobian[self.gap_is_closed] = 0
         return jacobian.squeeze()
 
