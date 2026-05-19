@@ -14,8 +14,11 @@ class Grid:
     Since muGrid doesn't know the domain lengths, we provide them here.
     """
 
-    def __init__(self, lengths: Sequence[float], nb_grid_pts: Sequence[int]):
-        assert len(lengths) == len(nb_grid_pts), "lengths and nb_grid_pts must have compatible dimensions."
+    def __init__(self, nb_grid_pts: Sequence[int], lengths: Sequence[float] | None = None):
+        if lengths is None:
+            lengths = [1.0] * len(nb_grid_pts)
+        if len(lengths) != len(nb_grid_pts):
+            raise ValueError("lengths and nb_grid_pts must have compatible dimensions.")
         self.domain_lengths = tuple(lengths)
         self.nb_domain_grid_pts = tuple(nb_grid_pts)
 
