@@ -28,15 +28,16 @@ class Grid:
                   nb_ghost_layers: Sequence[int] | None = None,
                   communicator=None):
 
-        # nb_subdomains, set it equivalent to non-decomposed case by default
+        # default value of nb_subdomains, set to all 1 so it is equivalent to no decomposition
         if nb_subdomains is None:
             nb_subdomains = [1] * self.nb_spatial_dim
 
-        # ghost layers, set all to 1 by default
+        # default value of nb_ghost_layers, set to all 0 so it is equivalent to no decomposition
         if nb_ghost_layers is None:
-            nb_ghost_layers = [1] * self.nb_spatial_dim
+            nb_ghost_layers = [0] * self.nb_spatial_dim
 
-        # Wrap the communicator in a muGrid.Communicator object
+        # Wrap the communicator in a muGrid.Communicator object. The constructor has a mechanism
+        # to avoid overhead if the communicator is already a muGrid.Communicator object.
         communicator = muGrid.Communicator(communicator)
 
         return muGrid.CartesianDecomposition(
@@ -85,11 +86,11 @@ class Grid:
         return np.meshgrid(self.form_spectral_axis(0), self.form_spectral_axis(1))
 
 
-def factorize_closest(value: int, nb_ints: int):
-    """Find the maximal combination of nb_ints integers whose product is less or equal to value."""
-    nb_divisions = []
-    for root_degree in range(nb_ints, 0, -1):
+def factorize_closest(value: int, nb_factor: int):
+    """Find the maximal combination of nb_factor integers whose product is less or equal to value."""
+    factors = []
+    for root_degree in range(nb_factor, 0, -1):
         max_divisor = int(value ** (1 / root_degree))
-        nb_divisions.append(max_divisor)
+        factors.append(max_divisor)
         value //= max_divisor
-    return nb_divisions
+    return factors
