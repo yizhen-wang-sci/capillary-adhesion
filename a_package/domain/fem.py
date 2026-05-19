@@ -40,7 +40,7 @@ class FirstOrderElement:
         grad_interp_coeffs = fe_pixel.compute_gradient_interpolation_coefficients(sub_pt_coords)
         pixel_op_gradient = np.zeros([nb_spatial_dim, nb_sub_pts, *nodal_pixel_shape])
         for i_subpt, subpt_coeffs in enumerate(grad_interp_coeffs):
-            for i_component, compon_name in enumerate(['x', 'y']):
+            for i_component, compon_name in enumerate(["x1", "x2"]):
                 for coords, coeff in subpt_coeffs[compon_name].items():
                     pixel_op_gradient[i_component, i_subpt, *coords] = coeff / element_sizes[i_component]
         self._op_gradient = muGrid.GenericLinearOperator(offset, pixel_op_gradient)
@@ -121,8 +121,8 @@ class LinearFiniteElementPixel:
 
     @staticmethod
     def triangle0_shape_function_gradient(x1, x2):
-        return {"x": {(0, 0): -1.0, (1, 0): 1.0}, "y": {(0, 0): -1.0, (0, 1): 1.0}}
+        return {"x1": {(0, 0): -1.0, (1, 0): 1.0}, "x2": {(0, 0): -1.0, (0, 1): 1.0}}
 
     @staticmethod
     def triangle1_shape_function_gradient(x1, x2):
-        return {"x": {(0, 1): -1.0, (1, 1): 1.0}, "y": {(1, 0): -1.0, (1, 1): 1.0}}
+        return {"x1": {(0, 1): -1.0, (1, 1): 1.0}, "x2": {(1, 0): -1.0, (1, 1): 1.0}}

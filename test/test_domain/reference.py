@@ -37,7 +37,7 @@ class RefFirstOrderElement:
         # mapping nodal value to the gradient at target points
         grad_interp_coeffs = fe_pixel.compute_gradient_interpolation_coefficients(sub_pt_coords)
         blocks = []
-        for compon_idx, compon_name in enumerate(['x', 'y']):
+        for compon_idx, compon_name in enumerate(["x1", "x2"]):
             for sub_pt_coeffs in grad_interp_coeffs:
                 sub_pt_matrix = sparse.lil_matrix((MN, MN), dtype=float)
                 for node_idxs, coeff in sub_pt_coeffs[compon_name].items():
