@@ -38,9 +38,6 @@ class NpyIO:
                                  self._nb_subdomain_grid_pts)
 
     def save_distributed(self, name: str, data):
-        print(data.shape)
-        print(self._subdomain_locations)
-        print(self._nb_domain_grid_pts)
         NuMPI.IO.save_npy(self._to_full_path(name),
                           np.ascontiguousarray(data),
                           self._subdomain_locations,

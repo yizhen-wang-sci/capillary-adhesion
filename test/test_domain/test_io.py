@@ -17,6 +17,7 @@ def field(comm_world):
 def array(comm_world):
     return comm_world.bcast(np.random.rand(10))
 
+
 @pytest.fixture
 def mpi_tmp_path(tmp_path_factory, comm_world):
     if comm_world.rank == 0:
@@ -34,15 +35,11 @@ def mpi_tmp_path(tmp_path_factory, comm_world):
 def test_save_load_distributed(mpi_tmp_path, field, comm_world):
     grid = Grid(field.shape)
     decomposition = grid.decompose(factorize_closest(comm_world.Get_size(), 2), nb_ghost_layers=(1, 1), communicator=comm_world)
-    print("A")
     io = NpyIO(mpi_tmp_path, decomposition)
-    print("B")
     name = "test_distributed"
 
     io.save_distributed(name, field[*decomposition.icoords])
-    print("C")
     loaded_arr = io.load_distributed(name)
-    print("D")
     np.testing.assert_equal(loaded_arr, field[*decomposition.icoords])
 
 
