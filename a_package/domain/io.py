@@ -5,40 +5,56 @@ IO for persisting fields and arrays.
 import pathlib
 
 import numpy as np
+import NuMPI.IO
+from NuMPI import MPI
 
-from .grid import Grid
-from .field import Field, adapt_shape
+
+_comm = MPI.COMM_WORLD
 
 
 class NpyIO:
     """
-    NumPy-based persistence for fields and arrays.
+    NumPy-based parallel-aware data persistence.
     """
 
-    root_path: pathlib.Path
-
-    def __init__(self, root_path):
-        self.root_path = pathlib.Path(root_path)
+    def __init__(self, root_path, decomposition=None):
+        self._root_path = pathlib.Path(root_path)
+        if decomposition is None:
+            # NuMPI.IO will treat it as no decomposition
+            self._subdomain_locations = None
+            self._nb_subdomain_grid_pts = None
+            self._nb_domain_grid_pts = None
+        else:
+            self._subdomain_locations = tuple(decomposition.subdomain_locations)
+            self._nb_subdomain_grid_pts = tuple(decomposition.nb_subdomain_grid_pts)
+            self._nb_domain_grid_pts = tuple(decomposition.nb_domain_grid_pts)
 
     def _to_full_path(self, name: str):
-        return self.root_path / f"{name}.npy"
+        return self._root_path / f"{name}.npy"
 
-    def load_field(self, grid: Grid, name: str):
-        try:
-            field = np.load(self._to_full_path(name), allow_pickle=False)
-        except FileNotFoundError:
-            field = np.atleast_2d([])
-        return adapt_shape(field)
+    def load_distributed(self, name: str):
+        return NuMPI.IO.load_npy(self._to_full_path(name),
+                                 self._subdomain_locations,
+                                 self._nb_subdomain_grid_pts)
 
-    def save_field(self, grid: Grid, name: str, field: Field):
-        np.save(self._to_full_path(name), field)
+    def save_distributed(self, name: str, data):
+        print(data.shape)
+        print(self._subdomain_locations)
+        print(self._nb_domain_grid_pts)
+        NuMPI.IO.save_npy(self._to_full_path(name),
+                          np.ascontiguousarray(data),
+                          self._subdomain_locations,
+                          self._nb_domain_grid_pts)
 
-    def load_value_array(self, name: str):
-        try:
-            array = np.load(self._to_full_path(name), allow_pickle=False)
-        except FileNotFoundError:
-            array = np.array([])
-        return array
+    def load_singular(self, name: str):
+        if _comm.rank == 0:
+            return np.load(self._to_full_path(name), allow_pickle=False)
+        return None
 
-    def save_value_array(self, name: str, array: np.ndarray):
-        np.save(self._to_full_path(name), array)
+    def save_singular(self, name: str, data):
+        if _comm.rank == 0:
+            np.save(self._to_full_path(name), data)
+        _comm.barrier()
+
+    def load_replicated(self, name: str):
+        return _comm.bcast(self.load_singular(name))

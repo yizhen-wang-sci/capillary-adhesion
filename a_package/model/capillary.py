@@ -132,9 +132,9 @@ class CapillaryBridge:
         # overhead if the communicator is already a muGrid.Communicator object.
         communicator = muGrid.Communicator(communicator)
 
-        # decomopsition and field collection setup
-        self._decomposition = grid.decompose(factorize_closest(communicator.size, 2),
-                                             nb_ghost_layers=(1, 1), communicator=communicator)
+        # decomposition and field collection setup
+        nb_subdomains = factorize_closest(communicator.size, 2)
+        self._decomposition = grid.decompose(nb_subdomains, nb_ghost_layers=(1, 1), communicator=communicator)
         self._collection = self._decomposition.collection
         self._collection.set_nb_sub_pts("nodal", 1)
         self._collection.set_nb_sub_pts("quadr", self._quadrature.nb_quad_pts)
