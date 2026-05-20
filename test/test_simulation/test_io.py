@@ -2,34 +2,26 @@
 Tests for SimulationIO.
 """
 
-import shutil
-import tempfile
-
 import pytest
 import numpy as np
+from NuMPI import MPI
 
 from a_package.domain import Grid
 from a_package.simulation.io import SimulationIO
 
 
 @pytest.fixture
-def temp_dir():
-    """Create a temporary directory for tests."""
-    path = tempfile.mkdtemp()
-    yield path
-    shutil.rmtree(path, ignore_errors=True)
-
-
-@pytest.fixture
 def grid():
     """Create a simple grid."""
-    return Grid([1.0, 1.0], [8, 8])
+    return Grid((8, 8))
 
 
 @pytest.fixture
-def io(grid, temp_dir):
+def io(grid, tmp_path):
     """Create a SimulationIO instance."""
-    return SimulationIO(grid, temp_dir)
+    comm_world = MPI.COMM_WORLD
+    decomposition = grid.decompose((comm_world.Get_size(), 1), communicator=comm_world)
+    return SimulationIO(tmp_path, decomposition)
 
 
 # =============================================================================
@@ -147,13 +139,3 @@ def test_save_trajectory_fields(io):
 
     for i, expected in enumerate(fields):
         np.testing.assert_array_almost_equal(result["field"][i], expected)
-
-
-# =============================================================================
-# Grid access
-# =============================================================================
-
-
-def test_io_grid_property(io, grid):
-    """SimulationIO.grid returns the grid."""
-    assert io.grid is grid

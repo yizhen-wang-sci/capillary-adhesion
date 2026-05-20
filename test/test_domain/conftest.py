@@ -1,7 +1,7 @@
 import pytest
 
 import numpy as np
-from mpi4py import MPI
+from NuMPI import MPI
 
 
 @pytest.fixture
