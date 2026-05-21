@@ -1,10 +1,9 @@
-import functools
-import operator
 from typing import Sequence
 
 import numpy as np
 import numpy.fft as fft
 import muGrid
+from NuMPI import MPI
 
 
 class Grid:
@@ -14,37 +13,60 @@ class Grid:
     Since muGrid doesn't know the domain lengths, we provide them here.
     """
 
-    def __init__(self, nb_grid_pts: Sequence[int], lengths: Sequence[float] | None = None):
+    def __init__(self, nb_grid_pts: Sequence[int], lengths: Sequence[float] | None = None,
+                 decomposition: muGrid.CartesianDecomposition | None= None):
+        self.nb_domain_grid_pts = tuple(nb_grid_pts)
+        self.nb_spatial_dim = len(self.nb_domain_grid_pts)
+
         if lengths is None:
+            # default to 1.0 in each dimension
             lengths = (1.0,) * len(nb_grid_pts)
         if len(lengths) != len(nb_grid_pts):
             raise ValueError("lengths and nb_grid_pts must have compatible dimensions.")
         self.domain_lengths = tuple(lengths)
-        self.nb_domain_grid_pts = tuple(nb_grid_pts)
 
-        self.nb_spatial_dim = len(self.nb_domain_grid_pts)
-        self.element_sizes = [l / n for [l, n] in zip(self.domain_lengths, self.nb_domain_grid_pts)]
-        self.element_area = functools.reduce(operator.mul, self.element_sizes, 1.)
+        self.element_sizes = [l / n for l, n in zip(self.domain_lengths, self.nb_domain_grid_pts)]
+        self.element_area = np.multiply.reduce(self.element_sizes, initial=1.)
 
-    def decompose(self,
-                  nb_subdomains: Sequence[int] | None = None,
-                  nb_ghost_layers: Sequence[int] | None = None,
-                  communicator=None):
+        if decomposition is None:
+            # default to no decomposition, where all processes have its grid representing the same global domain
+            decomposition = muGrid.CartesianDecomposition(muGrid.Communicator(MPI.COMM_SELF),
+                                                          list(self.nb_domain_grid_pts), [1] * self.nb_spatial_dim,
+                                                          [0] * self.nb_spatial_dim, [0] * self.nb_spatial_dim)
+        self.decomposition = decomposition
 
-        # default value of nb_subdomains, set to all 1 so it is equivalent to no decomposition
-        if nb_subdomains is None:
-            nb_subdomains = (1,) * self.nb_spatial_dim
+    def decompose(self, nb_subdomains: Sequence[int],
+                  nb_ghost_layers: Sequence[int] | None = None, communicator = None):
+        """Decompose a grid, such that each process gets a subdomain of the same global domain."""
+        if len(nb_subdomains) != self.nb_spatial_dim:
+            raise ValueError(f"nb_subdomains must have the same dimension as nb_grid_pts, got {len(nb_subdomains)} "
+                             f"and {self.nb_spatial_dim}")
 
-        # default value of nb_ghost_layers, set to all 0 so it is equivalent to no decomposition
         if nb_ghost_layers is None:
-            nb_ghost_layers = (0,) * self.nb_spatial_dim
+            # default to all 0 in each dimension
+            nb_ghost_layers = [0] * self.nb_spatial_dim
+        if len(nb_ghost_layers) != self.nb_spatial_dim:
+            raise ValueError(f"nb_ghost_layers must have the same dimension as nb_grid_pts, got {len(nb_ghost_layers)} "
+                             f"and {self.nb_spatial_dim}")
 
+        if communicator is None:
+            # default to intercommunicating all processes
+            communicator = MPI.COMM_WORLD
+        if communicator.Get_size() < np.multiply.reduce(nb_subdomains):
+            raise ValueError(f"The number of processes ({communicator.Get_size()}) is less than is demanded by "
+                             f"nb_subdomains ({'x'.join(str(n) for n in nb_subdomains)}).")
         # Wrap the communicator in a muGrid.Communicator object. The constructor has a mechanism
         # to avoid overhead if the communicator is already a muGrid.Communicator object.
         communicator = muGrid.Communicator(communicator)
 
-        return muGrid.CartesianDecomposition(
-            communicator, self.nb_domain_grid_pts, tuple(nb_subdomains), tuple(nb_ghost_layers), tuple(nb_ghost_layers))
+        self.decomposition = muGrid.CartesianDecomposition(communicator, list(self.nb_domain_grid_pts),
+                                                           list(nb_subdomains), list(nb_ghost_layers),
+                                                           list(nb_ghost_layers))
+        return self.decomposition
+
+    # FIXME: now there shall be a difference between local and global indices
+    # where the global indices are from decomposition.subdomain_locations and do not exceed the nb_domain_grid_pts.
+    # While the local ones are simply from 0 to decomposition.nb_subdomain_grid_pts (endpoint).
 
     # =========================================================================
     # Index: 0, 1, 2, ..., N-1
