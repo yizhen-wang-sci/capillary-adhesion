@@ -18,7 +18,8 @@ class NpyIO:
     """
 
     def __init__(self, root_path, decomposition=None):
-        self._root_path = pathlib.Path(root_path)
+        self.root_path = pathlib.Path(root_path)
+
         if decomposition is None:
             # NuMPI.IO will treat it as no decomposition
             self._subdomain_locations = None
@@ -30,7 +31,7 @@ class NpyIO:
             self._nb_domain_grid_pts = tuple(decomposition.nb_domain_grid_pts)
 
     def _to_full_path(self, name: str):
-        return self._root_path / f"{name}.npy"
+        return self.root_path / f"{name}.npy"
 
     def load_distributed(self, name: str):
         return NuMPI.IO.load_npy(self._to_full_path(name),
