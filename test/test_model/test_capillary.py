@@ -8,8 +8,9 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import pytest
+from NuMPI import MPI
 
-from a_package.domain import Grid
+from a_package.domain import Grid, factorize_closest
 from a_package.model.capillary import PhaseMixture, CapillaryBridge
 
 
@@ -58,6 +59,11 @@ def inner_circle_field(test_grid):
 @pytest.fixture(params=["sinusoidal_field", "inner_circle_field"])
 def test_field(request):
     return request.getfixturevalue(request.param)
+
+
+@pytest.fixture
+def comm_world():
+    return MPI.COMM_WORLD
 
 
 @pytest.fixture
@@ -120,24 +126,26 @@ def assert_jacobian_correct(impl_jacobian, numeric_jacobian, step_sizes, tol=1e-
     assert np.min(diffs) < tol, f"Jacobian difference {np.min(diffs):.2e} exceeds tolerance {tol:.2e}"
 
 
-def test_energy_jacobian(test_grid, test_phase_mixture, sphere_flat, test_field, small_steps):
+def test_energy_jacobian(test_grid, test_phase_mixture, sphere_flat, test_field, comm_world, small_steps):
     """Test NodalFormCapillary.get_energy_jacobian against finite differences."""
-    capillary = CapillaryBridge(test_grid, test_phase_mixture)
-    capillary.set_gap(sphere_flat)
+    capillary = CapillaryBridge(test_grid, test_phase_mixture, communicator=comm_world)
+    decomposition = test_grid.decompose(factorize_closest(comm_world.Get_size(), 2), (1, 1), comm_world)
+    capillary.set_gap(sphere_flat[*decomposition.icoords])
 
     def energy_func(phase):
         capillary.set_phase(phase)
         return capillary.get_energy()
 
-    numeric_jacobian = compute_numerical_jacobian(test_field, energy_func, small_steps)
+    test_field_local = test_field[*decomposition.icoords]
+    numeric_jacobian = compute_numerical_jacobian(test_field_local, energy_func, small_steps)
 
-    capillary.set_phase(test_field)
+    capillary.set_phase(test_field_local)
     impl_jacobian = capillary.get_energy_jacobian()
 
     assert_jacobian_correct(impl_jacobian, numeric_jacobian, small_steps, show_plot=show_me_plot)
 
 
-def test_volume_jacobian(test_grid, test_phase_mixture, sphere_flat, test_field, small_steps):
+def test_volume_jacobian(test_grid, test_phase_mixture, sphere_flat, test_field, comm_world, small_steps):
     """Test NodalFormCapillary.get_energy_jacobian against finite differences."""
     capillary = CapillaryBridge(test_grid, test_phase_mixture)
     capillary.set_gap(sphere_flat)
