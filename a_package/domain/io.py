@@ -48,15 +48,31 @@ class NpyIO:
                           self._nb_domain_grid_pts,
                           comm=self._comm)
 
+    def _sync_error(self, error):
+        error = self._comm.bcast(error, root=0)
+        if error is not None:
+            raise error
+
     def load_singular(self, name: str):
-        if _comm.rank == 0:
-            return np.load(self._to_full_path(name), allow_pickle=False)
-        return None
+        data, error = None, None
+        if self._comm.rank == 0:
+            try:
+                data = np.load(self._to_full_path(name), allow_pickle=False)
+            except Exception as e:
+                error = e
+        self._sync_error(error)
+        return data
 
     def save_singular(self, name: str, data):
-        if _comm.rank == 0:
-            np.save(self._to_full_path(name), data)
-        _comm.barrier()
+        error = None
+        if self._comm.rank == 0:
+            try:
+                np.save(self._to_full_path(name), data)
+            except Exception as e:
+                error = e
+        self._sync_error(error)
+        self._comm.barrier()
 
     def load_replicated(self, name: str):
-        return _comm.bcast(self.load_singular(name))
+        data = self.load_singular(name)
+        return self._comm.bcast(data, root=0)
