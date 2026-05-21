@@ -47,9 +47,9 @@ def test_gradient_interpolation_coefficients(test_pts):
     pixel_shape = [2, 2]
     pixel_mapping = np.zeros((nb_components_gradient, test_pts.shape[0], *pixel_shape))
     for i_sub_pt, sub_pt_coeffs in enumerate(coeff_map):
-        for i_node, coeff in sub_pt_coeffs['x'].items():
+        for i_node, coeff in sub_pt_coeffs['x1'].items():
             pixel_mapping[0, i_sub_pt, *i_node] = coeff
-        for i_node, coeff in sub_pt_coeffs['y'].items():
+        for i_node, coeff in sub_pt_coeffs['x2'].items():
             pixel_mapping[1, i_sub_pt, *i_node] = coeff
 
     expected_mapping_x = np.array([[[-1, 0],
