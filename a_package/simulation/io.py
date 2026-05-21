@@ -11,8 +11,8 @@ from a_package.domain import Field, NpyIO
 
 class SimulationIO:
 
-    def __init__(self, store_dir, decomposition=None):
-        self._io = NpyIO(store_dir, decomposition)
+    def __init__(self, store_dir, decomposition=None, communicator=None):
+        self._io = NpyIO(store_dir, decomposition, communicator)
 
     def save_constant(self, fields: dict[str, Field]=None, single_values: dict[str, float]=None):
         if fields is None:
@@ -45,6 +45,9 @@ class SimulationIO:
         return result
 
     def save_step(self, index: int, fields: dict[str, Field]=None, single_values: dict[str, float]=None):
+        if index < 0:
+            raise ValueError("Negative indexing is not supported.")
+
         if fields is None:
             fields = {}
         if single_values is None:
@@ -60,16 +63,16 @@ class SimulationIO:
                 array = self._io.load_singular(name)
             except FileNotFoundError:
                 array = np.empty(0)
-            # non-root processes will get None
+
             if array is not None:
-                try:
-                    array[index] = value
-                except IndexError:
-                    if index == array.size:
-                        array = np.append(array, value)
-                    else:
-                        raise ValueError()
-                self._io.save_singular(name, array)
+                if array.size <= index:
+                    # We need to extend the array.
+                    new_array = np.empty(index + 1)
+                    new_array[:array.size] = array
+                    new_array[array.size:index] = np.nan
+                    array = new_array
+                array[index] = value
+            self._io.save_singular(name, array)
 
     def load_step(self, index: int, field_names: list[str]=None, single_value_names: list[str]=None):
         if field_names is None:
@@ -143,8 +146,7 @@ class _FieldArray:
         i_current = -1
         # FIXME: hardcoded name format
         name_prefix = f"{self._name}--"
-        # FIXME: accessed a private attribute
-        for entry in self._io._root_path.iterdir():
+        for entry in self._io.root_path.iterdir():
             if entry.name.startswith(name_prefix):
                 i_update = int(entry.name[len(name_prefix):].replace(".npy", ""))
                 i_current = max(i_current, i_update)
