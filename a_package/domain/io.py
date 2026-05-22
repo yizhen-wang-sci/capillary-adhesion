@@ -14,7 +14,7 @@ class NpyIO:
     NumPy-based parallel-aware data persistence.
     """
 
-    def __init__(self, root_path, decomposition=None, communicator=None):
+    def __init__(self, root_path, decomposition=None, communicator=MPI.COMM_WORLD):
         self.root_path = pathlib.Path(root_path)
 
         if decomposition is None:
@@ -27,10 +27,7 @@ class NpyIO:
             self._nb_subdomain_grid_pts = tuple(decomposition.nb_subdomain_grid_pts)
             self._nb_domain_grid_pts = tuple(decomposition.nb_domain_grid_pts)
 
-        if communicator is None:
-            self._comm = MPI.COMM_SELF
-        else:
-            self._comm = communicator
+        self._comm = communicator
 
     def _to_full_path(self, name: str):
         return self.root_path / f"{name}.npy"
