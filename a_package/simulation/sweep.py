@@ -24,6 +24,21 @@ from typing import Any, Iterator
 import numpy as np
 
 
+def size_of_sweep(config: dict) -> int:
+    """
+    Return number of configs the sweep would yield.
+
+    Does not modify config.
+    """
+    sweep_spec = _concretize(config.get("sweep", []))
+    if len(sweep_spec) == 0:
+        return 1
+    size = 1
+    for values in sweep_spec.values():
+        size *= len(values)
+    return size
+
+
 def unroll_sweep(config: dict) -> Iterator[dict]:
     """
     Iterate over sweep parameter combinations.

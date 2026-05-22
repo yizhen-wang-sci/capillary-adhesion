@@ -66,18 +66,309 @@ class NumOptEqB(NumOptEq, NumOptB, typing.Protocol):
     """
 
 
-class OptimizerResult(typing.NamedTuple):
-    primal: np.ndarray
+class OptimizerResult(typing.TypedDict, total=False):
+    primal: typing.Required[np.ndarray]
+    gradient: float
     dual: float
-    time: float
+    is_converged: typing.Required[bool]
+    reached_iter_limit: typing.Required[bool]
+    had_abnormal_stop: typing.Required[bool]
     nit: int
-    is_converged: bool
-    reached_iter_limit: bool
-    had_abnormal_stop: bool
+    final_penalty: float
+    time: float
     message: str
 
 
-def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int = 10000):
+class Optimizer:
+
+    def __init__(self, max_outer_loop: int=20, max_inner_iter: int = 1000, tol_gradient: float = 1e-6,
+                 tol_eq_constraint: float = 1e-6, tol_creeping: float = 1e-12):
+        if max_outer_loop < 0:
+            raise ValueError("Maximum number of loop must be non-negative.")
+        self.max_outer_loop = max_outer_loop
+        self.max_inner_iter = max_inner_iter
+        self.tol_gradient = tol_gradient
+        self.tol_eq_constraint = tol_eq_constraint
+        self.tol_creeping = tol_creeping
+
+        self.sufficient_eq_decrease = 1e-2
+        self.eq_weight_multiplier = 3e0
+        self.eq_weight_maximum = 1e10
+
+        self.bound_weight_minimum = 5e-5
+        self.bound_weight_multiplier = 2e-1
+
+    def solve_minimisation(self, num_opt: typing.Union[NumOpt, NumOptEq, NumOptB, NumOptEqB], x0: typing.Sequence[float],
+                           lam0: float=None, alpha0: float=None, beta0: float=None):
+        """
+        :param num_opt: NumOpt, NumOptEq, NumOptB, NumOptEqB
+        :param x0: Initial guess.
+        :param lam0: Initial dual variable.
+        :param alpha0: Initial penalty weight for equality constraint.
+        :return: OptimizerResult
+        """
+        # Check problem type
+        if hasattr(num_opt, "get_g") ^ hasattr(num_opt, "get_g_Dx"):
+            raise ValueError("When EQ constraint is provided, one must specify both value and gradient function.")
+        has_eq_constraint = hasattr(num_opt, "get_g") and hasattr(num_opt, "get_g_Dx")
+
+        if hasattr(num_opt, "x_lb") ^ hasattr(num_opt, "x_ub"):
+            raise ValueError("One must specify a two-side bound. One-side bound is not supported yet.")
+        has_bound_constraint = hasattr(num_opt, "x_lb") and hasattr(num_opt, "x_ub")
+
+        # Check values
+        x0 = np.asarray(x0)
+        # Initialize dual variables and parameters with defaults
+        if has_eq_constraint:
+            if lam0 is None:
+                lam0 = 0.0
+            if alpha0 is None:
+                alpha0 = 1e0
+
+        if has_bound_constraint:
+            if np.any(x0 < num_opt.x_lb) or np.any(x0 > num_opt.x_ub):
+                x0 = np.clip(x0, num_opt.x_lb, num_opt.x_ub)
+            # FIXME: replace clipping?
+            # if beta0 is None:
+            #     beta0 = 1e0
+
+        # Initial values (primal, dual, parameters)
+        x_plus = x0
+        lam_plus = lam0
+        alpha_plus = alpha0
+        beta_plus = beta0
+        # FIXME: using clipping as a work-around
+        # if has_bound_constraint:
+        #     s0 = inverse_squashing(x0, num_opt.x_lb, num_opt.x_ub)
+        #     s_plus = s0
+
+        # Print headers
+        symb_nabla = "\u2207"
+        symb_alpha = "\u03B1"
+        symb_lam = "\u03BB"
+        tabel_headers_line1 = ["Loop", "f", f"|{symb_nabla}f+{symb_lam}{symb_nabla}g|", "|g|"]
+        if has_eq_constraint:
+            tabel_headers_line1 += [f"|{symb_lam}|", f"{symb_alpha}"]
+        tabel_headers_line2 = ["Iter", "L", f"|{symb_nabla}L|", "Message"]
+        separator = "  "
+        line_width = 80
+        logger.info(separator.join("{:<4}".format(col_name) if col_name in [
+                    "Loop"] else "{:<8}".format(col_name)for col_name in tabel_headers_line1))
+        logger.info(separator.join("{:<4}".format(col_name) if col_name in [
+                    "Iter"] else "{:<8}".format(col_name)for col_name in tabel_headers_line2))
+        logger.info("=" * line_width)
+
+        # State flags
+        is_converged = False
+        reached_limit = False
+        had_abnormal_stop = False
+
+        loop_count = 0
+        for loop_count in range(self.max_outer_loop + 1):
+            # Update
+            x = x_plus
+            # FIXME: replace the clipping?
+            # if has_bound_constraint:
+            #     s = s_plus
+            lam = lam_plus
+            alpha = alpha_plus
+            beta = beta_plus
+
+            num_opt.set_x(x)
+            f = num_opt.get_f()
+
+            # Compute gradients
+            l_Dx = num_opt.get_f_Dx()
+            if has_eq_constraint:
+                # Add the contribution of equality constraint gradient
+                l_Dx += lam * num_opt.get_g_Dx()
+            # FIXME: replace the clipping?
+            if has_bound_constraint:
+                # Project the gradient to the bounds
+                l_Dx[(x <= num_opt.x_lb) & (l_Dx > 0)] = 0
+                l_Dx[(x >= num_opt.x_ub) & (l_Dx < 0)] = 0
+            l_Dx_norm = np.amax(abs(l_Dx))
+
+            # Compute equality constraint
+            g_norm = 0
+            if has_eq_constraint:
+                # FIXME: g is considered a scalar function as of now
+                g_norm = abs(num_opt.get_g())
+
+            # Print states
+            padded_literals = [f"{loop_count:>4d}", f"{f:>8.1e}", f"{l_Dx_norm:>8.1e}", f"{g_norm:>8.1e}"]
+            if has_eq_constraint:
+                padded_literals += [f"{lam:>8.1e}", f"{alpha:>8.1e}"]
+            logger.info(separator.join(padded_literals))
+
+            # Check convergence
+            criteria_l_Dx = l_Dx_norm < self.tol_gradient
+            criteria_g = g_norm < self.tol_eq_constraint
+            if criteria_l_Dx and criteria_g:
+                is_converged = True
+                break
+
+            # For last iter, no more trial
+            if loop_count == self.max_outer_loop:
+                reached_limit = True
+                break
+
+            # reform and solve
+            reformed = num_opt
+            if has_eq_constraint:
+                reformed = approx_eq_by_augmented_lagrangian(reformed, lam, alpha)
+            if has_bound_constraint:
+                # FIXME: replace the clipping?
+                # reformed = approx_bound_by_squashing(reformed, beta)
+                reformed = approx_bound_by_clipping(reformed)
+            result = solve_unconstrained(reformed, x, max_iter=self.max_inner_iter, tol_gradient=self.tol_gradient,
+                                         tol_creeping=self.tol_creeping)
+            x_plus = result['primal']
+
+            # FIXME: replace the clipping?
+            # if has_bound_constraint:
+            #     result = solve_unconstrained(reformed, s, max_iter=self.max_iter, tol_gradient=1e-8, tol_creeping=1e-12)
+            #     s_plus = result['primal']
+            #     x_plus = squashing(s_plus, num_opt.x_lb, num_opt.x_ub)
+            # else:
+            #     result = solve_unconstrained(reformed, x, max_iter=self.max_iter, tol_gradient=1e-8, tol_creeping=1e-12)
+            #     x_plus = result['primal']
+
+            # Print progress
+            augm_lagr = reformed.get_f()
+            augm_lagr_Dx_norm = np.amax(abs(reformed.get_f_Dx()))
+            padded_literals = [f"{result['nit']:>4d}", f"{augm_lagr:>8.1e}", f"{augm_lagr_Dx_norm:>8.1e}", result['message']]
+            logger.info(separator.join(padded_literals))
+            logger.info("-" * line_width)
+
+            if result['had_abnormal_stop']:
+                had_abnormal_stop = True
+                break
+
+            # FIXME: replace the clipping?
+            # if has_bound_constraint:
+            #     if not np.all(criteria_l_Dx) and beta > self.bound_weight_minimum:
+            #         beta_plus = beta * self.bound_weight_multiplier
+
+            # Prepare for the next loop
+            if has_eq_constraint:
+                num_opt.set_x(x_plus)
+                g_plus = num_opt.get_g()
+                lam_plus = lam + alpha * g_plus
+
+                # Increase penalty weight of equality constraint if not much improved
+                if not criteria_g and not abs(g_plus) < self.sufficient_eq_decrease * g_norm and alpha < self.eq_weight_maximum:
+                    alpha_plus = alpha * self.eq_weight_multiplier
+
+        # Print based on flags
+        if is_converged:
+            logger.info(f"INFO: achieving required tolerance at trial #{loop_count}")
+        if reached_limit:
+            logger.warning(f"WARNING: reached loop limit.")
+        if had_abnormal_stop:
+            logger.warning(f"WARNING: abnormal stop.")
+
+        # Prepare return value
+        result = OptimizerResult(primal=x_plus, is_converged=is_converged, reached_iter_limit=reached_limit,
+                                 had_abnormal_stop=had_abnormal_stop, nit=loop_count)
+        if has_eq_constraint:
+            result['dual'] = lam_plus
+            result['final_penalty'] = alpha_plus
+        return result
+
+
+def approx_eq_by_augmented_lagrangian(num_opt: typing.Union[NumOptEq, NumOptEqB], lam: float, alpha: float):
+
+    def get_augmented_lagrangian():
+        g = num_opt.get_g()
+        return num_opt.get_f() + lam * g + (0.5 * alpha) * g**2
+
+    def get_augmented_lagrangian_Dx():
+        return num_opt.get_f_Dx() + (lam + alpha * num_opt.get_g()) * num_opt.get_g_Dx()
+
+    reformed = {"get_x": num_opt.get_x, "set_x": num_opt.set_x,
+                "get_f": get_augmented_lagrangian, "get_f_Dx": get_augmented_lagrangian_Dx}
+
+    # If it has bound constraints, pass it
+    try:
+        reformed.update({"x_lb": num_opt.x_lb, "x_ub": num_opt.x_ub})
+    except AttributeError:
+        pass
+
+    return types.SimpleNamespace(**reformed)
+
+
+def approx_bound_by_clipping(num_opt: NumOptB):
+
+    def set_x_clipped(x: np.ndarray):
+        nonlocal num_opt
+        num_opt.set_x(np.clip(x, num_opt.x_lb, num_opt.x_ub))
+
+    def get_f_Dx_projected():
+        f_Dx = num_opt.get_f_Dx()
+        x = num_opt.get_x()
+        f_Dx[(x <= num_opt.x_lb) & (f_Dx > 0)] = 0
+        f_Dx[(x >= num_opt.x_ub) & (f_Dx < 0)] = 0
+        return f_Dx
+
+    return types.SimpleNamespace(get_x=num_opt.get_x, set_x=set_x_clipped, get_f=num_opt.get_f, get_f_Dx=get_f_Dx_projected)
+
+
+def approx_bound_by_squashing(num_opt: NumOptB, beta: float=1e-2):
+    # store the "free x" as extra states
+    free_x = num_opt.get_x()
+
+    def get_free_x():
+        return free_x
+
+    def set_x_with_squashing(x: np.ndarray):
+        nonlocal free_x
+        free_x = x
+        num_opt.set_x(squashing(free_x, num_opt.x_lb, num_opt.x_ub))
+
+    def get_f_with_barrier():
+        f = num_opt.get_f()
+        return f + beta * barrier_squashed(free_x, num_opt.x_lb, num_opt.x_ub)
+
+    def get_f_Dx_with_squashing_and_barrier():
+        return num_opt.get_f_Dx() * squashing_Dx(free_x, num_opt.x_lb, num_opt.x_ub) + beta * barrier_squashed_Dx(
+            free_x, num_opt.x_lb, num_opt.x_ub)
+
+    return types.SimpleNamespace(
+        get_x=get_free_x,
+        set_x=set_x_with_squashing,
+        get_f=get_f_with_barrier,
+        get_f_Dx=get_f_Dx_with_squashing_and_barrier)
+
+
+def squashing(x: np.ndarray, x_lb: float, x_ub: float):
+    x_c = (x_ub + x_lb) / 2
+    return (x_ub - x_lb) / 2 * np.tanh(x - x_c) + x_c
+
+
+def squashing_Dx(x: np.ndarray, x_lb: float, x_ub: float):
+    x_c = (x_ub + x_lb) / 2
+    return (x_ub - x_lb) / 2 * (1 - np.tanh(x - x_c)**2)
+
+
+def inverse_squashing(x: np.ndarray, x_lb: float, x_ub: float):
+    x_c = (x_ub + x_lb) / 2
+    clipped = np.clip(2 / (x_ub - x_lb) * (x - x_c), -0.999999, 0.999999)
+    return np.arctanh(clipped) + x_c
+
+
+def barrier_squashed(x: np.ndarray, x_lb: float, x_ub: float):
+    # barrier = (inverse_squashing(x, x_lb, x_ub) - x_c)**2
+    x_c = (x_ub + x_lb) / 2
+    return 0.5 * np.sum((x - x_c)**2)
+
+
+def barrier_squashed_Dx(x: np.ndarray, x_lb: float, x_ub: float):
+    x_c = (x_ub + x_lb) / 2
+    return x - x_c
+
+
+def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int, tol_gradient: float, tol_creeping: float):
     """
     Solve unconstrained minimization using L-BFGS.
 
@@ -105,16 +396,21 @@ def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int = 10000):
         numopt.set_x(x.reshape(x_shape))
         return numopt.get_f_Dx()
 
+    bounds = None
+    # if hasattr(numopt, "x_lb") and hasattr(numopt, "x_ub"):
+    #     bounds = [(numopt.x_lb, numopt.x_ub)] * np.size(x0)
+
     # Serial implementation using scipy
     [x_plus, f_plus, info] = scipy.optimize.fmin_l_bfgs_b(
         compute_f,
         x0,
         fprime=compute_f_Dx,
         maxiter=max_iter,
-        # relative decreasing of 'f', in units of 'eps'
-        factr=1e2,
+        bounds=bounds,
+        # relative decrease of 'f', in units of 'eps'
+        factr=tol_creeping / np.finfo(np.float64).resolution,
         # this 'pg' should be zero at exactly a local minimizer
-        pgtol=1e-6,
+        pgtol=tol_gradient,
     )
 
     t_exec += timeit.default_timer()
@@ -122,7 +418,7 @@ def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int = 10000):
     is_converged = info["warnflag"] == 0
     return OptimizerResult(
         primal=numopt.get_x(),
-        dual=0.0,
+        gradient=info["grad"],
         time=t_exec,
         nit=info["nit"],
         is_converged=is_converged,
@@ -130,229 +426,3 @@ def solve_unconstrained(numopt: NumOpt, x0: np.ndarray, max_iter: int = 10000):
         had_abnormal_stop=not is_converged and info["nit"] < max_iter,
         message=info["task"].decode() if isinstance(info["task"], bytes) else info["task"],
     )
-
-
-class BoundConstrainedSolver:
-    """Solver for bound-constrained optimization (no equality constraints)."""
-
-    max_iter: int
-    tol_convergence: float
-    tol_creeping: float
-
-    def __init__(self, max_iter=1000, tol_convergence=1e-6, tol_creeping=1e2):
-        self.max_iter = max_iter
-        self.tol_convergence = tol_convergence
-        self.tol_creeping = tol_creeping
-
-    def solve_minimisation(self, numopt: NumOptB, x0: np.ndarray):
-        """
-        Solve bound-constrained minimization.
-
-        Parameters
-        ----------
-        numopt : NumOptB
-            Problem with get_x, set_x, get_f, get_f_Dx, x_lb, x_ub.
-        x0 : np.ndarray
-            Initial guess.
-
-        Returns
-        -------
-        SolverResult
-        """
-        logger.info("BoundConstrainedSolver: starting")
-
-        # reform bounds with clipping
-        reformed = self._reform_simple_bounds_with_clipping(numopt)
-
-        # solve using unconstrained solver
-        result = solve_unconstrained(reformed, x0, max_iter=self.max_iter)
-
-        logger.info(f"BoundConstrainedSolver: nit={result.nit}, {result.message}")
-        logger.info(f"BoundConstrainedSolver: time={result.time:.1e}s")
-
-        return result
-
-    @staticmethod
-    def _reform_simple_bounds_with_clipping(num_opt: NumOptB):
-        def set_x_clipped(x: np.ndarray):
-            num_opt.set_x(np.clip(x, num_opt.x_lb, num_opt.x_ub))
-
-        def get_f_Dx_masked():
-            f_Dx = num_opt.get_f_Dx().ravel()
-            x = num_opt.get_x().ravel()
-            f_Dx[(x <= num_opt.x_lb) & (f_Dx > 0)] = 0
-            f_Dx[(x >= num_opt.x_ub) & (f_Dx < 0)] = 0
-            return f_Dx
-
-        return types.SimpleNamespace(
-            get_x=num_opt.get_x,
-            set_x=set_x_clipped,
-            get_f=num_opt.get_f,
-            get_f_Dx=get_f_Dx_masked,
-        )
-
-
-class AugmentedLagrangian:
-
-    max_inner_iter: int
-    max_outer_loop: int
-    init_penalty_weight: float
-    sufficient_constr_dec: float
-    penalty_weight_growth: float
-    tol_convergence: float
-    tol_creeping: float
-    tol_constraint: float
-
-    def __init__(self, max_inner_iter=1000, max_outer_loop=50, init_penalty_weight=1e0, sufficient_constr_dec=1e-2,
-                 penalty_weight_growth=3e0, tol_convergence=1e-6, tol_creeping=1e2, tol_constraint=1e-8):
-        self.max_inner_iter = max_inner_iter
-        self.max_outer_loop = max_outer_loop
-        self.init_penalty_weight = init_penalty_weight
-        self.sufficient_constr_dec = sufficient_constr_dec
-        self.penalty_weight_growth = penalty_weight_growth
-        self.tol_convergence = tol_convergence
-        self.tol_creeping = tol_creeping
-        self.tol_constraint = tol_constraint
-
-    def solve_minimisation(self, numopt: typing.Union[NumOptEq, NumOptEqB], x0: np.ndarray, lam0: float):
-        # print headers
-        nabla = "\u2207"
-        delta = "\u0394"
-        tabel_headers_line1 = ["Loop", "f", f"|Pr({nabla}L)|", "|g|", f"|{delta} lam|", "c"]
-        tabel_headers_line2 = ["Iter", f"|res {nabla}|", "Message"]
-        separator = "  "
-        line_width = 80
-        logger.info(separator.join("{:<4}".format(col_name) if col_name in [
-                    "Loop"] else "{:<8}".format(col_name)for col_name in tabel_headers_line1))
-        logger.info(separator.join("{:<4}".format(col_name) if col_name in [
-                    "Iter"] else "{:<8}".format(col_name)for col_name in tabel_headers_line2))
-        logger.info("=" * line_width)
-
-        # select inner solver based on whether problem has bounds
-        if hasattr(numopt, "x_lb") and hasattr(numopt, "x_ub"):
-            inner_solver = BoundConstrainedSolver(
-                max_iter=self.max_inner_iter,
-                tol_convergence=self.tol_convergence,
-                tol_creeping=self.tol_creeping,
-            )
-            solve_inner = inner_solver.solve_minimisation
-        else:
-            def solve_inner(numopt, x0):
-                return solve_unconstrained(numopt, x0, max_iter=self.max_inner_iter)
-
-        # initial values
-        total_nit = 0
-        t_exec = 0
-        x_plus = x0
-        lam_plus = lam0
-        c_plus = self.init_penalty_weight
-        is_converged = False
-        reached_last_loop = False
-        had_abnormal_stop = False
-        lam = lam0  # only for the purpose of printing delta-lam at count=0
-
-        for count in range(self.max_outer_loop + 1):
-            # compute values that must be evaluated before update
-            norm_delta_lam = abs(lam_plus - lam)
-
-            # update primal, dual and penalty parameter
-            x = x_plus
-            lam = lam_plus
-            c = c_plus
-
-            # get the reformulated problem (equality constraint -> augmented lagrangian)
-            reformed = self.approximate_equality_constraint_with_augmented_lagrangian(numopt, lam, c)
-
-            # print status before calling inner solver
-            numopt.set_x(x)
-            obj_value = numopt.get_f()
-            constr_violation = abs(numopt.get_g())
-            reformed.set_x(x)
-            norm_lagr_gradient = np.max(abs(reformed.get_f_Dx()))
-            padded_literals = [f"{count:>4d}", f"{obj_value:>8.1e}", f"{norm_lagr_gradient:>8.1e}",
-                               f"{constr_violation:>8.1e}", f"{norm_delta_lam:>8.1e}", f"{c:>8.1e}"]
-            logger.info(separator.join(padded_literals))
-
-            # convergence criteria
-            if norm_lagr_gradient < self.tol_convergence and constr_violation < self.tol_constraint:
-                is_converged = True
-                logger.info(f"Notice: achieving required tolerance at iter #{count}")
-                break
-
-            # quit due to reaching maximal loop count
-            if count == self.max_outer_loop:
-                reached_last_loop = True
-                break
-
-            # solve minimisation of augmented lagrangian
-            result = solve_inner(reformed, x_plus)
-            total_nit += result.nit
-            t_exec += result.time
-
-            # print inner solver progress
-            reformed.set_x(result.primal)
-            res_norm_grad = np.max(abs(reformed.get_f_Dx()))
-            padded_literals = [f"{result.nit:>4d}", f"{res_norm_grad:>8.1e}", result.message]
-            logger.info(separator.join(padded_literals))
-            logger.info("-" * line_width)
-
-            # value for new iteration
-            x_plus = result.primal
-
-            # measures when it fails to achieve convergence
-            if not result.is_converged:
-                if result.reached_iter_limit:
-                    # if reaches maximal inner iterations, as 'x' will be updated, simply do another loop to continue
-                    continue
-                else:
-                    # otherwise, it is most likely an error elsewhere, more loops are not helpful
-                    had_abnormal_stop = True
-                    break
-            # else, it achieves convergence
-            # update Lagrangian multiplier following the formula
-            numopt.set_x(x_plus)
-            constr_violation_plus = numopt.get_g()
-            lam_plus = lam + c * constr_violation_plus
-            # increase penalty weight if the constraint didn't improve enough
-            if not (
-                    abs(constr_violation_plus) < self.tol_constraint) and not (
-                    abs(constr_violation_plus) < self.sufficient_constr_dec * abs(constr_violation)):
-                c_plus = c * self.penalty_weight_growth
-
-        # show a warning under necessary conditions
-        if is_converged:
-            message = "converged"
-        elif reached_last_loop:
-            message = "reached outer loop limit"
-            logger.warning(f"WARNING: {message}.")
-        elif had_abnormal_stop:
-            message = "had abnormal stop"
-            logger.warning(f"WARNING: {message}.")
-        else:
-            message = "not converged"
-            logger.warning(f"WARNING: {message}.")
-
-        # more prints
-        logger.info(f"Total time for inner solver: {t_exec:.1e} seconds.")
-        logger.info(f"Ends with dual variable lambda={lam:.6f}")
-
-        return OptimizerResult(reformed.get_x(), lam, t_exec, total_nit, is_converged, reached_last_loop, had_abnormal_stop, message)
-
-    @staticmethod
-    def approximate_equality_constraint_with_augmented_lagrangian(num_opt: NumOptEq, lam: float, c: float):
-
-        def get_augmented_lagrangian():
-            g = num_opt.get_g()
-            return num_opt.get_f() + lam * g + (0.5 * c) * g**2
-
-        def get_augmented_lagrangian_Dx():
-            return num_opt.get_f_Dx() + (lam + c * num_opt.get_g()) * num_opt.get_g_Dx()
-
-        reformed = {"get_x": num_opt.get_x, "set_x": num_opt.set_x,
-                    "get_f": get_augmented_lagrangian, "get_f_Dx": get_augmented_lagrangian_Dx}
-        try:
-            reformed.update({"x_lb": num_opt.x_lb, "x_ub": num_opt.x_ub})
-        except AttributeError:
-            pass
-
-        return types.SimpleNamespace(**reformed)
