@@ -208,7 +208,7 @@ class CapillaryBridge:
         """Compute total capillary energy."""
         integrand = self._mixture.compute_local_energy(self._quadr_gap.s, self._quadr_phase.s,
                                                        self._quadr_phase_gradient.s)
-        local = self._quadrature.integrate(self._grid, integrand).item()
+        local = self._quadrature.integrate(integrand, self._grid.element_area).item()
         return self._communicator.sum(local)
 
     def get_energy_jacobian(self):
@@ -216,11 +216,11 @@ class CapillaryBridge:
         [energy_D_phase, energy_D_phase_gradient] = self._mixture.compute_local_energy_jacobian(
             self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s)
 
-        self._quadr_value_1.s[...] = self._quadrature.propag_integral_weight(self._grid, energy_D_phase)
+        self._quadr_value_1.s[...] = self._quadrature.propag_integral_weight(energy_D_phase, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_value_1)
         self._fem.propag_sens_value(self._quadr_value_1, self._quadr_value_1_back_sens)
 
-        self._quadr_gradient.s[...] = self._quadrature.propag_integral_weight(self._grid, energy_D_phase_gradient)
+        self._quadr_gradient.s[...] = self._quadrature.propag_integral_weight(energy_D_phase_gradient, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_gradient)
         self._fem.propag_sens_gradient(self._quadr_gradient, self._quadr_gradient_back_sens)
 
@@ -231,14 +231,14 @@ class CapillaryBridge:
     def get_volume(self):
         """Compute total liquid volume."""
         integrand = self._mixture.compute_local_volume(self._quadr_gap.s, self._quadr_phase.s)
-        local = self._quadrature.integrate(self._grid, integrand).item()
+        local = self._quadrature.integrate(integrand, self._grid.element_area).item()
         return self._communicator.sum(local)
 
     def get_volume_jacobian(self):
         """Compute gradient of volume w.r.t. nodal phase."""
         [volume_D_phase] = self._mixture.compute_local_volume_jacobian(self._quadr_gap.s, self._quadr_phase.s)
 
-        self._quadr_value_2.s[...] = self._quadrature.propag_integral_weight(self._grid, volume_D_phase)
+        self._quadr_value_2.s[...] = self._quadrature.propag_integral_weight(volume_D_phase, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_value_2)
         self._fem.propag_sens_value(self._quadr_value_2, self._quadr_value_2_back_sens)
 
@@ -249,15 +249,15 @@ class CapillaryBridge:
     def get_perimeter(self):
         """Compute total perimeter of liquid-vapour interface."""
         integrand = self._mixture.compute_local_perimeter(self._quadr_phase, self._quadr_phase_gradient)
-        local = self._quadrature.integrate(self._grid, integrand).item()
+        local = self._quadrature.integrate(integrand, self._grid.element_area).item()
         return self._communicator.sum(local)
 
     def get_max_volume(self):
         """Compute maximum available volume."""
-        local = self._quadrature.integrate(self._grid, self._quadr_gap.s).item()
+        local = self._quadrature.integrate(self._quadr_gap.s, self._grid.element_area).item()
         return self._communicator.sum(local)
 
     def get_liquid_area(self):
         """Compute area of liquid-solid interface."""
-        local = self._quadrature.integrate(self._grid, self._quadr_phase.s).item()
+        local = self._quadrature.integrate(self._quadr_phase.s, self._grid.element_area).item()
         return self._communicator.sum(local)
