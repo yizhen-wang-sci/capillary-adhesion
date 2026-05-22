@@ -30,14 +30,13 @@ class Grid:
 
         if decomposition is None:
             # default to no decomposition, where all processes have its grid representing the same global domain.
-            # FIXME: when decomposition allows empty subdomains, this should be changed to COMM_WORLD
             decomposition = muGrid.CartesianDecomposition(muGrid.Communicator(MPI.COMM_SELF),
                                                           list(self.nb_domain_grid_pts), [1] * self.nb_spatial_dim,
                                                           [0] * self.nb_spatial_dim, [0] * self.nb_spatial_dim)
         self.decomposition = decomposition
 
     def decompose(self, nb_subdomains: Sequence[int],
-                  nb_ghost_layers: Sequence[int] | None = None, communicator = None):
+                  nb_ghost_layers: Sequence[int] | None = None, communicator = MPI.COMM_SELF):
         """Decompose a grid, such that each process gets a subdomain of the same global domain."""
         if len(nb_subdomains) != self.nb_spatial_dim:
             raise ValueError(f"nb_subdomains must have the same dimension as nb_grid_pts, got {len(nb_subdomains)} "
@@ -50,9 +49,6 @@ class Grid:
             raise ValueError(f"nb_ghost_layers must have the same dimension as nb_grid_pts, got {len(nb_ghost_layers)} "
                              f"and {self.nb_spatial_dim}")
 
-        if communicator is None:
-            # default to intercommunicating all processes
-            communicator = MPI.COMM_WORLD
         if communicator.Get_size() < np.multiply.reduce(nb_subdomains):
             raise ValueError(f"The number of processes ({communicator.Get_size()}) is less than is demanded by "
                              f"nb_subdomains ({'x'.join(str(n) for n in nb_subdomains)}).")

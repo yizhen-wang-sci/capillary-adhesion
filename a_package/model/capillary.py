@@ -6,6 +6,7 @@ import logging
 
 import numpy as np
 import muGrid
+from NuMPI import MPI
 
 from a_package.domain import Grid, FirstOrderElement, Quadrature, centroid_quadrature, factorize_closest
 from a_package.domain import Field, field_component_ax
@@ -120,7 +121,7 @@ class CapillaryBridge:
     All its methods accept and return nodal values, and it handles the interpolation and integral.
     """
 
-    def __init__(self, grid: Grid, phase_mixture, quadrature: Quadrature = centroid_quadrature, communicator=None):
+    def __init__(self, grid: Grid, phase_mixture, quadrature: Quadrature = centroid_quadrature, communicator=MPI.COMM_SELF):
         self._grid = grid
         self._mixture = phase_mixture
 

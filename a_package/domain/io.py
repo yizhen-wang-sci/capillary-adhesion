@@ -14,7 +14,7 @@ class NpyIO:
     NumPy-based parallel-aware data persistence.
     """
 
-    def __init__(self, root_path, decomposition=None, communicator=MPI.COMM_WORLD):
+    def __init__(self, root_path, decomposition=None, communicator=MPI.COMM_SELF):
         self.root_path = pathlib.Path(root_path)
 
         if decomposition is None:

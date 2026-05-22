@@ -5,13 +5,14 @@ Provides simulation-aware persistence built on top of domain/io.py.
 """
 
 import numpy as np
+from NuMPI import MPI
 
 from a_package.domain import Field, NpyIO
 
 
 class SimulationIO:
 
-    def __init__(self, store_dir, decomposition=None, communicator=None):
+    def __init__(self, store_dir, decomposition=None, communicator=MPI.COMM_SELF):
         self._io = NpyIO(store_dir, decomposition, communicator)
 
     def save_constant(self, fields: dict[str, Field]=None, single_values: dict[str, float]=None):
