@@ -68,8 +68,12 @@ class NpyIO:
             except Exception as e:
                 error = e
         self._sync_error(error)
-        self._comm.barrier()
 
     def load_replicated(self, name: str):
-        data = self.load_singular(name)
-        return self._comm.bcast(data, root=0)
+        data, error = None, None
+        try:
+            data = np.load(self._to_full_path(name), allow_pickle=False)
+        except Exception as e:
+            error = e
+        self._sync_error(error)
+        return data
