@@ -29,7 +29,8 @@ class Grid:
         self.element_area = np.multiply.reduce(self.element_sizes, initial=1.)
 
         if decomposition is None:
-            # default to no decomposition, where all processes have its grid representing the same global domain
+            # default to no decomposition, where all processes have its grid representing the same global domain.
+            # FIXME: when decomposition allows empty subdomains, this should be changed to COMM_WORLD
             decomposition = muGrid.CartesianDecomposition(muGrid.Communicator(MPI.COMM_SELF),
                                                           list(self.nb_domain_grid_pts), [1] * self.nb_spatial_dim,
                                                           [0] * self.nb_spatial_dim, [0] * self.nb_spatial_dim)
