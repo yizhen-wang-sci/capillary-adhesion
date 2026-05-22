@@ -88,10 +88,10 @@ def fill_cyclic_diagonal_pseudo_2d(
 
     j1, j2 = j
     if row_maj:
-        # the 2D data is flattened with row-major (contiguous in 1st axis)
+        # the 2D data is flattened with row-major (contiguous in '2')
         mat[i1 * N2 + i2, (i1 + j1) % N1 * N2 + (i2 + j2) % N2] = val
     else:
-        # the 2D data is flattened with column-major (contiguous in 2nd axis)
+        # the 2D data is flattened with column-major (contiguous in '1')
         mat[i1 + i2 * N1, (i1 + j1) % N1 + (i2 + j2) % N2 * N1] = val
 
 
