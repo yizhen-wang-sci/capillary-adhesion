@@ -35,7 +35,7 @@ def mpi_tmp_path(tmp_path_factory, comm_world):
 def test_save_load_distributed(mpi_tmp_path, field, comm_world):
     grid = Grid(field.shape)
     decomposition = grid.decompose(factorize_closest(comm_world.Get_size(), 2), nb_ghost_layers=(1, 1), communicator=comm_world)
-    io = NpyIO(mpi_tmp_path, decomposition, communicator=comm_world)
+    io = NpyIO(mpi_tmp_path, decomposition)
     name = "test_distributed"
 
     io.save_distributed(name, field[*decomposition.icoords])
@@ -44,7 +44,7 @@ def test_save_load_distributed(mpi_tmp_path, field, comm_world):
 
 
 def test_save_load_singular(mpi_tmp_path, array, comm_world):
-    io = NpyIO(mpi_tmp_path, communicator=comm_world)
+    io = NpyIO(mpi_tmp_path)
     name = "test_singular"
 
     io.save_singular(name, array)
@@ -56,7 +56,7 @@ def test_save_load_singular(mpi_tmp_path, array, comm_world):
 
 
 def test_load_replicated(mpi_tmp_path, array, comm_world):
-    io = NpyIO(mpi_tmp_path, communicator=comm_world)
+    io = NpyIO(mpi_tmp_path)
     name = "test_replicated"
 
     io.save_singular(name, array)
@@ -65,12 +65,12 @@ def test_load_replicated(mpi_tmp_path, array, comm_world):
 
 
 def test_load_singular_missing_file(mpi_tmp_path, comm_world):
-    io = NpyIO(mpi_tmp_path, communicator=comm_world)
+    io = NpyIO(mpi_tmp_path)
     with pytest.raises(FileNotFoundError):
         io.load_singular("non_existent")
 
 
 def test_load_replicated_missing_file(mpi_tmp_path, comm_world):
-    io = NpyIO(mpi_tmp_path, communicator=comm_world)
+    io = NpyIO(mpi_tmp_path)
     with pytest.raises(FileNotFoundError):
         io.load_replicated("non_existent")
