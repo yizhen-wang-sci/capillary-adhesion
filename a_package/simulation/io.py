@@ -144,15 +144,14 @@ class _FieldArray:
         self._io.save_field(self.grid, _format_filename(self._name, index), value)
 
     def __len__(self):
-        size = 0
+        i_current = -1
         # FIXME: hardcoded name format
         name_prefix = f"{self._name}--"
         for entry in self._io.root_path.iterdir():
             if entry.name.startswith(name_prefix):
-                index = int(entry.name[len(name_prefix):].replace(".npy", ""))
-                if index + 1 > size:
-                    size = index + 1
-        return size
+                i_update = int(entry.name[len(name_prefix):].replace(".npy", ""))
+                i_current = max(i_current, i_update)
+        return i_current + 1
 
 
 def _format_filename(name: str, index: int | str):
