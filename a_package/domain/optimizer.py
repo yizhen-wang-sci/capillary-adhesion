@@ -9,6 +9,7 @@ from typing import Callable, Protocol
 
 import numpy as np
 import NuMPI.Optimization
+import NuMPI.Tools
 import scipy.optimize
 
 
@@ -482,8 +483,8 @@ class ProjectedLbfgs(Optimizer):
         self.max_inner_iter = max_inner_iter
         self.tol_gradient = tol_gradient
 
-    def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
-        linear_constraint = NuMPI.Optimization.LinearConstraint(problem.A, problem.b, None)
+    def solve_minimisation(self, problem: Problem, x0: np.ndarray, communicator=None, callback=None, **kwargs) -> OptimizerResult:
+        linear_constraint = NuMPI.Optimization.LinearConstraint(problem.A, problem.b, NuMPI.Tools.Reduction(communicator))
 
         def compute_f(x):
             problem.set_x(x)
@@ -508,9 +509,10 @@ class ProjectedLbfgs(Optimizer):
             jac=compute_f_Dx,
             bounds_lo=bounds_lo,
             bounds_hi=bounds_hi,
-            callback=callback,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
+            comm=communicator,
+            callback=callback,
         )
         return OptimizerResult(x=result['x'].reshape(init_shape), dual=result['multiplier'], success=result['success'],
                                message=result['message'], nit=result['nit'])
@@ -523,7 +525,7 @@ class BoundedLbfgs(Optimizer):
         self.max_inner_iter = max_inner_iter
         self.tol_gradient = tol_gradient
 
-    def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
+    def solve_minimisation(self, problem: Problem, x0: np.ndarray, communicator=None, callback=None, **kwargs) -> OptimizerResult:
 
         def compute_f(x):
             problem.set_x(x)
@@ -547,9 +549,10 @@ class BoundedLbfgs(Optimizer):
             jac=compute_f_Dx,
             bounds_lo=bounds_lo,
             bounds_hi=bounds_hi,
-            callback=callback,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
+            comm=communicator,
+            callback=callback,
         )
         return OptimizerResult(x=result['x'].reshape(init_shape), success=result['success'],
                                message=result['message'], nit=result['nit'])
