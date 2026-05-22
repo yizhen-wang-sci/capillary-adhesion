@@ -1,5 +1,5 @@
 from .io import SimulationIO
-from .dirs import WorkDir, TaggedIndex, ParameterCombo, NamingConvention
+from .dirs import SourceDir, RunDir, RecordDir, TaggedIndex, ParameterCombo, NamingConvention
 from .logging import reset_logging, switch_log_file
 from .config import load_config, save_config
 from .sweep import size_of_sweep, unroll_sweep
