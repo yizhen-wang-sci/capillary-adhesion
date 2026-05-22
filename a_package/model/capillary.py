@@ -128,13 +128,12 @@ class CapillaryBridge:
         self._quadrature = quadrature
         self._fem = FirstOrderElement(self._quadrature.quad_pt_coords, grid.element_sizes)
 
-        # wrap communicator in muGrid.Communicator. The constructor has a mechanism to avoid
-        # overhead if the communicator is already a muGrid.Communicator object.
+        # Use muGrid Communicator because its .sum() broadcasts the result to all processes.
+        # The constructor has a mechanism to avoid overhead if the communicator is already a muGrid.Communicator object.
         self._communicator = muGrid.Communicator(communicator)
 
         # decomposition and field collection setup
-        nb_subdomains = factorize_closest(self._communicator.size, 2)
-        self._decomposition = grid.decompose(nb_subdomains, nb_ghost_layers=(1, 1), communicator=self._communicator)
+        self._decomposition = grid.decomposition
         self._collection = self._decomposition.collection
         self._collection.set_nb_sub_pts("nodal", 1)
         self._collection.set_nb_sub_pts("quadr", self._quadrature.nb_quad_pts)
@@ -163,6 +162,7 @@ class CapillaryBridge:
         self._nodal_gap.s[...] = np.reshape(value, (1, 1, *self._decomposition.nb_subdomain_grid_pts))
         self._decomposition.communicate_ghosts(self._nodal_gap)
         self._fem.interpolate_value(self._nodal_gap, self._quadr_gap)
+        # self._decomposition.communicate_ghosts(self._quadr_gap)
 
     @property
     def gap_is_closed(self):
@@ -179,7 +179,9 @@ class CapillaryBridge:
         self._nodal_phase.s[self.gap_is_closed] = 0.
         self._decomposition.communicate_ghosts(self._nodal_phase)
         self._fem.interpolate_value(self._nodal_phase, self._quadr_phase)
+        # self._decomposition.communicate_ghosts(self._quadr_phase)
         self._fem.interpolate_gradient(self._nodal_phase, self._quadr_phase_gradient)
+        # self._decomposition.communicate_ghosts(self._quadr_phase_gradient)
 
     @property
     def phase_lb(self):
@@ -219,10 +221,12 @@ class CapillaryBridge:
         self._quadr_value_1.s[...] = self._quadrature.propag_integral_weight(energy_D_phase, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_value_1)
         self._fem.propag_sens_value(self._quadr_value_1, self._quadr_value_1_back_sens)
+        # self._decomposition.communicate_ghosts(self._quadr_value_1_back_sens)
 
         self._quadr_gradient.s[...] = self._quadrature.propag_integral_weight(energy_D_phase_gradient, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_gradient)
         self._fem.propag_sens_gradient(self._quadr_gradient, self._quadr_gradient_back_sens)
+        # self._decomposition.communicate_ghosts(self._quadr_gradient_back_sens)
 
         jacobian = self._quadr_value_1_back_sens.s + self._quadr_gradient_back_sens.s
         jacobian[self.gap_is_closed] = 0
@@ -241,6 +245,7 @@ class CapillaryBridge:
         self._quadr_value_2.s[...] = self._quadrature.propag_integral_weight(volume_D_phase, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_value_2)
         self._fem.propag_sens_value(self._quadr_value_2, self._quadr_value_2_back_sens)
+        # self._decomposition.communicate_ghosts(self._quadr_value_2_back_sens)
 
         jacobian = self._quadr_value_2_back_sens.s.copy()
         jacobian[self.gap_is_closed] = 0
