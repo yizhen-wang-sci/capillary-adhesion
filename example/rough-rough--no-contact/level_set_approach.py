@@ -1,28 +1,16 @@
-
 import logging
 import os
 import sys
-from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
-import matplotlib.pyplot as plt
 
-from a_package.model import NodalFormCapillary, RigidContact, Term
-from a_package.model.roughness import SelfAffineRoughness, psd_to_height
-from a_package.simulation import (
-    SimulationIO, CaseDir, _RecordDir, reset_logging, switch_log_file,
-    load_config, save_config, unroll_sweep, get_timestamp
-)
+from a_package.model import CapillaryBridge, RigidContact, Term
+from a_package.simulation import SimulationIO, RunDir, RecordDir, reset_logging, switch_log_file, load_config, save_config
 
-from config_helper import (
-    create_grid_from_config,
-    generate_roughness_from_config,
-    build_capillary_args,
-    build_trajectory,
-)
+from config_helper import *
 
 
+reset_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -34,68 +22,62 @@ def main():
     if len(sys.argv) > 2:
         print("Only the first config file is loaded")
     config_file = sys.argv[1]
-
-    # setup
-    reset_logging()
-    case_dir = CaseDir(os.path.dirname(__file__))
     config = load_config(config_file)
 
-    # run simulation now
-    run_name = "--".join([get_timestamp(), os.path.splitext(config_file)[0]])
-    run_dir = _RecordDir(case_dir / run_name, exist_ok=False)
-    switch_log_file(run_dir.log_file)
-    save_config(config, run_dir.input_file)
-    run_level_set_approach(config, run_dir.data)
+    for fill in ["fill-above", "fill-below"]:
+        # setup
+        run = RunDir(os.path.dirname(__file__))
+        record = RecordDir(run / fill)
+        switch_log_file(record.log)
+        save_config(config, record.input)
+        io = SimulationIO(record.data)
 
-    # Update latest symlink
-    latest_link = Path(case_dir / "latest")
-    if latest_link.is_symlink():
-        latest_link.unlink()
-    latest_link.symlink_to(run_name)
-    logger.info(f"Updated 'latest' symlink -> {run_name}")
+        # Build everything
+        grid = build_grid(config)
+        # Need ghost layers
+        grid.decompose([1, 1], nb_ghost_layers=[1, 1])
+        upper_surface = np.load(run / f"{Term.upper_solid}.npy")
+        lower_surface = np.load(run / f"{Term.lower_solid}.npy")
+        contact = RigidContact(upper_surface, lower_surface)
+        phase_mixture = build_phase_mixture(config)
+        capillary = CapillaryBridge(grid, phase_mixture)
+        trajectory = np.round(build_trajectory(config), 6)
 
+        # concrete liquid volume
+        z_min = np.amin(trajectory)
+        contact.set_mean_separation(z_min)
+        gap_at_min = contact.get_gap()
+        capillary.set_gap(gap_at_min)
+        volume_percent = config['constraint']['liquid_volume_percent']
+        liquid_volume = capillary.get_max_volume() * (volume_percent / 100.0)
 
-def run_level_set_approach(config: dict, output_path: Path):
-    """Run simulation with level set approach."""
-
-    # Build everything
-    grid = create_grid_from_config(config)
-    upper = generate_roughness_from_config(grid, config["problem"]["upper"])
-    lower = generate_roughness_from_config(grid, config["problem"]["lower"])
-    capillary_args = build_capillary_args(config)
-    capillary = NodalFormCapillary(grid, capillary_args)
-    trajectory = np.round(build_trajectory(config), 6)
-
-    # Contact
-    contact = RigidContact(upper, lower)
-
-    # Compute target volume from percentage at minimum separation
-    constraint_cfg = config["simulation"]["constraint"]
-    z_min = np.amin(trajectory)
-    contact.set_mean_separation(z_min)
-    gap_at_min = contact.get_gap()
-    capillary.set_gap(gap_at_min)
-    max_volume = capillary.get_max_volume()
-    volume = constraint_cfg["liquid_volume_percent"] / 100 * max_volume
-
-    # IO
-    io = SimulationIO(output_path, grid)
-
-    for idx, separation in enumerate(trajectory):
-        contact.set_mean_separation(separation)
-        gap = contact.get_gap()
-        phase = solve_phase_by_level_set(capillary, gap, volume, fill_below=True)
-        io.save_step(idx, fields={Term.phase: phase, Term.gap: gap}, single_values={Term.separation: separation})
+        for idx, separation in enumerate(trajectory):
+            contact.set_mean_separation(separation)
+            gap = contact.get_gap()
+            phase = solve_phase_by_level_set(capillary, gap, liquid_volume, fill_below=fill == "fill-below")
+            io.save_step(idx, single_values={Term.separation: separation}, fields={Term.gap: gap, Term.phase: phase})
 
 
-def solve_phase_by_level_set(capillary: NodalFormCapillary, gap: np.ndarray, volume: float, fill_below: bool=True):
+def solve_phase_by_level_set(capillary: CapillaryBridge, gap: np.ndarray, volume: float, fill_below: bool = True):
     """
+    Solve for the liquid phase distribution using a level-set approach.
 
-    :param capillary:
-    :param gap:
-    :param volume:
-    :param fill_below: True if fill below the given height, match with hydrophilic, otherwise hydrophobic.
-    :return:
+    Parameters
+    ----------
+    capillary : CapillaryBridge
+        The capillary bridge model.
+    gap : np.ndarray
+        The local gap between surfaces.
+    volume : float
+        Target liquid volume.
+    fill_below : bool, optional
+        True if filling below the given height (hydrophilic),
+        otherwise hydrophobic. Default is True.
+
+    Returns
+    -------
+    np.ndarray
+        The computed liquid phase distribution.
     """
     capillary.set_gap(gap)
     phase = np.zeros_like(gap)
@@ -122,19 +104,30 @@ def bisection(f, xa, xb, xtol=1e-6, ftol=1e-6, max_iter=100):
     """
     Find a root of f(x) = 0 using the bisection method.
 
-    Args:
-        f: Function to find root of
-        xa: Left endpoint of interval
-        xb: Right endpoint of interval
-        xtol: Absolute tolerance for interval width (xb-xa)/2
-        ftol: Tolerance for function value abs(f(xc))
-        max_iter: Maximum number of iterations
+    Parameters
+    ----------
+    f : callable
+        Function to find root of.
+    xa : float
+        Left endpoint of interval.
+    xb : float
+        Right endpoint of interval.
+    xtol : float, optional
+        Absolute tolerance for interval width (xb-xa)/2. Default is 1e-6.
+    ftol : float, optional
+        Tolerance for function value abs(f(xc)). Default is 1e-6.
+    max_iter : int, optional
+        Maximum number of iterations. Default is 100.
 
-    Returns:
-        Approximate root location
+    Returns
+    -------
+    float
+        Approximate root location.
 
-    Raises:
-        ValueError: If f(xa) and f(xb) have the same sign
+    Raises
+    ------
+    ValueError
+        If f(xa) and f(xb) have the same sign.
     """
     if f(xa) * f(xb) >= 0:
         raise ValueError("f(xa) and f(xb) must have opposite signs")
