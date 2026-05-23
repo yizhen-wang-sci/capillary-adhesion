@@ -42,6 +42,14 @@ def main():
         optimizer = build_optimizer(config)
         trajectory = build_trajectory(config)
 
+        # concrete liquid volume
+        z_min = np.amin(trajectory)
+        contact.set_mean_separation(z_min)
+        gap_at_min = contact.get_gap()
+        capillary.set_gap(gap_at_min)
+        volume_percent = config['constraint']['liquid_volume_percent']
+        liquid_volume = capillary.get_max_volume() * (volume_percent / 100.0)
+
         # records
         record = None
         if comm_world.rank == 0:
@@ -53,30 +61,23 @@ def main():
         io = SimulationIO(record.data, decomposition, comm_world)
 
         # simulation loop
+        phase = square_init_guess(grid, liquid_volume, z_min)[*decomposition.icoords]
         for i_step, separation in enumerate(trajectory):
             # ideal plastic contact
             contact.set_mean_separation(separation)
             gap = contact.get_gap()
             capillary.set_gap(gap)
 
-            # concrete liquid volume
-            volume_percent = config['constraint']['liquid_volume_percent']
-            liquid_volume = capillary.get_max_volume() * volume_percent / 100
-
-            # initial guess
-            phase_init = square_init_guess(grid, liquid_volume, separation)
-            phase_local = phase_init[*decomposition.icoords]
-
             # solve phase problem
             problem = formulate_constant_volume_phase_problem(capillary, liquid_volume)
-            solution = optimizer.solve_minimisation(problem, x0=phase_local)
+            solution = optimizer.solve_minimisation(problem, x0=phase)
             print(f"It took {solution['nit']} iterations.")
 
             # subtract quantities and save them
-            phase_local = solution['x'].reshape(decomposition.nb_subdomain_grid_pts)
+            phase = solution['x'].reshape(decomposition.nb_subdomain_grid_pts)
             pressure = -solution['dual']
             io.save_step(i_step, single_values={Term.separation: separation, Term.pressure: pressure},
-                         fields={Term.phase: phase_local})
+                         fields={Term.gap: gap, Term.phase: phase})
 
 
 def square_init_guess(grid: Grid, volume, mean_separation):
