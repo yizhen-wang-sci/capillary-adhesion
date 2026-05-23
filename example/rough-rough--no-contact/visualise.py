@@ -78,11 +78,11 @@ def animate_gap_and_phase(records: list[RecordDir], record_fill_below: RecordDir
     nb_cols = nb_runs + 2
     fig, axs = plt.subplots(1, nb_cols, figsize=(nb_cols*2.4, 2.4), sharex=True, sharey=True, constrained_layout=True)
     axs_phase_field = axs[1:nb_cols-1]
-    ax_fill_below = axs[0]
-    ax_fill_above = axs[nb_cols-1]
-    axs_gap = [ax_fill_below, ax_fill_above]
-    axs_fill_below = [ax_fill_below, axs_phase_field[0]]
-    axs_fill_above = [axs_phase_field[-1], ax_fill_above]
+    axs_gap = [axs[0], axs[nb_cols-1]]
+    if record_fill_below:
+        axs_fill_below = [axs[0], axs_phase_field[0]]
+    if record_fill_above:
+        axs_fill_above = [axs_phase_field[-1], axs[nb_cols-1]]
 
     # Draw objects with dummy data to be updated by animation
     xm, ym = grid.form_index_mesh(endpoint=True)
