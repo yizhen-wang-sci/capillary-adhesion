@@ -1,0 +1,44 @@
+# Rough over rough surface configuration
+
+[[sweep]]
+# Sweep over different contact angles
+path="capillary.contact_angle_degree"
+values=[0, 60, 75, 90, 105, 120, 180]
+
+[grid]
+pixel_size = 0.01
+nb_pixels = 512
+
+[surface]
+[surface.upper]
+shape = "rough"
+prefactor = 1e6
+rolloff_wavelength_pixels = 64
+cutoff_wavelength_pixels = 8
+hurst_exponent = 0.95
+seed = 0
+
+[surface.lower]
+shape = "rough"
+prefactor = 1e6
+rolloff_wavelength_pixels = 64
+cutoff_wavelength_pixels = 8
+hurst_exponent = 0.95
+seed = 1
+
+[capillary]
+interface_thickness = 0.02
+contact_angle_degree = 120
+
+[optimizer]
+max_nb_iters = 1000
+tol_gradient = 1e-6
+
+[trajectory]
+min_separation = 0.005
+max_separation = 0.015
+step_size = 0.001
+round_trip = true
+
+[constraint]
+liquid_volume_percent = 50.0
