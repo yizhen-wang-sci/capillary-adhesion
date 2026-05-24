@@ -32,7 +32,7 @@ def main():
     # Print some info about the surfaces
     upper_max_amp = np.amax(abs(upper - upper.mean()))
     lower_max_amp = np.amax(abs(lower - lower.mean()))
-    pixel_size = grid.element_sizes[0]
+    pixel_size = grid._element_sizes[0]
     print(f"Max amplitude, upper={upper_max_amp / pixel_size:.2e}px, lower={lower_max_amp / pixel_size:.2e}px")
 
     # visual check

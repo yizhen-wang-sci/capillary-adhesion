@@ -1,34 +1,34 @@
 import pytest
 import numpy as np
 
-from a_package.domain.grid import Grid
+from test.test_domain.utils import generate_global_random_field, generate_global_range_field
 
 
-def test_real_field_x_decomposition(ref_field, comm_world):
-    shape = ref_field.shape
-    grid = Grid(shape)
+def test_real_field_decomposition(mock_grid, decompose_stitch, comm_world):
+    # a global field
+    mock_field = generate_global_random_field(mock_grid.nb_domain_grid_pts, comm_world)
 
-    # Decompose along the non-contiguous axis (for NumPy it is axis 0)
-    decomposition = grid.decompose((comm_world.Get_size(), 1), communicator=comm_world)
-    collection = decomposition.collection
-    field = collection.real_field("test_field", 1)
-    field.s[0, 0, ...] = ref_field[tuple(decomposition.icoords)]
+    # decompose and stitch
+    decompose, stitch = decompose_stitch
+    decomposition = decompose(mock_grid)
+    field = decomposition.collection.real_field("test_field", 1)
+    field.s[0, 0, ...] = mock_field[*decomposition.icoords]
+    collected = stitch(field.s[0, 0, ...], mock_grid)
 
-    # NumPy vstack stitches the non-contiguous axis properly
-    collected = np.vstack(comm_world.allgather(field.s[0, 0, ...]))
-    assert np.allclose(collected, ref_field)
+    # assertions
+    assert np.allclose(collected, mock_field)
 
 
-def test_real_field_y_decomposition(ref_field, comm_world):
-    shape = ref_field.shape
-    grid = Grid(shape)
+def test_int_field_decomposition(mock_grid, decompose_stitch, comm_world):
+    # A global field
+    mock_field = generate_global_range_field(mock_grid.nb_domain_grid_pts, comm_world)
 
-    # Decompose along the contiguous axis (for NumPy it is axis -1)
-    decomposition = grid.decompose((1, comm_world.Get_size()), communicator=comm_world)
-    collection = decomposition.collection
-    field = collection.real_field("test_field", 1)
-    field.s[0, 0, ...] = ref_field[tuple(decomposition.icoords)]
+    # decompose and stitch
+    decompose, stitch = decompose_stitch
+    decomposition = decompose(mock_grid)
+    field = decomposition.collection.int_field("test_field", 1)
+    field.s[0, 0, ...] = mock_field[*decomposition.icoords]
+    collected = stitch(field.s[0, 0, ...], mock_grid)
 
-    # NumPy hstack stitches the contiguous axis properly
-    collected = np.hstack(comm_world.allgather(field.s[0, 0, ...]))
-    assert np.allclose(collected, ref_field)
+    # assertions
+    assert np.allclose(collected, mock_field)

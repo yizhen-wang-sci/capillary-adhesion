@@ -58,7 +58,7 @@ def animate_gap_and_phase(records: list[RecordDir], record_fill_below: RecordDir
     gap_io = phase_ios[0]
     # They shall all have the same grid
     grid = build_grid(load_config(records[0].input))
-    length_unit = UnitConversion(grid.element_sizes[0])
+    length_unit = UnitConversion(grid._element_sizes[0])
 
     if record_fill_below:
         fill_below_io = SimulationIO(record_fill_below.data)
