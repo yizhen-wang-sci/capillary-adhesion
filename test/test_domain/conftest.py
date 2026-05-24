@@ -34,7 +34,7 @@ def comm_world():
 @pytest.fixture
 def parallel_in_x(comm_world):
     def _decompose_x(grid):
-        return grid.decompose((comm_world.Get_size(), 1), communicator=comm_world)
+        return grid.decompose((comm_world.Get_size(), 1), [1,1], communicator=comm_world)
 
     def _stitch_x(local_field, grid):
         return np.vstack(comm_world.allgather(local_field))
@@ -45,7 +45,7 @@ def parallel_in_x(comm_world):
 @pytest.fixture
 def parallel_in_y(comm_world):
     def _decompose_y(grid):
-        return grid.decompose((1, comm_world.Get_size()), communicator=comm_world)
+        return grid.decompose((1, comm_world.Get_size()), [1,1], communicator=comm_world)
 
     def _stitch_y(local_field, grid):
         return np.hstack(comm_world.allgather(local_field))
@@ -56,7 +56,7 @@ def parallel_in_y(comm_world):
 @pytest.fixture
 def parallel_in_xy(comm_world):
     def _decompose_xy(grid):
-        return grid.decompose(factorize_closest(comm_world.Get_size(), 2), communicator=comm_world)
+        return grid.decompose(factorize_closest(comm_world.Get_size(), 2), [1,1], communicator=comm_world)
 
     def _stitch_xy(local_field, grid):
         values = comm_world.allgather(local_field)
