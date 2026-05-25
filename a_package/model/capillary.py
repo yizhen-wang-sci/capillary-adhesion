@@ -9,7 +9,7 @@ import muGrid
 from NuMPI import MPI
 
 from a_package.domain import Grid, FirstOrderElement, Quadrature, centroid_quadrature, factorize_closest
-from a_package.domain import Field, field_component_ax
+from a_package.domain import Field, field_component_ax, field_sub_pt_ax
 
 
 logger = logging.getLogger(__name__)
@@ -231,7 +231,7 @@ class CapillaryBridge:
 
         jacobian = self._quadr_value_1_back_sens.s + self._quadr_gradient_back_sens.s
         jacobian[self.gap_is_closed] = 0
-        return jacobian.squeeze()
+        return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_volume(self):
         """Compute total liquid volume."""
@@ -250,7 +250,7 @@ class CapillaryBridge:
 
         jacobian = self._quadr_value_2_back_sens.s.copy()
         jacobian[self.gap_is_closed] = 0
-        return jacobian.squeeze()
+        return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_perimeter(self):
         """Compute total perimeter of liquid-vapour interface."""
