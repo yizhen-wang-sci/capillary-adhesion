@@ -75,13 +75,6 @@ def test_gradient_interpolation_coefficients(mock_sub_pts):
 def test_first_order_element(decomposed_grid, mock_sub_pts, comm_world):
     mock_field = generate_global_random_field(decomposed_grid.nb_domain_grid_pts, comm_world)
 
-    # reference serial implementation
-    ref_fe = RefFirstOrderElement(decomposed_grid, mock_sub_pts)
-    expected_field_value = ref_fe.interpolate_value(mock_field)
-    expected_field_gradient = ref_fe.interpolate_gradient(mock_field)
-    expected_field_value_back_sens = ref_fe.propag_sens_value(expected_field_value)
-    expected_field_gradient_back_sens = ref_fe.propag_sens_gradient(expected_field_gradient)
-
     # Set up the fields
     decomposition = decomposed_grid.decomposition
     collection = decomposition.collection
@@ -93,25 +86,33 @@ def test_first_order_element(decomposed_grid, mock_sub_pts, comm_world):
     field_mapped_value_back_sens = collection.real_field("value_back_sens", 1)
     field_mapped_gradient_back_sens = collection.real_field("gradient_back_sens", 1)
 
-    # Compute FE in parallel
+    # Parallel FE to test
     fe = FirstOrderElement(mock_sub_pts, decomposed_grid.element_sizes)
+
+    # Serial implementation as reference
+    ref_fe = RefFirstOrderElement(decomposed_grid, mock_sub_pts)
 
     field_origin.s[0,0,...] = mock_field[*decomposition.icoords]
     decomposition.communicate_ghosts(field_origin)
 
     fe.interpolate_value(field_origin, field_mapped_value)
-    fe.interpolate_gradient(field_origin, field_mapped_gradient)
-
-    # FIXME: WHY THIS DOESN'T FAIL
-    # decomposition.communicate_ghosts(field_mapped_value)
-    fe.propag_sens_value(field_mapped_value, field_mapped_value_back_sens)
-
-    # FIXME: WHY THIS DOESN'T FAIL
-    # decomposition.communicate_ghosts(field_mapped_gradient)
-    fe.propag_sens_gradient(field_mapped_gradient, field_mapped_gradient_back_sens)
-
-    # assertions. Every subdomain in parallel should be equal to the same part in serial
+    expected_field_value = ref_fe.interpolate_value(mock_field)
     assert np.allclose(field_mapped_value.s, expected_field_value[..., *decomposition.icoords])
+
+    fe.interpolate_gradient(field_origin, field_mapped_gradient)
+    expected_field_gradient = ref_fe.interpolate_gradient(mock_field)
     assert np.allclose(field_mapped_gradient.s, expected_field_gradient[..., *decomposition.icoords])
+
+    # Modify values so that `communicate_ghosts` is a must-have step
+    field_mapped_value.s[...] += 1.
+    decomposition.communicate_ghosts(field_mapped_value)
+    fe.propag_sens_value(field_mapped_value, field_mapped_value_back_sens)
+    expected_field_value_back_sens = ref_fe.propag_sens_value(expected_field_value + 1.)
     assert np.allclose(field_mapped_value_back_sens.s, expected_field_value_back_sens[..., *decomposition.icoords])
+
+    # Modify values so that `communicate_ghosts` is a must-have step
+    field_mapped_gradient.s[...] += 1.
+    decomposition.communicate_ghosts(field_mapped_gradient)
+    fe.propag_sens_gradient(field_mapped_gradient, field_mapped_gradient_back_sens)
+    expected_field_gradient_back_sens = ref_fe.propag_sens_gradient(expected_field_gradient + 1.)
     assert np.allclose(field_mapped_gradient_back_sens.s, expected_field_gradient_back_sens[..., *decomposition.icoords])
