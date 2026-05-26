@@ -14,13 +14,12 @@ from mpi4py import MPI
 
 from a_package.domain import Grid, factorize_closest
 from a_package.model import CapillaryBridge, RigidContact, Term, formulate_constant_volume_phase_problem
-from a_package.simulation import (SimulationIO, SourceDir, RunDir, reset_logging, switch_log_file, load_config,
+from a_package.simulation import (SimulationIO, SourceDir, RunDir, setup_logging, load_config,
                                   save_config, unroll_sweep, get_iso_time, get_git_hash)
 
 from config_helper import *
 
-reset_logging()
-logger = logging.getLogger(__name__)
+
 visual_check = False
 comm_world = MPI.COMM_WORLD
 
@@ -70,15 +69,15 @@ def main():
         volume_percent = config['constraint']['liquid_volume_percent']
         liquid_volume = capillary.get_max_volume() * (volume_percent / 100.0)
 
-        logger.info(f"Problem size: {'x'.join(str(dim) for dim in grid.nb_domain_grid_pts)}. "
-                    f"Simulating for {len(trajectory)} separation values at volume={liquid_volume}({volume_percent}%)...")
+        print(f"Problem size: {'x'.join(str(dim) for dim in grid.nb_domain_grid_pts)}. "
+              f"Simulating for {len(trajectory)} separation values at volume={liquid_volume}({volume_percent}%)...")
 
         # records
         record = None
         if comm_world.rank == 0:
             theta = config['capillary']['contact_angle_degree']
             record = run.new_record(theta=theta)
-            switch_log_file(record.log)
+            setup_logging(record.log)
             save_config(config, record.input)
         record = comm_world.bcast(record)
 
@@ -111,7 +110,7 @@ def square_init_guess(grid: Grid, volume, mean_separation):
 def solve_constant_volume(original_shape, contact, capillary, optimizer, trajectory, liquid_volume, phase_init_local):
     phase_local = phase_init_local.copy()
     for i_step, separation in enumerate(trajectory):
-        logger.info(f"Step {i_step}: separation={separation}")
+        print(f"Step {i_step}: separation={separation}")
 
         # Gap
         contact.set_mean_separation(separation)

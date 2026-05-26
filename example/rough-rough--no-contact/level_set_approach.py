@@ -1,17 +1,12 @@
-import logging
 import os
 import sys
 
 import numpy as np
 
 from a_package.model import CapillaryBridge, RigidContact, Term
-from a_package.simulation import SimulationIO, RunDir, RecordDir, reset_logging, switch_log_file, load_config, save_config
+from a_package.simulation import SimulationIO, RunDir, RecordDir, setup_logging, load_config, save_config
 
 from config_helper import *
-
-
-reset_logging()
-logger = logging.getLogger(__name__)
 
 
 def main():
@@ -28,7 +23,7 @@ def main():
         # setup
         run = RunDir(os.path.dirname(__file__))
         record = RecordDir(run / fill)
-        switch_log_file(record.log)
+        setup_logging(record.log)
         save_config(config, record.input)
         io = SimulationIO(record.data)
 

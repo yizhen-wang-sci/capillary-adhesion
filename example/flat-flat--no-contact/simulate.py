@@ -5,7 +5,7 @@ import numpy as np
 from NuMPI import MPI
 
 from a_package.simulation import SourceDir, RunDir, SimulationIO, load_config, unroll_sweep, save_config, \
-    switch_log_file, get_git_hash
+    setup_logging, get_git_hash
 from a_package.domain import Grid, factorize_closest
 from a_package.model import CapillaryBridge, RigidContact, formulate_constant_volume_phase_problem, Term
 
@@ -57,7 +57,7 @@ def main():
             record = run.new_record(**params)
             save_config(config, record.input)
         record = comm_world.bcast(record)
-        switch_log_file(record.log)
+        setup_logging(record.log)
         io = SimulationIO(record.data, decomposition, comm_world)
 
         # simulation loop
