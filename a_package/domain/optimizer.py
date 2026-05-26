@@ -72,6 +72,10 @@ class Problem:
     def has_bounds(self):
         return hasattr(self, "_x_lb") and hasattr(self, "_x_ub")
 
+    @property
+    def has_zeros(self):
+        return hasattr(self, "_is_zero")
+
     def get_x(self):
         return np.asarray(self._get_x()).ravel()
 
@@ -501,12 +505,15 @@ class ProjectedLbfgs(Optimizer):
             problem.set_x(x)
             return problem.get_f_Dx()
 
+        bounds_lo = None
+        bounds_hi = None
         if problem.has_bounds:
             bounds_lo = problem.x_lb
             bounds_hi = problem.x_ub
-        else:
-            bounds_lo = None
-            bounds_hi = None
+
+        zero_mask = None
+        if problem.has_zeros:
+            zero_mask = problem.is_zero
 
         init_shape = x0.shape
         result = NuMPI.Optimization.l_bfgs_projected(
@@ -516,7 +523,7 @@ class ProjectedLbfgs(Optimizer):
             jac=compute_f_Dx,
             bounds_lo=bounds_lo,
             bounds_hi=bounds_hi,
-            zero_mask=problem.is_zero,
+            zero_mask=zero_mask,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
             comm=communicator,
@@ -543,12 +550,15 @@ class BoundedLbfgs(Optimizer):
             problem.set_x(x)
             return problem.get_f_Dx()
 
+        bounds_lo = None
+        bounds_hi = None
         if problem.has_bounds:
             bounds_lo = problem.x_lb
             bounds_hi = problem.x_ub
-        else:
-            bounds_lo = None
-            bounds_hi = None
+
+        zero_mask = None
+        if problem.has_zeros:
+            zero_mask = problem.is_zero
 
         init_shape = x0.shape
         result = NuMPI.Optimization.l_bfgs_bounded(
@@ -557,7 +567,7 @@ class BoundedLbfgs(Optimizer):
             jac=compute_f_Dx,
             bounds_lo=bounds_lo,
             bounds_hi=bounds_hi,
-            zero_mask=problem.is_zero,
+            zero_mask=zero_mask,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
             comm=communicator,
