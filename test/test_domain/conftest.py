@@ -1,6 +1,5 @@
 import pytest
 import numpy as np
-from NuMPI import MPI
 
 from a_package.domain import Grid, factorize_closest
 
@@ -25,10 +24,6 @@ from a_package.domain import Grid, factorize_closest
 def mock_grid():
     return Grid([4, 4], [.1, .1])
 
-
-@pytest.fixture
-def comm_world():
-    return MPI.COMM_WORLD
 
 
 @pytest.fixture

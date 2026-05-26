@@ -11,17 +11,6 @@ from test.test_domain.utils import generate_global_random_field
 
 
 @pytest.fixture
-def mpi_tmp_path(tmp_path_factory, comm_world):
-    path = None
-    if comm_world.rank == 0:
-        path = tmp_path_factory.mktemp("mpi")
-    path = comm_world.bcast(path, root=0)
-    yield path
-    # prevent faster process from deleting the directory before slower ones are done
-    comm_world.Barrier()
-
-
-@pytest.fixture
 def mock_field(mock_grid, comm_world):
     return generate_global_random_field(mock_grid.nb_domain_grid_pts, comm_world)
 

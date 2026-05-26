@@ -4,28 +4,9 @@ Tests for SimulationIO.
 
 import pytest
 import numpy as np
-from NuMPI import MPI
 
 from a_package.domain import Grid, factorize_closest
 from a_package.simulation.io import SimulationIO
-
-
-@pytest.fixture
-def comm_world():
-    return MPI.COMM_WORLD
-
-
-@pytest.fixture
-def mpi_tmp_path(tmp_path_factory, comm_world):
-    if comm_world.rank == 0:
-        path = tmp_path_factory.mktemp("mpi")
-    else:
-        path = None
-    path = comm_world.bcast(path, root=0)
-    # 'yield' so the script after is executed before test teardown
-    yield path
-    # prevent faster process from deleting the directory
-    comm_world.Barrier()
 
 
 @pytest.fixture
