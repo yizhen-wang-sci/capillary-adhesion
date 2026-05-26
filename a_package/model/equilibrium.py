@@ -31,7 +31,7 @@ def formulate_constant_volume_phase_problem(capillary: CapillaryBridge, volume: 
                    set_x=capillary.set_phase,
                    get_f=capillary.get_energy,
                    get_f_Dx=capillary.get_energy_jacobian,
-                   A=capillary.get_volume_jacobian(),
+                   A=capillary.get_volume_jacobian().ravel(),
                    b=volume,
                    x_lb=capillary.phase_lb,
                    x_ub=capillary.phase_ub,
