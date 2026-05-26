@@ -26,12 +26,6 @@ def io(decomposition, mpi_tmp_path, comm_world):
     return SimulationIO(mpi_tmp_path, decomposition, communicator=comm_world)
 
 
-def localize(field, decomposition):
-    if decomposition is None:
-        return field
-    return field[(..., *decomposition.icoords)]
-
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -40,7 +34,7 @@ def localize(field, decomposition):
 def test_save_load_constant_field(grid, decomposition, io, comm_world):
     """Save and load constant field."""
     field = comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts)))
-    expected = localize(field, decomposition)
+    expected = grid.get_local(field)
 
     io.save_constant(fields={"my_field": expected})
     result = io.load_constant(field_names=["my_field"])
@@ -59,7 +53,7 @@ def test_save_load_constant_single_value(io):
 def test_save_load_constant_mixed(grid, decomposition, io, comm_world):
     """Save and load both fields and single values."""
     field = comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts)))
-    expected = localize(field, decomposition)
+    expected = grid.get_local(field)
 
     io.save_constant(fields={"field_a": expected}, single_values={"value_a": 2.0})
     result = io.load_constant(field_names=["field_a"], single_value_names=["value_a"])
@@ -76,7 +70,7 @@ def test_save_load_constant_mixed(grid, decomposition, io, comm_world):
 def test_save_load_step_field(grid, decomposition, io, comm_world):
     """Save and load step field."""
     field = comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts)))
-    expected = localize(field, decomposition)
+    expected = grid.get_local(field)
 
     io.save_step(0, fields={"field": expected})
     result = io.load_step(0, field_names=["field"])
@@ -102,11 +96,11 @@ def test_save_load_multiple_steps(grid, decomposition, io, comm_world):
     values = [0.1, 0.2, 0.3]
 
     for i, (field, val) in enumerate(zip(fields, values)):
-        io.save_step(i, fields={"field": localize(field, decomposition)}, single_values={"val": val})
+        io.save_step(i, fields={"field": grid.get_local(field)}, single_values={"val": val})
 
     for i, (field, expected_val) in enumerate(zip(fields, values)):
         result = io.load_step(i, field_names=["field"], single_value_names=["val"])
-        np.testing.assert_array_almost_equal(result["field"], localize(field, decomposition))
+        np.testing.assert_array_almost_equal(result["field"], grid.get_local(field))
         assert result["val"] == pytest.approx(expected_val)
 
 
@@ -132,19 +126,19 @@ def test_load_trajectory_fields_lazy(grid, decomposition, io, comm_world):
     fields = [comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts))) for _ in range(3)]
 
     for i, field in enumerate(fields):
-        io.save_step(i, fields={"field": localize(field, decomposition)})
+        io.save_step(i, fields={"field": grid.get_local(field)})
 
     result = io.load_trajectory(field_names=["field"])
     field_array = result["field"]
 
     for i, field in enumerate(fields):
-        np.testing.assert_array_almost_equal(field_array[i], localize(field, decomposition))
+        np.testing.assert_array_almost_equal(field_array[i], grid.get_local(field))
 
 
 def test_save_trajectory_fields(grid, decomposition, io, comm_world):
     """save_trajectory saves fields by index."""
     fields = [comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts))) for _ in range(3)]
-    localized_fields = [localize(f, decomposition) for f in fields]
+    localized_fields = [grid.get_local(f) for f in fields]
 
     io.save_trajectory(fields={"field": localized_fields})
     result = io.load_trajectory(field_names=["field"])

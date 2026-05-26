@@ -12,7 +12,7 @@ def test_real_field_decomposition(mock_grid, decompose_stitch, comm_world):
     decompose, stitch = decompose_stitch
     decomposition = decompose(mock_grid)
     field = decomposition.collection.real_field("test_field", 1)
-    field.s[0, 0, ...] = mock_field[tuple(decomposition.icoords)]
+    field.s[0, 0, ...] = mock_grid.get_local(mock_field)
     collected = stitch(field.s[0, 0, ...], mock_grid)
 
     # assertions
@@ -27,7 +27,7 @@ def test_int_field_decomposition(mock_grid, decompose_stitch, comm_world):
     decompose, stitch = decompose_stitch
     decomposition = decompose(mock_grid)
     field = decomposition.collection.int_field("test_field", 1)
-    field.s[0, 0, ...] = mock_field[tuple(decomposition.icoords)]
+    field.s[0, 0, ...] = mock_grid.get_local(mock_field)
     collected = stitch(field.s[0, 0, ...], mock_grid)
 
     # assertions

@@ -66,12 +66,12 @@ def test_problem(decompose_stitch, comm_world):
                       A=constraint_jacobian().ravel(), b=grid.element_area * np.sum(mean_field))
     optimizer = ProjectedLbfgs(max_inner_iter=10)
 
-    result = optimizer.solve_minimisation(problem, x0=sinusoidal_field[tuple(decomposition.icoords)])
+    result = optimizer.solve_minimisation(problem, x0=grid.get_local(sinusoidal_field))
     solved_field = result['x'].reshape(decomposition.nb_subdomain_grid_pts)
     print(result)
     assert result['success']
     assert result['nit'] < optimizer.max_inner_iter
-    np.testing.assert_allclose(solved_field, mean_field[tuple(decomposition.icoords)])
+    np.testing.assert_allclose(solved_field, grid.get_local(mean_field))
 
 
 @pytest.mark.skip(reason="Not main issue.")

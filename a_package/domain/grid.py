@@ -61,6 +61,13 @@ class Grid:
                                                            list(nb_ghost_layers))
         return self.decomposition
 
+    def get_local(self, field):
+        """Return the local part of a field.
+
+        It assumes that the spatial axes are the last ones.
+        """
+        return field[(..., *self.decomposition.icoords)]
+
     # FIXME: now there shall be a difference between local and global indices
     # where the global indices are from decomposition.subdomain_locations and do not exceed the nb_domain_grid_pts.
     # While the local ones are simply from 0 to decomposition.nb_subdomain_grid_pts (endpoint).

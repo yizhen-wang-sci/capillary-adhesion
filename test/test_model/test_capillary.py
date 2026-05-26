@@ -158,37 +158,35 @@ def assert_jacobian_correct(impl_jacobian, numeric_jacobian, step_sizes, tol=1e-
 
 def test_energy_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, test_field, comm_world, small_steps):
     """Test NodalFormCapillary.get_energy_jacobian against finite differences."""
-    local_slices = mock_decomposed_grid.decomposition.icoords
     capillary = CapillaryBridge(mock_decomposed_grid, mock_phase_mixture, communicator=comm_world)
-    capillary.set_gap(mock_gap[tuple(local_slices)])
+    capillary.set_gap(mock_decomposed_grid.get_local(mock_gap))
 
     def energy_func(phase):
-        phase_local = phase[tuple(local_slices)]
+        phase_local = mock_decomposed_grid.get_local(phase)
         capillary.set_phase(phase_local)
         return capillary.get_energy()
 
     numeric_jacobian = compute_numerical_jacobian(test_field, energy_func, small_steps)
 
-    capillary.set_phase(test_field[tuple(local_slices)])
+    capillary.set_phase(mock_decomposed_grid.get_local(test_field))
     impl_jacobian = capillary.get_energy_jacobian()
 
-    assert_jacobian_correct(impl_jacobian, numeric_jacobian[(..., *local_slices)], small_steps, show_plot=show_me_plot)
+    assert_jacobian_correct(impl_jacobian, mock_decomposed_grid.get_local(numeric_jacobian), small_steps, show_plot=show_me_plot)
 
 
 def test_volume_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, test_field, comm_world, small_steps):
     """Test NodalFormCapillary.get_energy_jacobian against finite differences."""
-    local_slices = mock_decomposed_grid.decomposition.icoords
     capillary = CapillaryBridge(mock_decomposed_grid, mock_phase_mixture, communicator=comm_world)
-    capillary.set_gap(mock_gap[tuple(local_slices)])
+    capillary.set_gap(mock_decomposed_grid.get_local(mock_gap))
 
     def volume_func(phase):
-        phase_local = phase[tuple(local_slices)]
+        phase_local = mock_decomposed_grid.get_local(phase)
         capillary.set_phase(phase_local)
         return capillary.get_volume()
 
     numeric_jacobian = compute_numerical_jacobian(test_field, volume_func, small_steps)
 
-    capillary.set_phase(test_field[tuple(local_slices)])
+    capillary.set_phase(mock_decomposed_grid.get_local(test_field))
     impl_jacobian = capillary.get_volume_jacobian()
 
-    assert_jacobian_correct(impl_jacobian, numeric_jacobian[(..., *local_slices)], small_steps, show_plot=show_me_plot)
+    assert_jacobian_correct(impl_jacobian, mock_decomposed_grid.get_local(numeric_jacobian), small_steps, show_plot=show_me_plot)
