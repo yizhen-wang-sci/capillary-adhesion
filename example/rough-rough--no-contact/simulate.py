@@ -77,7 +77,7 @@ def main():
         if comm_world.rank == 0:
             theta = config['capillary']['contact_angle_degree']
             record = run.new_record(theta=theta)
-            setup_logging(record.log)
+            setup_logging(log_file=record.log)
             save_config(config, record.input)
         record = comm_world.bcast(record)
 

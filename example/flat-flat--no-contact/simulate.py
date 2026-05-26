@@ -57,8 +57,8 @@ def main():
             record = run.new_record(**params)
             save_config(config, record.input)
         record = comm_world.bcast(record)
-        setup_logging(record.log)
-        io = SimulationIO(record.data, decomposition, comm_world)
+        setup_logging(log_file=record.log)
+        io = SimulationIO(record.data, decomposition, communicator=comm_world)
 
         # simulation loop
         phase = square_init_guess(grid, liquid_volume, z_min)[*decomposition.icoords]

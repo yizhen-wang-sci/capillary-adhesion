@@ -26,7 +26,7 @@ def animate_phase(record: RecordDir):
     # build the grid
     config = load_config(record.input)
     grid = build_grid(config)
-    length_unit = UnitConversion(grid._element_sizes[0])
+    length_unit = UnitConversion(grid.element_sizes[0])
 
     # Load related data and normalize them
     io = SimulationIO(record.data)

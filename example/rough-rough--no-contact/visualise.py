@@ -30,8 +30,13 @@ def main():
     records = run.find_records()
 
     # two special results from level set approach
-    record_fill_below = RecordDir(run / "fill-below")
-    record_fill_above = RecordDir(run / "fill-above")
+    record_fill_below = None
+    if (run / "fill-below").exists():
+        record_fill_below = RecordDir(run / "fill-below")
+
+    record_fill_above = None
+    if (run / "fill-above").exists():
+        record_fill_above = RecordDir(run / "fill-above")
 
     # animate and save
     anime = animate_gap_and_phase(records, record_fill_above, record_fill_below)
