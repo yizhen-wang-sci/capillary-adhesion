@@ -15,8 +15,6 @@ from a_package.model.capillary import PhaseMixture, CapillaryBridge
 
 show_me_plot = False
 
-np.set_printoptions(precision=6, suppress=True)
-
 
 @pytest.fixture
 def mock_decomposed_grid():
@@ -32,23 +30,33 @@ def mock_phase_mixture():
 
 
 @pytest.fixture
-def sphere_flat(mock_decomposed_grid):
-    # R = 10 * np.sqrt(np.sum(np.square(test_grid.element_sizes)))
-    # Lx, Ly = test_grid.domain_lengths
-    # xm, ym = test_grid.form_spatial_mesh()
-    # h = -np.sqrt(np.clip(R**2 - (xm - 0.5*Lx)**2 - (ym - 0.5*Ly)**2, 0, np.inf))
-    # # Set the tip center as the unit height.
-    # return h - h.min() + 1
+def flat_flat(mock_decomposed_grid):
+    """A constant gap"""
     return np.ones(mock_decomposed_grid.nb_domain_grid_pts)
+
+
+@pytest.fixture
+def sphere_flat(mock_decomposed_grid):
+    """A variable gap"""
+    R = 10 * np.sqrt(np.sum(np.square(mock_decomposed_grid.element_sizes)))
+    Lx, Ly = mock_decomposed_grid.domain_lengths
+    xm, ym = mock_decomposed_grid.form_spatial_mesh()
+    h = -np.sqrt(np.clip(R**2 - (xm - 0.5*Lx)**2 - (ym - 0.5*Ly)**2, 0, np.inf))
+    # Set the tip center as the unit height.
+    return h - h.min() + 1
+
+
+@pytest.fixture(params=["flat_flat", "sphere_flat"])
+def mock_gap(request):
+    return request.getfixturevalue(request.param)
 
 
 @pytest.fixture
 def sinusoidal_field(mock_decomposed_grid):
     """A field with continuous values between 0 and 1."""
-    # xm, ym = test_grid.form_spatial_mesh()
-    # Lx, Ly = test_grid.domain_lengths
-    # return 0.5 * np.cos(2 * np.pi * xm / Lx) + 0.5 * np.sin(2 * np.pi * ym / Ly)
-    return np.ones(mock_decomposed_grid.nb_domain_grid_pts)
+    xm, ym = mock_decomposed_grid.form_spatial_mesh()
+    Lx, Ly = mock_decomposed_grid.domain_lengths
+    return 0.5 * np.cos(2 * np.pi * xm / Lx) + 0.5 * np.sin(2 * np.pi * ym / Ly)
 
 
 @pytest.fixture
@@ -62,9 +70,7 @@ def inner_circle_field(mock_decomposed_grid):
     return phase
 
 
-# @pytest.fixture(params=["sinusoidal_field", "inner_circle_field"])
-@pytest.fixture(params=["sinusoidal_field"])
-# @pytest.fixture(params=["inner_circle_field"])
+@pytest.fixture(params=["sinusoidal_field", "inner_circle_field"])
 def test_field(request):
     return request.getfixturevalue(request.param)
 
@@ -150,11 +156,11 @@ def assert_jacobian_correct(impl_jacobian, numeric_jacobian, step_sizes, tol=1e-
     assert np.min(diffs) < tol, f"Jacobian difference {np.min(diffs):.2e} exceeds tolerance {tol:.2e}"
 
 
-def test_energy_jacobian(mock_decomposed_grid, mock_phase_mixture, sphere_flat, test_field, comm_world, small_steps):
+def test_energy_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, test_field, comm_world, small_steps):
     """Test NodalFormCapillary.get_energy_jacobian against finite differences."""
     local_slices = mock_decomposed_grid.decomposition.icoords
     capillary = CapillaryBridge(mock_decomposed_grid, mock_phase_mixture, communicator=comm_world)
-    capillary.set_gap(sphere_flat[*local_slices])
+    capillary.set_gap(mock_gap[*local_slices])
 
     def energy_func(phase):
         phase_local = phase[*local_slices]
@@ -169,24 +175,11 @@ def test_energy_jacobian(mock_decomposed_grid, mock_phase_mixture, sphere_flat, 
     assert_jacobian_correct(impl_jacobian, numeric_jacobian[...,*local_slices], small_steps, show_plot=show_me_plot)
 
 
-def test_volume_jacobian(mock_decomposed_grid, mock_phase_mixture, sphere_flat, test_field, comm_world, small_steps):
+def test_volume_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, test_field, comm_world, small_steps):
     """Test NodalFormCapillary.get_energy_jacobian against finite differences."""
     local_slices = mock_decomposed_grid.decomposition.icoords
-    rank = comm_world.Get_rank()
-
-    print("\n".join([
-        f"rank={rank}",
-        "icoords", f"{local_slices}",
-    ]))
-
     capillary = CapillaryBridge(mock_decomposed_grid, mock_phase_mixture, communicator=comm_world)
-    capillary.set_gap(sphere_flat[*local_slices])
-    print("\n".join([
-        f"rank={rank}",
-        "sphere_flat", f"{sphere_flat[*local_slices]}",
-        "gap_sg", f"{capillary._nodal_gap.sg}",
-        "gap_quad_sg", f"{capillary._quadr_gap.sg}"
-    ]))
+    capillary.set_gap(mock_gap[*local_slices])
 
     def volume_func(phase):
         phase_local = phase[*local_slices]
@@ -197,12 +190,5 @@ def test_volume_jacobian(mock_decomposed_grid, mock_phase_mixture, sphere_flat, 
 
     capillary.set_phase(test_field[*local_slices])
     impl_jacobian = capillary.get_volume_jacobian()
-
-    deviations = np.abs(impl_jacobian - numeric_jacobian[0][*local_slices])
-    print("\n".join([
-        f"rank={rank}",
-        "implemented", f"{impl_jacobian}",
-        "numeric", f"{numeric_jacobian[..., *local_slices]}",
-    ]))
 
     assert_jacobian_correct(impl_jacobian, numeric_jacobian[...,*local_slices], small_steps, show_plot=show_me_plot)
