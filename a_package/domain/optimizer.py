@@ -4,8 +4,12 @@ Solving the numerical optimization problem. No physics meaning in this file.
 
 import logging
 import timeit
-import typing
-from typing import Callable, Protocol
+from typing import Callable, Protocol, TypedDict
+import sys
+if sys.version_info >= (3, 11):
+    from typing import Required
+else:
+    from typing_extensions import Required
 
 import numpy as np
 import NuMPI.Optimization
@@ -121,12 +125,12 @@ class Problem:
         return np.asarray(self._is_zero).ravel()
 
 
-class OptimizerResult(typing.TypedDict, total=False):
+class OptimizerResult(TypedDict, total=False):
     """Result of an optimizer."""
 
-    x: typing.Required[np.ndarray]
+    x: Required[np.ndarray]
     dual: float
-    success: typing.Required[bool]
+    success: Required[bool]
     reached_iter_limit: bool
     had_abnormal_stop: bool
     message: str
