@@ -3,7 +3,7 @@ name: test
 on: [push]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -32,4 +32,4 @@ jobs:
 
     - name: Test in parallel with ${{ matrix.nb-proc }} processes
       run: |
-        mpirun -np ${{ matrix.nb-proc }} pytest
+        mpiexec -np ${{ matrix.nb-proc }} pytest
