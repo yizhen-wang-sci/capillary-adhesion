@@ -67,11 +67,10 @@ class Quadrature(ABC):
         # Regular grid -> element area factors out
         element_sum = element_area * np.sum(field, axis=field_element_axs)
         local = np.einsum("s, cs-> c", self.quad_pt_weights, element_sum)
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"rank={self._communicator.rank}, local integral={local}")
         return self._communicator.allreduce(local, op=MPI.SUM)
 
     def propag_integral_weight(self, field: Field, element_area: float = 1.0):
+        # Regular grid -> element area factors out
         return element_area * np.einsum("s, cs...-> cs...", self.quad_pt_weights, field)
 
 

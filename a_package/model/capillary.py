@@ -176,10 +176,6 @@ class CapillaryBridge:
         self._decomposition.communicate_ghosts(self._nodal_phase)
         self._fem.interpolate_value(self._nodal_phase, self._quadr_phase)
         self._fem.interpolate_gradient(self._nodal_phase, self._quadr_phase_gradient)
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"rank={self._communicator.rank}, phase field=\n{self._nodal_phase.sg}\n"
-                         f"interpolated value=\n{self._quadr_phase.sg}\n"
-                         f"interpolated gradient=\n{self._quadr_phase_gradient.sg}")
 
     @property
     def phase_lb(self):
@@ -208,8 +204,6 @@ class CapillaryBridge:
         """Compute total capillary energy."""
         integrand = self._mixture.compute_local_energy(self._quadr_gap.s, self._quadr_phase.s,
                                                        self._quadr_phase_gradient.s)
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"rank={self._communicator.rank}, energy integrand=\n{integrand}")
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_energy_jacobian(self):
@@ -232,8 +226,6 @@ class CapillaryBridge:
     def get_volume(self):
         """Compute total liquid volume."""
         integrand = self._mixture.compute_local_volume(self._quadr_gap.s, self._quadr_phase.s)
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"rank={self._communicator.rank}, volume integrand=\n{integrand}")
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_volume_jacobian(self):
