@@ -39,7 +39,8 @@ class Problem:
                  get_g: Callable[[], float] | None = None,
                  get_g_Dx: Callable[[], np.ndarray] | None = None,
                  x_lb: float | None = None,
-                 x_ub: float | None = None):
+                 x_ub: float | None = None,
+                 is_zero: np.ndarray | None = None):
         self._get_x = get_x
         self._set_x = set_x
         self._get_f = get_f
@@ -56,6 +57,8 @@ class Problem:
             self._x_lb = x_lb
         if x_ub is not None:
             self._x_ub = x_ub
+        if is_zero is not None:
+            self._is_zero = is_zero
 
     @property
     def has_linear_constraints(self):
@@ -108,6 +111,10 @@ class Problem:
     @property
     def x_ub(self):
         return self._x_ub
+
+    @property
+    def is_zero(self):
+        return np.asarray(self._is_zero).ravel()
 
 
 class OptimizerResult(typing.TypedDict, total=False):
@@ -509,6 +516,7 @@ class ProjectedLbfgs(Optimizer):
             jac=compute_f_Dx,
             bounds_lo=bounds_lo,
             bounds_hi=bounds_hi,
+            zero_mask=problem.is_zero,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
             comm=communicator,
@@ -549,6 +557,7 @@ class BoundedLbfgs(Optimizer):
             jac=compute_f_Dx,
             bounds_lo=bounds_lo,
             bounds_hi=bounds_hi,
+            zero_mask=problem.is_zero,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
             comm=communicator,
