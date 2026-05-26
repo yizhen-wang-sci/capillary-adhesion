@@ -77,7 +77,8 @@ class Grid:
         return axis
 
     def form_index_mesh(self, endpoint: bool = False):
-        return np.meshgrid(self.form_index_axis(0, endpoint), self.form_index_axis(1, endpoint))
+        return np.meshgrid(self.form_index_axis(0, endpoint), self.form_index_axis(1, endpoint),
+                           indexing="ij")
 
     # =========================================================================
     # Spatial: 0, d, 2d, ..., (N-1)d
@@ -92,7 +93,8 @@ class Grid:
         return np.arange(n) * d
 
     def form_spatial_mesh(self, endpoint: bool = False):
-        return np.meshgrid(self.form_spatial_axis(0, endpoint), self.form_spatial_axis(1, endpoint))
+        return np.meshgrid(self.form_spatial_axis(0, endpoint), self.form_spatial_axis(1, endpoint),
+                           indexing="ij")
 
     # =========================================================================
     # Spectral: 2π / (N * pixel_size * ref_scale) * fftfreq indices
@@ -105,7 +107,7 @@ class Grid:
         return (2 * np.pi) * fft.fftfreq(n, d)
 
     def form_spectral_mesh(self):
-        return np.meshgrid(self.form_spectral_axis(0), self.form_spectral_axis(1))
+        return np.meshgrid(self.form_spectral_axis(0), self.form_spectral_axis(1), indexing="ij")
 
 
 def factorize_closest(value: int, nb_factor: int):

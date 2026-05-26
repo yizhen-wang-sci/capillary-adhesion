@@ -76,11 +76,14 @@ class FirstOrderElement:
 class LinearFiniteElementPixel:
     """A unit pixel discretized with linear (first order) finite element basis. It provides discrete operators
     for interpolation and gradient on pre-specified locations.
-    (0,0) ---- (1,0)
+    (0,0) ---- (1,0) --> x_2
       |     /   |
       | 0  /  1 |
       |   /     |
     (0,1) ---- (1,1)
+      |
+      v
+     x_1
     The vertices of the pixel are (0,0), (1,0), (0,1), (1,1). It is divided into two triangles by
     the line connecting vertices (1,0) and (0,1), x_1 + x_2 = 1. The triangle with (0,0) vertice is
     the "triangle0", the other is the "triangle1".
