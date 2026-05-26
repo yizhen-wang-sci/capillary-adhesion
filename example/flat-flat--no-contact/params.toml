@@ -22,7 +22,7 @@ step_size = 0.01
 round_trip = true
 
 [optimizer]
-max_nb_iters = 500
+max_nb_iters = 300
 max_nb_loops = 30
 tol_gradient = 1e-6
 tol_eq_constraint = 1e-6

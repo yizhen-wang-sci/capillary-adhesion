@@ -110,7 +110,7 @@ def square_init_guess(grid: Grid, volume, mean_separation):
 def solve_constant_volume(original_shape, contact, capillary, optimizer, trajectory, liquid_volume, phase_init_local):
     phase_local = phase_init_local.copy()
     for i_step, separation in enumerate(trajectory):
-        print(f"Step {i_step}: separation={separation}")
+        print(f"[rank{comm_world.rank}] step {i_step}: separation={separation}")
 
         # Gap
         contact.set_mean_separation(separation)
@@ -120,7 +120,7 @@ def solve_constant_volume(original_shape, contact, capillary, optimizer, traject
         capillary.set_gap(gap_local)
         problem = formulate_constant_volume_phase_problem(capillary, liquid_volume)
         solution = optimizer.solve_minimisation(problem, x0=phase_local)
-        print(f"It took {solution['nit']} iterations.")
+        print(f"[rank{comm_world.rank}] It took {solution['nit']} iterations.")
 
         phase_local = solution['x'].reshape(original_shape)
         pressure = -solution['dual']

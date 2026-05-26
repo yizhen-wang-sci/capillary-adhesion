@@ -70,14 +70,19 @@ def main():
 
             # solve phase problem
             problem = formulate_constant_volume_phase_problem(capillary, liquid_volume)
+            # FIXME: this is a work-around for that the optimizer takes the local sum as global
+            problem._b = problem._b / comm_world.size
+            print(f"rank={comm_world.rank}, before solve_minimisation")
             solution = optimizer.solve_minimisation(problem, x0=phase)
-            print(f"It took {solution['nit']} iterations.")
+            print(f"rank={comm_world.rank}, problem solved, it took {solution['nit']} iterations.")
 
             # subtract quantities and save them
             phase = solution['x'].reshape(decomposition.nb_subdomain_grid_pts)
             pressure = -solution['dual']
+            print(f"rank={comm_world.rank}, before io save step")
             io.save_step(i_step, single_values={Term.separation: separation, Term.pressure: pressure},
                          fields={Term.gap: gap, Term.phase: phase})
+            print(f"rank={comm_world.rank}, after io save step")
 
 
 def square_init_guess(grid: Grid, volume, mean_separation):
