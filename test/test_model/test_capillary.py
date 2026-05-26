@@ -18,46 +18,45 @@ show_me_plot = False
 np.set_printoptions(precision=6, suppress=True)
 
 
-
 @pytest.fixture
-def test_grid():
-    grid = Grid([4, 4], [1., 1.])
+def mock_decomposed_grid():
+    grid = Grid([3, 3], [3., 3.])
     nb_subdomains = factorize_closest(MPI.COMM_WORLD.Get_size(), 2)
     grid.decompose(nb_subdomains, (1, 1), communicator=MPI.COMM_WORLD)
     return grid
 
 
 @pytest.fixture
-def test_phase_mixture():
+def mock_phase_mixture():
     return PhaseMixture(eta=1.0, theta=np.pi / 3)
 
 
 @pytest.fixture
-def sphere_flat(test_grid):
+def sphere_flat(mock_decomposed_grid):
     # R = 10 * np.sqrt(np.sum(np.square(test_grid.element_sizes)))
     # Lx, Ly = test_grid.domain_lengths
     # xm, ym = test_grid.form_spatial_mesh()
     # h = -np.sqrt(np.clip(R**2 - (xm - 0.5*Lx)**2 - (ym - 0.5*Ly)**2, 0, np.inf))
     # # Set the tip center as the unit height.
     # return h - h.min() + 1
-    return np.ones(test_grid.nb_domain_grid_pts)
+    return np.ones(mock_decomposed_grid.nb_domain_grid_pts)
 
 
 @pytest.fixture
-def sinusoidal_field(test_grid):
+def sinusoidal_field(mock_decomposed_grid):
     """A field with continuous values between 0 and 1."""
     # xm, ym = test_grid.form_spatial_mesh()
     # Lx, Ly = test_grid.domain_lengths
     # return 0.5 * np.cos(2 * np.pi * xm / Lx) + 0.5 * np.sin(2 * np.pi * ym / Ly)
-    return np.ones(test_grid.nb_domain_grid_pts)
+    return np.ones(mock_decomposed_grid.nb_domain_grid_pts)
 
 
 @pytest.fixture
-def inner_circle_field(test_grid):
+def inner_circle_field(mock_decomposed_grid):
     """A field with jumps at 0 / 1 border."""
-    xm, ym = test_grid.form_spatial_mesh()
-    Lx, Ly = test_grid.domain_lengths
-    phase = np.zeros(test_grid.nb_domain_grid_pts)
+    xm, ym = mock_decomposed_grid.form_spatial_mesh()
+    Lx, Ly = mock_decomposed_grid.domain_lengths
+    phase = np.zeros(mock_decomposed_grid.nb_domain_grid_pts)
     inner = (xm/Lx)**2 + (ym/Ly)**2 <= 0.5**2
     phase[inner] = 1.0
     return phase
@@ -81,8 +80,8 @@ def small_steps():
     lowest_magnitude = math.floor(0.5 * math.log10(sys.float_info.epsilon))
     # largest step is 10^0 = 1.
     highest_magnitude = 0
-    # return np.pow(10.0, np.arange(lowest_magnitude, highest_magnitude + 1))
-    return [0.1]
+    return np.pow(10.0, np.arange(lowest_magnitude, highest_magnitude + 1))
+    # return [1.0]
 
 
 def compute_numerical_jacobian(x, func, step_sizes):
@@ -105,19 +104,26 @@ def compute_numerical_jacobian(x, func, step_sizes):
     """
     numeric_jacobian = np.empty((np.size(step_sizes), *x.shape))
     for i_delta, delta in enumerate(step_sizes):
+        # print("perturb=", delta)
         for indices in np.ndindex(x.shape):
-            print("x\n", x)
+            # print("x\n", x)
+            # print("id ", indices)
             original = x[indices].copy()
-            x[indices] = original + delta
-            print("x2\n", x)
+            # print("x[id] ", original)
 
+            x[indices] = original + delta
+            # print("x_plus\n", x)
             plus_val = func(x)
-            print("plus_val\n", plus_val)
+            # print("plus_val\n", plus_val)
+
             x[indices] = original - delta
+            # print("x_minus\n", x)
             minus_val = func(x)
-            print("minus_val\n", minus_val)
-            numeric_jacobian[(i_delta, *indices)] = 0.5 * (plus_val - minus_val) / delta
-            print("numeric_jacobian\n", numeric_jacobian[(i_delta, *indices)])
+            # print("minus_val\n", minus_val)
+
+            numeric_jacobian[i_delta, *indices] = 0.5 * (plus_val - minus_val) / delta
+            # print("numeric_jacobian\n", numeric_jacobian[(i_delta, *indices)])
+
             x[indices] = original
     return numeric_jacobian
 
@@ -128,8 +134,10 @@ def assert_jacobian_correct(impl_jacobian, numeric_jacobian, step_sizes, tol=1e-
 
     Compares across all step sizes and checks that minimum difference is below tolerance.
     """
-    jac_diffs = np.abs(impl_jacobian - numeric_jacobian).squeeze()
-    diffs = np.max(jac_diffs, axis=(-2, -1))
+    # print(f"impl shape={np.shape(impl_jacobian)}, numeric shape={np.shape(numeric_jacobian)}")
+
+    jac_diffs = np.abs(impl_jacobian - numeric_jacobian)
+    diffs = np.linalg.norm(jac_diffs, axis=(-2, -1))
 
     if show_plot:
         plt.plot(step_sizes, diffs, "x-", label=r"Finite difference error")
@@ -142,10 +150,10 @@ def assert_jacobian_correct(impl_jacobian, numeric_jacobian, step_sizes, tol=1e-
     assert np.min(diffs) < tol, f"Jacobian difference {np.min(diffs):.2e} exceeds tolerance {tol:.2e}"
 
 
-def test_energy_jacobian(test_grid, test_phase_mixture, sphere_flat, test_field, comm_world, small_steps):
+def test_energy_jacobian(mock_decomposed_grid, mock_phase_mixture, sphere_flat, test_field, comm_world, small_steps):
     """Test NodalFormCapillary.get_energy_jacobian against finite differences."""
-    local_slices = test_grid.decomposition.icoords
-    capillary = CapillaryBridge(test_grid, test_phase_mixture, communicator=comm_world)
+    local_slices = mock_decomposed_grid.decomposition.icoords
+    capillary = CapillaryBridge(mock_decomposed_grid, mock_phase_mixture, communicator=comm_world)
     capillary.set_gap(sphere_flat[*local_slices])
 
     def energy_func(phase):
@@ -161,23 +169,24 @@ def test_energy_jacobian(test_grid, test_phase_mixture, sphere_flat, test_field,
     assert_jacobian_correct(impl_jacobian, numeric_jacobian[...,*local_slices], small_steps, show_plot=show_me_plot)
 
 
-def test_volume_jacobian(test_grid, test_phase_mixture, sphere_flat, test_field, comm_world, small_steps):
+def test_volume_jacobian(mock_decomposed_grid, mock_phase_mixture, sphere_flat, test_field, comm_world, small_steps):
     """Test NodalFormCapillary.get_energy_jacobian against finite differences."""
-    local_slices = test_grid.decomposition.icoords
+    local_slices = mock_decomposed_grid.decomposition.icoords
     rank = comm_world.Get_rank()
-    # print("\n".join([
-    #     f"rank={rank}",
-    #     "icoords", f"{local_slices}",
-    # ]))
 
-    capillary = CapillaryBridge(test_grid, test_phase_mixture)
+    print("\n".join([
+        f"rank={rank}",
+        "icoords", f"{local_slices}",
+    ]))
+
+    capillary = CapillaryBridge(mock_decomposed_grid, mock_phase_mixture, communicator=comm_world)
     capillary.set_gap(sphere_flat[*local_slices])
-    # print("\n".join([
-    #     f"rank={rank}",
-    #     "sphere_flat", f"{sphere_flat[*local_slices]}",
-    #     "gap_sg", f"{capillary._nodal_gap.sg}",
-    #     "gap_quad_sg", f"{capillary._quadr_gap.sg}"
-    # ]))
+    print("\n".join([
+        f"rank={rank}",
+        "sphere_flat", f"{sphere_flat[*local_slices]}",
+        "gap_sg", f"{capillary._nodal_gap.sg}",
+        "gap_quad_sg", f"{capillary._quadr_gap.sg}"
+    ]))
 
     def volume_func(phase):
         phase_local = phase[*local_slices]
@@ -188,23 +197,12 @@ def test_volume_jacobian(test_grid, test_phase_mixture, sphere_flat, test_field,
 
     capillary.set_phase(test_field[*local_slices])
     impl_jacobian = capillary.get_volume_jacobian()
-    # print("\n".join([
-    #     f"rank={rank}",
-    #     "quad_value_2_sg", f"{capillary._quadr_value_2.sg}",
-    #     "quad_value_2_back_sens_sg", f"{capillary._quadr_value_2_back_sens.sg}"
-    # ]))
 
     deviations = np.abs(impl_jacobian - numeric_jacobian[0][*local_slices])
-    # print("\n".join([
-    #     f"rank={rank}",
-    #     "deviations", f"{deviations}",
-    #     "errors_at", f"{np.argwhere(deviations > 1e-6)}",
-    # ]))
-
-    # print("\n".join([
-    #     f"rank={rank}",
-    #     "implemented", f"{impl_jacobian}",
-    #     "numeric", f"{numeric_jacobian[..., *local_slices]}",
-    # ]))
+    print("\n".join([
+        f"rank={rank}",
+        "implemented", f"{impl_jacobian}",
+        "numeric", f"{numeric_jacobian[..., *local_slices]}",
+    ]))
 
     assert_jacobian_correct(impl_jacobian, numeric_jacobian[...,*local_slices], small_steps, show_plot=show_me_plot)
