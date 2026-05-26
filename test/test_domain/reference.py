@@ -16,9 +16,10 @@ class RefFirstOrderElement:
     It creates sparse matrices from the coefficients of interpolating values and gradients.
     """
 
-    def __init__(self, grid: Grid, sub_pt_coords: np.ndarray):
+    def __init__(self, grid: Grid, sub_pt_coords: list[list[float]]):
         self.grid_shape = grid.nb_domain_grid_pts
-        self.nb_sub_pts = np.shape(sub_pt_coords)[0]
+        sub_pt_coords = np.asarray(sub_pt_coords)
+        self.nb_sub_pts = sub_pt_coords.shape[0]
 
         fe_pixel = LinearFiniteElementPixel()
         M, N = grid.nb_domain_grid_pts
