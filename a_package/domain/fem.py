@@ -1,3 +1,5 @@
+from typing import Sequence
+
 import numpy as np
 import muGrid
 
@@ -12,16 +14,22 @@ class FirstOrderElement:
     It combines interpolation and quadrature.
     """
 
-    def __init__(self, sub_pt_coords: np.ndarray, element_sizes: tuple[float, float] | None = None):
+    def __init__(self, sub_pt_coords: Sequence[Sequence[float]], element_sizes: Sequence[float] | None = None):
         """
 
         :param sub_pt_coords: coordinates of sub-points, shape (nb_sub_pts, 2)
         :param element_sizes: size of the element in each direction
         """
+        sub_pt_coords = np.asarray(sub_pt_coords)
+        nb_sub_pts, nb_spatial_dim = sub_pt_coords.shape
+        if nb_spatial_dim != 2:
+            raise ValueError(f"Expected 2D sub-point coordinates, got {nb_spatial_dim}D")
+
         if element_sizes is None:
             element_sizes = (1.0,) * 2
+        if len(element_sizes) != nb_spatial_dim:
+            raise ValueError(f"Expected {nb_spatial_dim}D element sizes, got {len(element_sizes)}")
 
-        nb_sub_pts, nb_spatial_dim = sub_pt_coords.shape
         nodal_pixel_shape = (2, 2)
         # the target pixel is aligned towards the (0, 0) element of the kernel
         offset = (0, 0)
