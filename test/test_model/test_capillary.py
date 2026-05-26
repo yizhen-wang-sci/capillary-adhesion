@@ -127,7 +127,7 @@ def compute_numerical_jacobian(x, func, step_sizes):
             minus_val = func(x)
             # print("minus_val\n", minus_val)
 
-            numeric_jacobian[i_delta, *indices] = 0.5 * (plus_val - minus_val) / delta
+            numeric_jacobian[(i_delta, *indices)] = 0.5 * (plus_val - minus_val) / delta
             # print("numeric_jacobian\n", numeric_jacobian[(i_delta, *indices)])
 
             x[indices] = original
