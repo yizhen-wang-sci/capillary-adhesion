@@ -83,7 +83,7 @@ def main():
 
         # initial guess
         phase_init = square_init_guess(grid, liquid_volume, np.amin(trajectory))
-        phase_init_local = phase_init[*decomposition.icoords]
+        phase_init_local = phase_init[tuple(decomposition.icoords)]
 
         # IO and save setup
         io = SimulationIO(record.data, decomposition, communicator=comm_world)

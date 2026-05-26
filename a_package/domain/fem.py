@@ -41,7 +41,7 @@ class FirstOrderElement:
         pixel_op_value = np.zeros([1, nb_sub_pts, *nodal_pixel_shape])
         for i_subpt, subpt_coeffs in enumerate(val_interp_coeffs):
             for coords, coeff in subpt_coeffs.items():
-                pixel_op_value[0, i_subpt, *coords] = coeff
+                pixel_op_value[(0, i_subpt, *coords)] = coeff
         self._op_value = muGrid.GenericLinearOperator(offset, pixel_op_value)
 
         # construct pixel operator for gradient interpolation
@@ -50,7 +50,7 @@ class FirstOrderElement:
         for i_subpt, subpt_coeffs in enumerate(grad_interp_coeffs):
             for i_component, compon_name in enumerate(["x1", "x2"]):
                 for coords, coeff in subpt_coeffs[compon_name].items():
-                    pixel_op_gradient[i_component, i_subpt, *coords] = coeff / element_sizes[i_component]
+                    pixel_op_gradient[(i_component, i_subpt, *coords)] = coeff / element_sizes[i_component]
         self._op_gradient = muGrid.GenericLinearOperator(offset, pixel_op_gradient)
 
         # FIXME: the below shall be faster, but it seems using a different convention, which makes them not the same

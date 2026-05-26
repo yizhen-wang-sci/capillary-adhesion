@@ -30,9 +30,9 @@ def test_save_load_distributed(mpi_tmp_path, decomposed_grid, mock_field, comm_w
     io = NpyIO(mpi_tmp_path, decomposition, communicator=comm_world)
     name = "test_distributed"
 
-    io.save_distributed(name, mock_field[*decomposition.icoords])
+    io.save_distributed(name, mock_field[tuple(decomposition.icoords)])
     loaded_arr = io.load_distributed(name)
-    assert_all_array_equal(comm_world, loaded_arr, mock_field[*decomposition.icoords])
+    assert_all_array_equal(comm_world, loaded_arr, mock_field[tuple(decomposition.icoords)])
 
 
 def test_save_load_singular(mpi_tmp_path, decomposed_grid, mock_array, comm_world):

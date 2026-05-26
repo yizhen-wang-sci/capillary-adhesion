@@ -29,7 +29,7 @@ def io(decomposition, mpi_tmp_path, comm_world):
 def localize(field, decomposition):
     if decomposition is None:
         return field
-    return field[..., *decomposition.icoords]
+    return field[(..., *decomposition.icoords)]
 
 
 # =============================================================================

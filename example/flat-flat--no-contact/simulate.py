@@ -61,7 +61,7 @@ def main():
         io = SimulationIO(record.data, decomposition, communicator=comm_world)
 
         # simulation loop
-        phase = square_init_guess(grid, liquid_volume, z_min)[*decomposition.icoords]
+        phase = square_init_guess(grid, liquid_volume, z_min)[tuple(decomposition.icoords)]
         for i_step, separation in enumerate(trajectory):
             # ideal plastic contact
             contact.set_mean_separation(separation)
