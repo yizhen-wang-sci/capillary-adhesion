@@ -26,9 +26,11 @@ jobs:
         pip install .[test]
         pip list
 
-    - name: Test with pytest
+    - name: Install non binary dependencies
       run: |
-        pytest
+        pip install --no-binary=mpi4py mpi4py
+        pip install --no-binary=NuMPI NuMPI
+        pip install --no-binary=muGrid muGrid
 
     - name: Test in parallel with ${{ matrix.nb-proc }} processes
       run: |
