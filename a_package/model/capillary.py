@@ -8,8 +8,7 @@ import numpy as np
 import muGrid
 from NuMPI import MPI
 
-from a_package.domain import Grid, FirstOrderElement, Quadrature, centroid_quadrature, factorize_closest
-from a_package.domain import Field, field_component_ax, field_sub_pt_ax
+from a_package.domain import Grid, FirstOrderElement, CentroidQuadrature, Field, field_component_ax, field_sub_pt_ax
 
 
 logger = logging.getLogger(__name__)
@@ -121,17 +120,14 @@ class CapillaryBridge:
     All its methods accept and return nodal values, and it handles the interpolation and integral.
     """
 
-    def __init__(self, grid: Grid, phase_mixture, quadrature: Quadrature = centroid_quadrature, communicator=MPI.COMM_SELF):
+    def __init__(self, grid: Grid, phase_mixture, communicator=MPI.COMM_SELF):
         self._grid = grid
         self._mixture = phase_mixture
+        self._communicator = communicator
 
-        # numeric helpers
-        self._quadrature = quadrature
+        # numeric setup
+        self._quadrature = CentroidQuadrature(communicator)
         self._fem = FirstOrderElement(self._quadrature.quad_pt_coords, grid.element_sizes)
-
-        # Use muGrid Communicator because its .sum() broadcasts the result to all processes.
-        # The constructor has a mechanism to avoid overhead if the communicator is already a muGrid.Communicator object.
-        self._communicator = muGrid.Communicator(communicator)
 
         # decomposition and field collection setup
         self._decomposition = grid.decomposition
@@ -163,7 +159,6 @@ class CapillaryBridge:
         self._nodal_gap.s[...] = np.reshape(value, (1, 1, *self._decomposition.nb_subdomain_grid_pts))
         self._decomposition.communicate_ghosts(self._nodal_gap)
         self._fem.interpolate_value(self._nodal_gap, self._quadr_gap)
-        # self._decomposition.communicate_ghosts(self._quadr_gap)
 
     @property
     def gap_is_closed(self):
@@ -180,9 +175,11 @@ class CapillaryBridge:
         self._nodal_phase.s[self.gap_is_closed] = 0.
         self._decomposition.communicate_ghosts(self._nodal_phase)
         self._fem.interpolate_value(self._nodal_phase, self._quadr_phase)
-        # self._decomposition.communicate_ghosts(self._quadr_phase)
         self._fem.interpolate_gradient(self._nodal_phase, self._quadr_phase_gradient)
-        # self._decomposition.communicate_ghosts(self._quadr_phase_gradient)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"rank={self._communicator.rank}, phase field=\n{self._nodal_phase.sg}\n"
+                         f"interpolated value=\n{self._quadr_phase.sg}\n"
+                         f"interpolated gradient=\n{self._quadr_phase_gradient.sg}")
 
     @property
     def phase_lb(self):
@@ -211,8 +208,9 @@ class CapillaryBridge:
         """Compute total capillary energy."""
         integrand = self._mixture.compute_local_energy(self._quadr_gap.s, self._quadr_phase.s,
                                                        self._quadr_phase_gradient.s)
-        local = self._quadrature.integrate(integrand, self._grid.element_area).item()
-        return self._communicator.sum(local)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"rank={self._communicator.rank}, energy integrand=\n{integrand}")
+        return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_energy_jacobian(self):
         """Compute gradient of energy w.r.t. nodal phase."""
@@ -222,12 +220,10 @@ class CapillaryBridge:
         self._quadr_value_1.s[...] = self._quadrature.propag_integral_weight(energy_D_phase, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_value_1)
         self._fem.propag_sens_value(self._quadr_value_1, self._quadr_value_1_back_sens)
-        # self._decomposition.communicate_ghosts(self._quadr_value_1_back_sens)
 
         self._quadr_gradient.s[...] = self._quadrature.propag_integral_weight(energy_D_phase_gradient, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_gradient)
         self._fem.propag_sens_gradient(self._quadr_gradient, self._quadr_gradient_back_sens)
-        # self._decomposition.communicate_ghosts(self._quadr_gradient_back_sens)
 
         jacobian = self._quadr_value_1_back_sens.s + self._quadr_gradient_back_sens.s
         jacobian[self.gap_is_closed] = 0
@@ -236,8 +232,9 @@ class CapillaryBridge:
     def get_volume(self):
         """Compute total liquid volume."""
         integrand = self._mixture.compute_local_volume(self._quadr_gap.s, self._quadr_phase.s)
-        local = self._quadrature.integrate(integrand, self._grid.element_area).item()
-        return self._communicator.sum(local)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"rank={self._communicator.rank}, volume integrand=\n{integrand}")
+        return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_volume_jacobian(self):
         """Compute gradient of volume w.r.t. nodal phase."""
@@ -246,7 +243,6 @@ class CapillaryBridge:
         self._quadr_value_2.s[...] = self._quadrature.propag_integral_weight(volume_D_phase, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_value_2)
         self._fem.propag_sens_value(self._quadr_value_2, self._quadr_value_2_back_sens)
-        # self._decomposition.communicate_ghosts(self._quadr_value_2_back_sens)
 
         jacobian = self._quadr_value_2_back_sens.s.copy()
         jacobian[self.gap_is_closed] = 0
@@ -255,15 +251,12 @@ class CapillaryBridge:
     def get_perimeter(self):
         """Compute total perimeter of liquid-vapour interface."""
         integrand = self._mixture.compute_local_perimeter(self._quadr_phase, self._quadr_phase_gradient)
-        local = self._quadrature.integrate(integrand, self._grid.element_area).item()
-        return self._communicator.sum(local)
+        return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_max_volume(self):
         """Compute maximum available volume."""
-        local = self._quadrature.integrate(self._quadr_gap.s, self._grid.element_area).item()
-        return self._communicator.sum(local)
+        return self._quadrature.integrate(self._quadr_gap.s, self._grid.element_area).item()
 
     def get_liquid_area(self):
         """Compute area of liquid-solid interface."""
-        local = self._quadrature.integrate(self._quadr_phase.s, self._grid.element_area).item()
-        return self._communicator.sum(local)
+        return self._quadrature.integrate(self._quadr_phase.s, self._grid.element_area).item()
