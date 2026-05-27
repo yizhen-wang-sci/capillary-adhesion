@@ -15,6 +15,7 @@ import numpy as np
 import NuMPI.Optimization
 import NuMPI.Tools
 import scipy.optimize
+from NuMPI import MPI
 
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,8 @@ class Problem:
                  get_g_Dx: Callable[[], np.ndarray] | None = None,
                  x_lb: float | None = None,
                  x_ub: float | None = None,
-                 is_zero: np.ndarray | None = None):
+                 is_zeroed: np.ndarray | None = None,
+                 communicator=MPI.COMM_SELF):
         self._get_x = get_x
         self._set_x = set_x
         self._get_f = get_f
@@ -61,8 +63,9 @@ class Problem:
             self._x_lb = x_lb
         if x_ub is not None:
             self._x_ub = x_ub
-        if is_zero is not None:
-            self._is_zero = is_zero
+        if is_zeroed is not None:
+            self._is_zero = is_zeroed
+        self.communicator = communicator
 
     @property
     def has_linear_constraints(self):
@@ -498,8 +501,8 @@ class ProjectedLbfgs(Optimizer):
         self.max_inner_iter = max_inner_iter
         self.tol_gradient = tol_gradient
 
-    def solve_minimisation(self, problem: Problem, x0: np.ndarray, communicator=None, callback=None, **kwargs) -> OptimizerResult:
-        linear_constraint = NuMPI.Optimization.LinearConstraint(problem.A, problem.b, NuMPI.Tools.Reduction(communicator))
+    def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
+        linear_constraint = NuMPI.Optimization.LinearConstraint(problem.A, problem.b, NuMPI.Tools.Reduction(problem.communicator))
 
         def compute_f(x):
             problem.set_x(x)
@@ -530,7 +533,7 @@ class ProjectedLbfgs(Optimizer):
             zero_mask=zero_mask,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
-            comm=communicator,
+            comm=problem.communicator,
             callback=callback,
         )
         return OptimizerResult(x=result['x'].reshape(init_shape), dual=result['multiplier'], success=result['success'],
@@ -544,7 +547,7 @@ class BoundedLbfgs(Optimizer):
         self.max_inner_iter = max_inner_iter
         self.tol_gradient = tol_gradient
 
-    def solve_minimisation(self, problem: Problem, x0: np.ndarray, communicator=None, callback=None, **kwargs) -> OptimizerResult:
+    def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
 
         def compute_f(x):
             problem.set_x(x)
@@ -574,7 +577,7 @@ class BoundedLbfgs(Optimizer):
             zero_mask=zero_mask,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
-            comm=communicator,
+            comm=problem.communicator,
             callback=callback,
         )
         return OptimizerResult(x=result['x'].reshape(init_shape), success=result['success'],

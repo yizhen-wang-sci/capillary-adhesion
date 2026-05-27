@@ -63,10 +63,11 @@ def test_problem(decompose_stitch, comm_world):
         return field_quadr_3_back_sens.s[0, 0, ...]
 
     problem = Problem(set_x=set_field, get_x=get_field, get_f=objective, get_f_Dx=objective_gradient,
-                      A=constraint_jacobian().ravel(), b=grid.element_area * np.sum(mean_field))
+                      A=constraint_jacobian().ravel(), b=grid.element_area * np.sum(mean_field),
+                      communicator=comm_world)
     optimizer = ProjectedLbfgs(max_inner_iter=10)
 
-    result = optimizer.solve_minimisation(problem, x0=grid.get_local(sinusoidal_field), communicator=comm_world)
+    result = optimizer.solve_minimisation(problem, x0=grid.get_local(sinusoidal_field))
     solved_field = result['x'].reshape(decomposition.nb_subdomain_grid_pts)
     print(result)
     assert result['success']

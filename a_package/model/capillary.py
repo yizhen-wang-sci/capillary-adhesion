@@ -123,7 +123,7 @@ class CapillaryBridge:
     def __init__(self, grid: Grid, phase_mixture, communicator=MPI.COMM_SELF):
         self._grid = grid
         self._mixture = phase_mixture
-        self._communicator = communicator
+        self.communicator = communicator
 
         # numeric setup
         self._quadrature = CentroidQuadrature(communicator)
@@ -220,7 +220,7 @@ class CapillaryBridge:
         self._fem.propag_sens_gradient(self._quadr_gradient, self._quadr_gradient_back_sens)
 
         jacobian = self._quadr_value_1_back_sens.s + self._quadr_gradient_back_sens.s
-        # jacobian[self.gap_is_closed] = 0
+        jacobian[self.gap_is_closed] = 0
         return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_volume(self):
@@ -237,7 +237,7 @@ class CapillaryBridge:
         self._fem.propag_sens_value(self._quadr_value_2, self._quadr_value_2_back_sens)
 
         jacobian = self._quadr_value_2_back_sens.s.copy()
-        # jacobian[self.gap_is_closed] = 0
+        jacobian[self.gap_is_closed] = 0
         return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_perimeter(self):

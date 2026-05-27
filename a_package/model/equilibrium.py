@@ -35,7 +35,8 @@ def formulate_constant_volume_phase_problem(capillary: CapillaryBridge, volume: 
                    b=volume,
                    x_lb=capillary.phase_lb,
                    x_ub=capillary.phase_ub,
-                   is_zero=capillary.gap_is_closed)
+                   is_zeroed=capillary.gap_is_closed,
+                   communicator=capillary.communicator)
 
 
 def formulate_constant_pressure_phase_problem(capillary: CapillaryBridge, pressure: float):
@@ -55,4 +56,5 @@ def formulate_constant_pressure_phase_problem(capillary: CapillaryBridge, pressu
                    get_f_Dx=helmholtz_potential_jacobian,
                    x_lb=capillary.phase_lb,
                    x_ub=capillary.phase_ub,
-                   is_zero=capillary.gap_is_closed)
+                   is_zeroed=capillary.gap_is_closed,
+                   communicator=capillary.communicator)
