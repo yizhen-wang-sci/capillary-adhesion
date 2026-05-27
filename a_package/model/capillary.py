@@ -33,7 +33,7 @@ class PhaseMixture:
         """
         self._eta = eta
         self._theta = theta
-        self._curv = 0.5 * (abs(np.sin(theta)) + np.asin(np.cos(theta)) / np.cos(theta))
+        self._curv = 0.5 * (abs(np.sin(theta)) + np.arcsin(np.cos(theta)) / np.cos(theta))
         self._gamma = -np.cos(theta)
         self._epsilon = epsilon
         self._component_axis = component_axis
