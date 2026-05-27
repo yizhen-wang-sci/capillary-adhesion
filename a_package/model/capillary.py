@@ -242,7 +242,7 @@ class CapillaryBridge:
 
     def get_perimeter(self):
         """Compute total perimeter of liquid-vapour interface."""
-        integrand = self._mixture.compute_local_perimeter(self._quadr_phase, self._quadr_phase_gradient)
+        integrand = self._mixture.compute_local_perimeter(self._quadr_phase.s, self._quadr_phase_gradient.s)
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_max_volume(self):
