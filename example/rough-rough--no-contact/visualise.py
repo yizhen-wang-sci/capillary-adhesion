@@ -37,7 +37,7 @@ def main():
         record_fill_above = RecordDir(run / "fill-above")
 
     # animate and save
-    anime = animate_gap_and_phase(records, record_fill_above, record_fill_below)
+    anime = animate_gap_and_phase(records, record_fill_below, record_fill_above)
     if update_saved_plots:
         anime.save(run / "overview.mp4", fps=5, dpi=150)
     plt.show()
@@ -131,13 +131,17 @@ def animate_gap_and_phase(records: list[RecordDir], record_fill_below: RecordDir
         if record_fill_below:
             for colormap in fill_below_colormaps:
                 data = fill_below_io.load_trajectory(field_names=[Term.phase])
-                colormap.set_array(data[Term.phase][i_step % one_round_trip].squeeze())
+                phase = data[Term.phase][i_step % one_round_trip].squeeze()
+                phase[phase < 1-eps] = np.nan
+                colormap.set_array(phase)
             ret.extend(fill_below_colormaps)
 
         if record_fill_above:
             for colormap in fill_above_colormaps:
                 data = fill_above_io.load_trajectory(field_names=[Term.phase])
-                colormap.set_array(data[Term.phase][i_step % one_round_trip].squeeze())
+                phase = data[Term.phase][i_step % one_round_trip].squeeze()
+                phase[phase < 1-eps] = np.nan
+                colormap.set_array(phase)
             ret.extend(fill_above_colormaps)
 
         return ret
