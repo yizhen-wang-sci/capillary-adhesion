@@ -4,12 +4,18 @@ Solving the numerical optimization problem. No physics meaning in this file.
 
 import logging
 import timeit
-import typing
-from typing import Callable, Protocol
+from typing import Callable, Protocol, TypedDict
+import sys
+if sys.version_info >= (3, 11):
+    from typing import Required
+else:
+    from typing_extensions import Required
 
 import numpy as np
 import NuMPI.Optimization
+import NuMPI.Tools
 import scipy.optimize
+from NuMPI import MPI
 
 
 logger = logging.getLogger(__name__)
@@ -38,7 +44,9 @@ class Problem:
                  get_g: Callable[[], float] | None = None,
                  get_g_Dx: Callable[[], np.ndarray] | None = None,
                  x_lb: float | None = None,
-                 x_ub: float | None = None):
+                 x_ub: float | None = None,
+                 is_zeroed: np.ndarray | None = None,
+                 communicator=MPI.COMM_SELF):
         self._get_x = get_x
         self._set_x = set_x
         self._get_f = get_f
@@ -55,6 +63,9 @@ class Problem:
             self._x_lb = x_lb
         if x_ub is not None:
             self._x_ub = x_ub
+        if is_zeroed is not None:
+            self._is_zero = is_zeroed
+        self.communicator = communicator
 
     @property
     def has_linear_constraints(self):
@@ -67,6 +78,10 @@ class Problem:
     @property
     def has_bounds(self):
         return hasattr(self, "_x_lb") and hasattr(self, "_x_ub")
+
+    @property
+    def has_zeros(self):
+        return hasattr(self, "_is_zero")
 
     def get_x(self):
         return np.asarray(self._get_x()).ravel()
@@ -108,13 +123,17 @@ class Problem:
     def x_ub(self):
         return self._x_ub
 
+    @property
+    def is_zero(self):
+        return np.asarray(self._is_zero).ravel()
 
-class OptimizerResult(typing.TypedDict, total=False):
+
+class OptimizerResult(TypedDict, total=False):
     """Result of an optimizer."""
 
-    x: typing.Required[np.ndarray]
+    x: Required[np.ndarray]
     dual: float
-    success: typing.Required[bool]
+    success: Required[bool]
     reached_iter_limit: bool
     had_abnormal_stop: bool
     message: str
@@ -483,7 +502,7 @@ class ProjectedLbfgs(Optimizer):
         self.tol_gradient = tol_gradient
 
     def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
-        linear_constraint = NuMPI.Optimization.LinearConstraint(problem.A, problem.b, None)
+        linear_constraint = NuMPI.Optimization.LinearConstraint(problem.A, problem.b, NuMPI.Tools.Reduction(problem.communicator))
 
         def compute_f(x):
             problem.set_x(x)
@@ -493,12 +512,15 @@ class ProjectedLbfgs(Optimizer):
             problem.set_x(x)
             return problem.get_f_Dx()
 
+        bounds_lo = None
+        bounds_hi = None
         if problem.has_bounds:
             bounds_lo = problem.x_lb
             bounds_hi = problem.x_ub
-        else:
-            bounds_lo = None
-            bounds_hi = None
+
+        zero_mask = None
+        if problem.has_zeros:
+            zero_mask = problem.is_zero
 
         init_shape = x0.shape
         result = NuMPI.Optimization.l_bfgs_projected(
@@ -508,9 +530,11 @@ class ProjectedLbfgs(Optimizer):
             jac=compute_f_Dx,
             bounds_lo=bounds_lo,
             bounds_hi=bounds_hi,
-            callback=callback,
+            zero_mask=zero_mask,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
+            comm=problem.communicator,
+            callback=callback,
         )
         return OptimizerResult(x=result['x'].reshape(init_shape), dual=result['multiplier'], success=result['success'],
                                message=result['message'], nit=result['nit'])
@@ -533,12 +557,15 @@ class BoundedLbfgs(Optimizer):
             problem.set_x(x)
             return problem.get_f_Dx()
 
+        bounds_lo = None
+        bounds_hi = None
         if problem.has_bounds:
             bounds_lo = problem.x_lb
             bounds_hi = problem.x_ub
-        else:
-            bounds_lo = None
-            bounds_hi = None
+
+        zero_mask = None
+        if problem.has_zeros:
+            zero_mask = problem.is_zero
 
         init_shape = x0.shape
         result = NuMPI.Optimization.l_bfgs_bounded(
@@ -547,9 +574,11 @@ class BoundedLbfgs(Optimizer):
             jac=compute_f_Dx,
             bounds_lo=bounds_lo,
             bounds_hi=bounds_hi,
-            callback=callback,
+            zero_mask=zero_mask,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
+            comm=problem.communicator,
+            callback=callback,
         )
         return OptimizerResult(x=result['x'].reshape(init_shape), success=result['success'],
                                message=result['message'], nit=result['nit'])

@@ -1,7 +1,6 @@
 import numpy as np
-import numpy.fft as fft
 
-from a_package.domain import Grid, FirstOrderElement, Quadrature, centroid_quadrature, adapt_shape
+from a_package.domain import adapt_shape
 
 
 class RigidContact:

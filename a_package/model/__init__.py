@@ -1,4 +1,4 @@
-from .capillary import NodalFormCapillary
+from .capillary import PhaseMixture, CapillaryBridge
 from .contact import RigidContact
 from .equilibrium import formulate_constant_pressure_phase_problem, formulate_constant_volume_phase_problem
 from .roughness import SelfAffineRoughness, psd_to_height

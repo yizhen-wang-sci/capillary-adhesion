@@ -1,42 +1,68 @@
 """
 Tests of the `storing.py` file.
 """
-import os
-
-import pytest
 import numpy as np
-import numpy.random as random
+import pytest
 
-from a_package.domain import Grid, NpyIO
+from NuMPI.Testing.Assertions import assert_all_array_equal
 
-
-rng = random.default_rng()
+from a_package.domain.io import NpyIO
+from test.test_domain.utils import generate_global_random_field
 
 
 @pytest.fixture
-def test_directory():
-    path = os.path.join(os.path.dirname(__file__), "cache")
-    os.makedirs(path, exist_ok=True)
-    return path
+def mock_field(mock_grid, comm_world):
+    return generate_global_random_field(mock_grid.nb_domain_grid_pts, comm_world)
 
 
-def test_save_load_array(test_directory):
-    io = NpyIO(test_directory)
-    name = "test_array"
-    array = rng.random(10, dtype=float)
+@pytest.fixture
+def mock_array(comm_world):
+    array = np.empty(10, dtype=float)
+    if comm_world.rank == 0:
+        rng = np.random.default_rng()
+        array[...] = rng.random(array.shape)
+    comm_world.Bcast(array, root=0)
+    return array
 
-    io.save_value_array(name, array)
-    loaded_arr = io.load_value_array(name)
-    np.testing.assert_equal(loaded_arr, array)
+
+def test_save_load_distributed(mpi_tmp_path, decomposed_grid, mock_field, comm_world):
+    decomposition = decomposed_grid.decomposition
+    io = NpyIO(mpi_tmp_path, decomposition, communicator=comm_world)
+    name = "test_distributed"
+
+    io.save_distributed(name, decomposed_grid.get_local(mock_field))
+    loaded_arr = io.load_distributed(name)
+    assert_all_array_equal(comm_world, loaded_arr, decomposed_grid.get_local(mock_field))
 
 
-def test_save_load_field(test_directory):
-    field_shape = (4, 5)
-    grid = Grid([1., 1.], field_shape)
-    io = NpyIO(test_directory)
-    field = rng.random((2, 3, *field_shape), dtype=float)
-    name = "test_field"
+def test_save_load_singular(mpi_tmp_path, decomposed_grid, mock_array, comm_world):
+    io = NpyIO(mpi_tmp_path, decomposed_grid.decomposition, communicator=comm_world)
+    name = "test_singular"
 
-    io.save_field(grid, name, field)
-    loaded_arr = io.load_field(grid, name)
-    np.testing.assert_equal(loaded_arr, field)
+    io.save_singular(name, mock_array)
+    loaded_arr = io.load_singular(name)
+    if comm_world.Get_rank() == 0:
+        np.testing.assert_equal(loaded_arr, mock_array)
+    else:
+        assert loaded_arr is None
+
+
+def test_load_replicated(mpi_tmp_path, decomposed_grid, mock_array, comm_world):
+    io = NpyIO(mpi_tmp_path, decomposed_grid.decomposition, communicator=comm_world)
+    name = "test_replicated"
+
+    io.save_singular(name, mock_array)
+    loaded = io.load_replicated(name)
+    np.testing.assert_equal(loaded, mock_array)
+
+
+def test_load_singular_missing_file(mpi_tmp_path, decomposed_grid, comm_world):
+    io = NpyIO(mpi_tmp_path, decomposed_grid.decomposition, communicator=comm_world)
+    with pytest.raises(FileNotFoundError):
+        io.load_singular("non_existent")
+
+
+def test_load_replicated_missing_file(mpi_tmp_path, decomposed_grid, comm_world):
+    io = NpyIO(mpi_tmp_path, decomposed_grid.decomposition, communicator=comm_world)
+    with pytest.raises(FileNotFoundError):
+        io.load_replicated("non_existent")

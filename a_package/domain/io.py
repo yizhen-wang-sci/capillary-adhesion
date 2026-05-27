@@ -5,40 +5,75 @@ IO for persisting fields and arrays.
 import pathlib
 
 import numpy as np
-
-from .grid import Grid
-from .field import Field, adapt_shape
+import NuMPI.IO
+from NuMPI import MPI
 
 
 class NpyIO:
     """
-    NumPy-based persistence for fields and arrays.
+    NumPy-based parallel-aware data persistence.
     """
 
-    root_path: pathlib.Path
-
-    def __init__(self, root_path):
+    def __init__(self, root_path, decomposition=None, communicator=MPI.COMM_SELF):
         self.root_path = pathlib.Path(root_path)
+
+        if decomposition is None:
+            # NuMPI.IO will treat it as no decomposition
+            self._subdomain_locations = None
+            self._nb_subdomain_grid_pts = None
+            self._nb_domain_grid_pts = None
+        else:
+            self._subdomain_locations = tuple(decomposition.subdomain_locations)
+            self._nb_subdomain_grid_pts = tuple(decomposition.nb_subdomain_grid_pts)
+            self._nb_domain_grid_pts = tuple(decomposition.nb_domain_grid_pts)
+
+        self._comm = communicator
 
     def _to_full_path(self, name: str):
         return self.root_path / f"{name}.npy"
 
-    def load_field(self, grid: Grid, name: str):
+    def load_distributed(self, name: str):
+        return NuMPI.IO.load_npy(self._to_full_path(name),
+                                 self._subdomain_locations,
+                                 self._nb_subdomain_grid_pts,
+                                 comm=self._comm)
+
+    def save_distributed(self, name: str, data):
+        NuMPI.IO.save_npy(self._to_full_path(name),
+                          np.ascontiguousarray(data),
+                          self._subdomain_locations,
+                          self._nb_domain_grid_pts,
+                          comm=self._comm)
+
+    def _sync_error(self, error):
+        error = self._comm.bcast(error, root=0)
+        if error is not None:
+            raise error
+
+    def load_singular(self, name: str):
+        data, error = None, None
+        if self._comm.rank == 0:
+            try:
+                data = np.load(self._to_full_path(name), allow_pickle=False)
+            except Exception as e:
+                error = e
+        self._sync_error(error)
+        return data
+
+    def save_singular(self, name: str, data):
+        error = None
+        if self._comm.rank == 0:
+            try:
+                np.save(self._to_full_path(name), data)
+            except Exception as e:
+                error = e
+        self._sync_error(error)
+
+    def load_replicated(self, name: str):
+        data, error = None, None
         try:
-            field = np.load(self._to_full_path(name), allow_pickle=False)
-        except FileNotFoundError:
-            field = np.atleast_2d([])
-        return adapt_shape(field)
-
-    def save_field(self, grid: Grid, name: str, field: Field):
-        np.save(self._to_full_path(name), field)
-
-    def load_value_array(self, name: str):
-        try:
-            array = np.load(self._to_full_path(name), allow_pickle=False)
-        except FileNotFoundError:
-            array = np.array([])
-        return array
-
-    def save_value_array(self, name: str, array: np.ndarray):
-        np.save(self._to_full_path(name), array)
+            data = np.load(self._to_full_path(name), allow_pickle=False)
+        except Exception as e:
+            error = e
+        self._sync_error(error)
+        return data
