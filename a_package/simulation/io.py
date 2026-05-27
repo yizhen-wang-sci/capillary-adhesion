@@ -138,6 +138,7 @@ class _FieldArray:
         self._name = name
 
     def __getitem__(self, index: int):
+        # FIXME: in order for __iter__ to work, this shall capture an error and raise it as IndexError.
         return self._io.load_distributed(_format_filename(self._name, index))
 
     def __setitem__(self, index: int, value):
@@ -149,7 +150,7 @@ class _FieldArray:
         name_prefix = f"{self._name}--"
         for entry in self._io.root_path.iterdir():
             if entry.name.startswith(name_prefix):
-                i_update = int(entry.name[len(name_prefix):].replace(".npy", ""))
+                i_update = int(entry.name[len(name_prefix):].replace(entry.suffix, ""))
                 i_current = max(i_current, i_update)
         return i_current + 1
 
