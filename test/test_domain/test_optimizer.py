@@ -66,7 +66,7 @@ def test_problem(decompose_stitch, comm_world):
                       A=constraint_jacobian().ravel(), b=grid.element_area * np.sum(mean_field))
     optimizer = ProjectedLbfgs(max_inner_iter=10)
 
-    result = optimizer.solve_minimisation(problem, x0=grid.get_local(sinusoidal_field))
+    result = optimizer.solve_minimisation(problem, x0=grid.get_local(sinusoidal_field), communicator=comm_world)
     solved_field = result['x'].reshape(decomposition.nb_subdomain_grid_pts)
     print(result)
     assert result['success']
