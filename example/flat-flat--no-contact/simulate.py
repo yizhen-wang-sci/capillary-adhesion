@@ -70,8 +70,6 @@ def main():
 
             # solve phase problem
             problem = formulate_constant_volume_phase_problem(capillary, liquid_volume)
-            # FIXME: this is a work-around for that the optimizer takes the local sum as global
-            problem._b = problem._b / comm_world.size
             print(f"rank={comm_world.rank}, before solve_minimisation")
             solution = optimizer.solve_minimisation(problem, x0=phase)
             print(f"rank={comm_world.rank}, problem solved, it took {solution['nit']} iterations.")
