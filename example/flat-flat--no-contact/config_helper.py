@@ -32,7 +32,8 @@ def build_phase_mixture(config: dict):
 def build_optimizer(config: dict):
     """Build solver from configuration."""
     section = config["optimizer"]
-    return ProjectedLbfgs(max_inner_iter=section["max_nb_iters"], tol_gradient=section["tol_gradient"])
+    return ProjectedLbfgs(max_inner_iter=section["max_nb_iters"], tol_gradient=section["tol_gradient"],
+                          tol_step=section["tol_step"])
 
 
 def build_trajectory(config: dict):

@@ -7,7 +7,7 @@ values=[0, 60, 75, 90, 105, 120, 180]
 
 [grid]
 pixel_size = 0.01
-nb_pixels = 512
+nb_pixels = 1024
 
 [surface]
 [surface.upper]
@@ -33,6 +33,7 @@ contact_angle_degree = 120
 [optimizer]
 max_nb_iters = 1000
 tol_gradient = 1e-6
+tol_step = 1e-6
 
 [trajectory]
 min_separation = 0.005
