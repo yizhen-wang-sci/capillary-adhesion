@@ -495,11 +495,23 @@ def barrier_squashed_Dx(x: np.ndarray, x_lb: float, x_ub: float):
 
 
 class ProjectedLbfgs(Optimizer):
-    """Can handle linear equality constraint and box inequality constraint."""
+    """Can handle linear equality constraint and box inequality constraint.
 
-    def __init__(self, max_inner_iter: int = 1000, tol_gradient: float = 1e-6):
+    Two convergence criteria are wired to ``NuMPI.Optimization.l_bfgs_projected``:
+
+    - ``tol_gradient`` (``gtol``) — infinity norm of the KKT-masked tangent
+      gradient. The classic projected-gradient criterion.
+    - ``tol_step`` (``xtol``) — infinity norm of the iterate step
+      ``max(abs(x_new - x_prev))``. Set to ``0.0`` (default) to disable.
+
+    The solver declares convergence as soon as **either** criterion is met.
+    """
+
+    def __init__(self, max_inner_iter: int = 1000, tol_gradient: float = 1e-6,
+                 tol_step: float = 0.0):
         self.max_inner_iter = max_inner_iter
         self.tol_gradient = tol_gradient
+        self.tol_step = tol_step
 
     def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
         linear_constraint = NuMPI.Optimization.LinearConstraint(problem.A, problem.b, NuMPI.Tools.Reduction(problem.communicator))
@@ -533,6 +545,7 @@ class ProjectedLbfgs(Optimizer):
             zero_mask=zero_mask,
             maxiter=self.max_inner_iter,
             gtol=self.tol_gradient,
+            xtol=self.tol_step,
             comm=problem.communicator,
             callback=callback,
         )
