@@ -92,7 +92,9 @@ class Problem:
         Caching matters because optimizers typically re-query f and its
         gradient at the same point during backtracking.
         """
-        if np.any(np.asarray(x).ravel() != self.get_x()):
+        is_changed = np.any(np.asarray(x).ravel() != self.get_x())
+        is_changed = self.communicator.allreduce(is_changed, op=MPI.LOR)
+        if is_changed:
             self._set_x(x)
 
     def get_f(self):
