@@ -1,49 +1,3 @@
-"""
-Directory management for organizing simulations.
-
-A `WorkDir` is a collection of simulation Runs. Each Run holds the scripts
-and configurations needed to reproduce a simulation; executing a Run produces
-one or more Records, each holding the inputs, logs, and data of one execution.
-
-Run and Record directory names are governed by configurable `NamingConvention`
-objects. Two are provided:
-
-  - `TaggedIndex`:    `{tag}--{NN}` with optional `--{notes}`;
-                        auto-increments the index per tag.
-  - `ParameterCombo`: `{k1}={v1}--{k2}={v2}...`; the parameters themselves
-                        form the identity. Pass an extra key (e.g. a timestamp
-                        or counter) to disambiguate when needed.
-
-Defaults: `TaggedIndex` for Runs, `ParameterCombo` for Records.
-
-Structure:
-
-    <work-dir>/
-    ├─ <run-name>/                (Run: scripts, configs, figures, animations, etc.)
-    │  ├─ metadata.json
-    │  ├─ *.* (simulation files)
-    │  ├─ <record-name>/          (Record: outcome of one execution, one run can have multiple records)
-    │  │  ├─ input.cfg
-    │  │  ├─ data/
-    │  │  └─ log.txt
-    │  └─ ...
-    └─ ...
-
-Usage:
-
-    from dirs import WorkDir
-
-    wd  = WorkDir("results/heat_transfer")
-    run = wd.new_run(tag="baseline", notes="initial")
-    run.copy_file("solver.py")
-    rec = run.new_record(Re=100, mesh="fine")
-    # rec.input, rec.data, rec.log are paths to the standard artifacts
-
-    # Querying:
-    baseline_runs = wd.find_runs(tag="baseline")
-    specific_run  = wd.get_run(tag="baseline", index=1)
-"""
-
 import json
 import logging
 import re
@@ -53,43 +7,31 @@ from pathlib import Path
 from typing import Protocol
 
 
-__all__ = ["WorkDir", "TaggedIndex", "ParameterCombo", "NamingConvention"]
-
-
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Naming conventions  (foundation layer)
+# Naming conventions
 # =============================================================================
 
 class NamingConvention(Protocol):
-    """How directory names are encoded, decoded, and generated.
+    """Interface for encoding, decoding, and generating directory names.
 
     Concrete conventions should subclass this Protocol explicitly so the
-    relationship is declared, not just structural. Static type checkers will
-    then verify that the required methods are present with the right
-    signatures.
+    relationship is declared and type checkers can verify the signatures.
     """
 
-    def parse(self, name: str) -> dict | None:
-        """Return the structured fields encoded in `name`, or None if it doesn't match."""
-
-    def format(self, **fields) -> str:
-        """Render `fields` into a name string."""
-
-    def derive_next(self, existing: list[str], **fields) -> str:
-        """Produce a fresh, non-colliding name given names already present."""
+    def parse(self, name: str) -> dict | None: ...
+    def format(self, **fields) -> str: ...
+    def derive_next(self, existing: list[str], **fields) -> str: ...
 
 
 @dataclass(frozen=True)
 class TaggedIndex(NamingConvention):
-    """A `{tag}--{NN}` pattern with optional `--{notes}`.
+    """A `{tag}--{NN}` naming convention; the index auto-increments per tag.
 
-    The integer index auto-increments per tag. The tag is normalized
-    (lowercased, spaces replaced with underscores) before formatting.
-
-    Fields: `tag` (str), `index` (int), `notes` (str, optional).
+    Fields: `tag` (str), `index` (int). The tag is normalized (casefolded,
+    spaces replaced with hyphens) before formatting.
     """
 
     separator: str = "--"
@@ -97,66 +39,52 @@ class TaggedIndex(NamingConvention):
 
     def _pattern(self):
         sep = re.escape(self.separator)
-        return re.compile(rf"([\w-]+){sep}(\d+)(?:{sep}(.+))?")
+        return re.compile(rf"([\w-]+){sep}(\d+)")
 
-    def parse(self, name: str):
+    def parse(self, name: str) -> dict | None:
         m = self._pattern().fullmatch(name)
         if not m:
             return None
-        return {
-            "tag": m.group(1),
-            "index": int(m.group(2)),
-            "notes": m.group(3) or "",
-        }
+        return {"tag": m.group(1), "index": int(m.group(2))}
 
-    def format(self, *, tag: str, index: int, notes: str = ""):
-        tag = self._normalize(tag)
-        parts = [tag, f"{index:0{self.index_width}d}"]
-        if notes:
-            parts.append(notes)
-        return self.separator.join(parts)
+    def format(self, **fields) -> str:
+        if "tag" not in fields or "index" not in fields:
+            raise TypeError("TaggedIndex.format requires fields 'tag' and 'index'")
+        tag = self._normalize(fields["tag"])
+        index = int(fields["index"])
+        return self.separator.join([tag, f"{index:0{self.index_width}d}"])
 
-    def derive_next(self, existing: list[str], *, tag: str, notes: str = ""):
-        tag = self._normalize(tag)
+    def derive_next(self, existing: list[str], **fields) -> str:
+        if "tag" not in fields:
+            raise TypeError("TaggedIndex.derive_next requires field 'tag'")
+        tag = self._normalize(fields["tag"])
         indices = [
             parsed["index"]
             for parsed in (self.parse(name) for name in existing)
             if parsed is not None and parsed["tag"] == tag
         ]
         next_index = max(indices, default=0) + 1
-        return self.format(tag=tag, index=next_index, notes=notes)
+        return self.format(tag=tag, index=next_index)
 
     @staticmethod
-    def _normalize(s: str):
+    def _normalize(s: str) -> str:
         return s.strip().casefold().replace(" ", "-")
 
 
 @dataclass(frozen=True)
 class ParameterCombo(NamingConvention):
-    """A `{k1}={v1}--{k2}={v2}...` pattern where parameters define identity.
+    """A `{k1}={v1}--{k2}={v2}...` naming convention where parameters define identity.
 
-    By default all parsed values are strings. To get typed values for specific
-    fields, pass a `types` mapping at construction:
-
-        ParameterCombo(types={"Re": int, "tolerance": float})
-
-    Then `parse` returns those fields converted to the declared types, and
-    `derive_next` coerces user-supplied values to the same types before
-    formatting, so creating and querying are symmetric. Fields without a
-    declared type stay as strings.
-
-    When multiple entries would share the same parameter combination (e.g.
-    multiple records from one execution), add a discriminating field of your
-    choice — typically a timestamp or counter — as an extra keyword.
-
-    Fields: arbitrary `key=value` pairs.
+    Fields are arbitrary `key=value` pairs. Pass `types={"key": type}` at
+    construction to coerce parsed values to typed equivalents, so creation
+    and query are symmetric (e.g. `get_record(Re=100)` matches `Re=100`).
     """
 
     pair_sep: str = "--"
     kv_sep: str = "="
     types: dict[str, type] = field(default_factory=dict)
 
-    def parse(self, name: str):
+    def parse(self, name: str) -> dict | None:
         out: dict[str, object] = {}
         for chunk in name.split(self.pair_sep):
             k, sep, v = chunk.partition(self.kv_sep)
@@ -166,16 +94,13 @@ class ParameterCombo(NamingConvention):
             try:
                 out[k] = converter(v)
             except (ValueError, TypeError):
-                # Declared type doesn't accept the stored value — treat
-                # the whole name as not matching this convention.
                 return None
         return out or None
 
-    def format(self, **fields):
+    def format(self, **fields) -> str:
         return self.pair_sep.join(f"{k}{self.kv_sep}{v}" for k, v in fields.items())
 
-    def derive_next(self, existing: list[str], **params):
-        # Coerce inputs to declared types so creation and query are symmetric.
+    def derive_next(self, existing: list[str], **params) -> str:
         params = {
             k: (self.types[k](v) if k in self.types else v)
             for k, v in params.items()
@@ -190,65 +115,45 @@ class ParameterCombo(NamingConvention):
 
 
 # =============================================================================
-# Catalog  (internal view layer)
+# Query helpers (private)
 # =============================================================================
 
-class _Catalog:
-    """A view over subdirectories matching a naming convention.
+def _iter_parsed(path: Path, naming: NamingConvention):
+    for entry in path.iterdir():
+        if not entry.is_dir():
+            continue
+        parsed = naming.parse(entry.name)
+        if parsed is not None:
+            yield parsed, entry
 
-    Used internally by `WorkDir` (for Runs) and `_RunDir` (for Records) to
-    index and query their subdirectories. Not part of the public API.
-    Returns raw `Path` objects; the calling layer wraps them in the concrete type
-    it knows about.
 
-    Query matching uses direct equality on the values returned by the
-    `NameingConvention.parse`.
-    """
+def _find_matching(path: Path, naming: NamingConvention, **query) -> list[Path]:
+    return [
+        p for parsed, p in _iter_parsed(path, naming)
+        if all(parsed.get(k) == v for k, v in query.items())
+    ]
 
-    def __init__(self, parent_path: Path, naming: NamingConvention):
-        self._parent = parent_path
-        self._naming = naming
 
-    def _entries(self):
-        """Yield (parsed_dict, path) for each parseable subdirectory."""
-        for entry in self._parent.iterdir():
-            if not entry.is_dir():
-                continue
-            parsed = self._naming.parse(entry.name)
-            if parsed is not None:
-                yield parsed, entry
-
-    def find(self, **query):
-        """Return paths of all matching children. No kwargs returns every parseable entry."""
-        return [
-            path
-            for parsed, path in self._entries()
-            if all(parsed.get(k) == v for k, v in query.items())
-        ]
-
-    def get(self, **query):
-        """Return the path of the unique match; raise if zero or multiple."""
-        matches = self.find(**query)
-        if not matches:
-            raise FileNotFoundError(f"No directory matching {query}")
-        if len(matches) > 1:
-            raise LookupError(
-                f"Multiple matches for {query}: {len(matches)} found"
-            )
-        return matches[0]
+def _get_matching(path: Path, naming: NamingConvention, **query) -> Path:
+    matches = _find_matching(path, naming, **query)
+    if not matches:
+        raise FileNotFoundError(f"No directory matching {query}")
+    if len(matches) > 1:
+        raise LookupError(f"Multiple matches for {query}: {len(matches)} found")
+    return matches[0]
 
 
 # =============================================================================
-# Core hierarchy  (simulation data)
+# Directories
 # =============================================================================
 
 class _Dir:
-    """A base directory wrapper that ensures the directory exists.
+    """Wrapper around a filesystem directory that ensures the path exists.
 
-    Supports path joining via the `/` operator and use as `os.PathLike`.
+    Supports `/` for path joining and use as `os.PathLike`.
     """
 
-    def __init__(self, path: str | Path, exist_ok: bool = True):
+    def __init__(self, path: str | Path, *, exist_ok: bool = True):
         self._path = Path(path).resolve()
         if self._path.is_file():
             raise FileExistsError(f"{self._path} is occupied by a file.")
@@ -268,80 +173,45 @@ class _Dir:
     def __repr__(self):
         return f"{type(self).__name__}({str(self._path)!r})"
 
+    @property
+    def name(self):
+        return self._path.name
 
-class WorkDir(_Dir):
-    """A collection of simulation Runs.
 
-    Construct directly at any (possibly nested) path; intermediate directories
-    are created automatically. The naming conventions for Runs and Records are
-    configurable; defaults are `TaggedIndex` for Runs and `ParameterCombo`
-    for Records.
+class SourceDir(_Dir):
+    """A directory of source scripts and configs; produces tagged snapshots."""
 
-    Example:
+    _suffixes = (".py", ".toml")
 
-        wd  = WorkDir("results/heat_transfer")
-        run = wd.new_run(tag="baseline", notes="initial")
-        rec = run.new_record(theta=90, grid_size=1024)
+    def snapshot(self, tag: str, base_path: str | Path | None = None):
+        if base_path is None:
+            dest_base_path = self._path
+        else:
+            dest_base_path = Path(base_path).resolve()
+
+        naming = TaggedIndex()
+        existing = [p.name for _, p in _iter_parsed(dest_base_path, naming)]
+        name = naming.derive_next(existing, tag=tag)
+
+        dest_dir = _Dir(dest_base_path / name, exist_ok=False)
+        for entry in self._path.iterdir():
+            if entry.is_file() and entry.suffix in self._suffixes:
+                shutil.copy2(entry, dest_dir / entry.name)
+        return dest_dir
+
+
+class RunDir(_Dir):
+    """A simulation run directory: scripts, configs, and its execution records.
+
+    Records are subdirectories named by a configurable `NamingConvention`
+    (default: `ParameterCombo`).
     """
 
-    def __init__(
-        self,
-        path: str | Path,
-        *,
-        run_naming: NamingConvention | None = None,
-        record_naming: NamingConvention | None = None,
-        exist_ok: bool = True,
-    ):
-        super().__init__(path, exist_ok=exist_ok)
-        self._run_naming: NamingConvention = run_naming or TaggedIndex()
-        self._record_naming: NamingConvention = record_naming or ParameterCombo()
-        self._catalog = _Catalog(self._path, self._run_naming)
-
-    def new_run(self, **fields):
-        """Create a new Run. Field names depend on the configured run naming convention."""
-        existing = [e.name for e in self._path.iterdir() if e.is_dir()]
-        name = self._run_naming.derive_next(existing, **fields)
-        return _RunDir(self._path / name, record_naming=self._record_naming, exist_ok=False)
-
-    def get_run(self, **fields):
-        """Retrieve the unique Run matching the given fields."""
-        return _RunDir(self._catalog.get(**fields), record_naming=self._record_naming)
-
-    def find_runs(self, **fields):
-        """Return all Runs matching the given fields. No fields returns every Run."""
-        return [
-            _RunDir(p, record_naming=self._record_naming)
-            for p in self._catalog.find(**fields)
-        ]
-
-
-class _RunDir(_Dir):
-    """A single simulation run: scripts and configs, plus the records it produces.
-
-    Returned by `WorkDir`; not constructed directly by users. Provides
-    utilities for copying simulation files, managing metadata, and creating
-    or retrieving execution Records.
-    """
-
-    def __init__(
-        self,
-        path: str | Path,
-        *,
-        record_naming: NamingConvention,
-        exist_ok: bool = True,
-    ):
+    def __init__(self, path: str | Path, *, exist_ok: bool = True, record_naming: NamingConvention = ParameterCombo()):
         super().__init__(path, exist_ok=exist_ok)
         self._record_naming = record_naming
-        self._catalog = _Catalog(self._path, record_naming)
-
-    def copy_file(self, src: str | Path):
-        """Copy a file into this Run's directory; return the destination path."""
-        src = Path(src).resolve()
-        dst = self._path / src.name
-        return Path(shutil.copy2(src, dst))
 
     def add_metadata(self, new: dict):
-        """Merge `new` into `metadata.json` (created on first call)."""
         metadata_path = self._path / "metadata.json"
         try:
             with open(metadata_path, "r", encoding="utf-8") as fp:
@@ -353,40 +223,30 @@ class _RunDir(_Dir):
             json.dump(metadata, fp, indent=2, sort_keys=False)
 
     def new_record(self, **fields):
-        """Create a new Record. Field names depend on the record naming convention."""
-        existing = [e.name for e in self._path.iterdir() if e.is_dir()]
+        existing = [p.name for _, p in _iter_parsed(self._path, self._record_naming)]
         name = self._record_naming.derive_next(existing, **fields)
-        return _RecordDir(self._path / name, exist_ok=False)
+        return RecordDir(self._path / name, exist_ok=False)
 
-    def get_record(self, **fields):
-        """Retrieve the unique Record matching the given fields."""
-        return _RecordDir(self._catalog.get(**fields))
+    def find_records(self, **query):
+        return [RecordDir(p) for p in _find_matching(self._path, self._record_naming, **query)]
 
-    def find_records(self, **fields):
-        """Return all Records matching the given fields. No fields returns every Record."""
-        return [_RecordDir(p) for p in self._catalog.find(**fields)]
+    def get_record(self, **query):
+        return RecordDir(_get_matching(self._path, self._record_naming, **query))
 
 
-class _RecordDir(_Dir):
-    """A single execution record: the outcome of running its parent Run's recipe.
-
-    Returned by `_RunDir`; not constructed directly by users. Provides convenient
-    access to standard artifacts: `input.cfg`, `data/`, and `log.txt`.
-    """
+class RecordDir(_Dir):
+    """A single execution record with standard artifacts: `input.cfg`, `data/`, `log.txt`."""
 
     @property
     def input(self):
-        """Path to `input.cfg`."""
         return self._path / "input.cfg"
 
     @property
     def data(self):
-        """Path to the `data/` subdirectory (created on first access)."""
         path = self._path / "data"
         path.mkdir(exist_ok=True)
         return path
 
     @property
     def log(self):
-        """Path to `log.txt`."""
         return self._path / "log.txt"

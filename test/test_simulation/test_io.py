@@ -2,34 +2,28 @@
 Tests for SimulationIO.
 """
 
-import shutil
-import tempfile
-
 import pytest
 import numpy as np
 
-from a_package.domain import Grid
+from a_package.domain import Grid, factorize_closest
 from a_package.simulation.io import SimulationIO
-
-
-@pytest.fixture
-def temp_dir():
-    """Create a temporary directory for tests."""
-    path = tempfile.mkdtemp()
-    yield path
-    shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture
 def grid():
     """Create a simple grid."""
-    return Grid([1.0, 1.0], [8, 8])
+    return Grid((8, 8))
 
 
 @pytest.fixture
-def io(grid, temp_dir):
+def decomposition(grid, comm_world):
+    return grid.decompose(factorize_closest(comm_world.Get_size(), 2), communicator=comm_world)
+
+
+@pytest.fixture
+def io(decomposition, mpi_tmp_path, comm_world):
     """Create a SimulationIO instance."""
-    return SimulationIO(grid, temp_dir)
+    return SimulationIO(mpi_tmp_path, decomposition, communicator=comm_world)
 
 
 # =============================================================================
@@ -37,14 +31,15 @@ def io(grid, temp_dir):
 # =============================================================================
 
 
-def test_save_load_constant_field(io):
+def test_save_load_constant_field(grid, decomposition, io, comm_world):
     """Save and load constant field."""
-    field = np.random.random((1, 1, 8, 8))
+    field = comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts)))
+    expected = grid.get_local(field)
 
-    io.save_constant(fields={"my_field": field})
+    io.save_constant(fields={"my_field": expected})
     result = io.load_constant(field_names=["my_field"])
 
-    np.testing.assert_array_almost_equal(result["my_field"], field)
+    np.testing.assert_array_almost_equal(result["my_field"], expected)
 
 
 def test_save_load_constant_single_value(io):
@@ -55,14 +50,15 @@ def test_save_load_constant_single_value(io):
     assert result["my_value"] == pytest.approx(1.5)
 
 
-def test_save_load_constant_mixed(io):
+def test_save_load_constant_mixed(grid, decomposition, io, comm_world):
     """Save and load both fields and single values."""
-    field = np.random.random((1, 1, 8, 8))
+    field = comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts)))
+    expected = grid.get_local(field)
 
-    io.save_constant(fields={"field_a": field}, single_values={"value_a": 2.0})
+    io.save_constant(fields={"field_a": expected}, single_values={"value_a": 2.0})
     result = io.load_constant(field_names=["field_a"], single_value_names=["value_a"])
 
-    np.testing.assert_array_almost_equal(result["field_a"], field)
+    np.testing.assert_array_almost_equal(result["field_a"], expected)
     assert result["value_a"] == pytest.approx(2.0)
 
 
@@ -71,14 +67,15 @@ def test_save_load_constant_mixed(io):
 # =============================================================================
 
 
-def test_save_load_step_field(io):
+def test_save_load_step_field(grid, decomposition, io, comm_world):
     """Save and load step field."""
-    field = np.random.random((1, 1, 8, 8))
+    field = comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts)))
+    expected = grid.get_local(field)
 
-    io.save_step(0, fields={"field": field})
+    io.save_step(0, fields={"field": expected})
     result = io.load_step(0, field_names=["field"])
 
-    np.testing.assert_array_almost_equal(result["field"], field)
+    np.testing.assert_array_almost_equal(result["field"], expected)
 
 
 def test_save_load_step_single_value(io):
@@ -93,17 +90,17 @@ def test_save_load_step_single_value(io):
     assert result1["x"] == pytest.approx(0.2)
 
 
-def test_save_load_multiple_steps(io):
+def test_save_load_multiple_steps(grid, decomposition, io, comm_world):
     """Save and load multiple steps."""
-    fields = [np.random.random((1, 1, 8, 8)) for _ in range(3)]
+    fields = [comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts))) for _ in range(3)]
     values = [0.1, 0.2, 0.3]
 
     for i, (field, val) in enumerate(zip(fields, values)):
-        io.save_step(i, fields={"field": field}, single_values={"val": val})
+        io.save_step(i, fields={"field": grid.get_local(field)}, single_values={"val": val})
 
-    for i, (expected_field, expected_val) in enumerate(zip(fields, values)):
+    for i, (field, expected_val) in enumerate(zip(fields, values)):
         result = io.load_step(i, field_names=["field"], single_value_names=["val"])
-        np.testing.assert_array_almost_equal(result["field"], expected_field)
+        np.testing.assert_array_almost_equal(result["field"], grid.get_local(field))
         assert result["val"] == pytest.approx(expected_val)
 
 
@@ -112,10 +109,10 @@ def test_save_load_multiple_steps(io):
 # =============================================================================
 
 
-def test_save_load_trajectory_single_values(io):
+def test_save_load_trajectory_single_values(io, comm_world):
     """Save and load trajectory single values."""
-    arr_a = np.array([0.1, 0.2, 0.3])
-    arr_b = np.array([1.0, 2.0, 3.0])
+    arr_a = comm_world.bcast(np.array([0.1, 0.2, 0.3]))
+    arr_b = comm_world.bcast(np.array([1.0, 2.0, 3.0]))
 
     io.save_trajectory(single_values={"a": arr_a, "b": arr_b})
     result = io.load_trajectory(single_value_names=["a", "b"])
@@ -124,36 +121,27 @@ def test_save_load_trajectory_single_values(io):
     np.testing.assert_array_almost_equal(result["b"], arr_b)
 
 
-def test_load_trajectory_fields_lazy(io):
+def test_load_trajectory_fields_lazy(grid, decomposition, io, comm_world):
     """load_trajectory returns lazy-loading FieldArray for fields."""
-    fields = [np.random.random((1, 1, 8, 8)) for _ in range(3)]
+    fields = [comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts))) for _ in range(3)]
 
     for i, field in enumerate(fields):
-        io.save_step(i, fields={"field": field})
+        io.save_step(i, fields={"field": grid.get_local(field)})
 
     result = io.load_trajectory(field_names=["field"])
     field_array = result["field"]
 
-    for i, expected in enumerate(fields):
-        np.testing.assert_array_almost_equal(field_array[i], expected)
+    for i, field in enumerate(fields):
+        np.testing.assert_array_almost_equal(field_array[i], grid.get_local(field))
 
 
-def test_save_trajectory_fields(io):
+def test_save_trajectory_fields(grid, decomposition, io, comm_world):
     """save_trajectory saves fields by index."""
-    fields = [np.random.random((1, 1, 8, 8)) for _ in range(3)]
+    fields = [comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts))) for _ in range(3)]
+    localized_fields = [grid.get_local(f) for f in fields]
 
-    io.save_trajectory(fields={"field": fields})
+    io.save_trajectory(fields={"field": localized_fields})
     result = io.load_trajectory(field_names=["field"])
 
-    for i, expected in enumerate(fields):
+    for i, expected in enumerate(localized_fields):
         np.testing.assert_array_almost_equal(result["field"][i], expected)
-
-
-# =============================================================================
-# Grid access
-# =============================================================================
-
-
-def test_io_grid_property(io, grid):
-    """SimulationIO.grid returns the grid."""
-    assert io.grid is grid
