@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import Colormap, LinearSegmentedColormap
 
 
 def split_continuous_indices(i_arr):
@@ -62,6 +62,11 @@ def slice_colormap(cmap, low: float, high: float, bitwidth=8, name=None):
         input colormap.
     """
     base = plt.get_cmap(cmap) if isinstance(cmap, str) else cmap
+    if not isinstance(base, Colormap):
+        raise TypeError(f"cmap must be a name or Colormap, got {type(base)}")
+    if not (0.0 <= low < high <= 1.0):
+        raise ValueError(f"need 0 <= low < high <= 1, got low={low}, high={high}")
+
     if name is None:
         name = f"{base.name}[{low:.2f},{high:.2f}]"
     nb_samples = 2**bitwidth
