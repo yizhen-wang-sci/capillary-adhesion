@@ -124,4 +124,7 @@ def factorize_closest(value: int, nb_factor: int):
         max_divisor = int(value ** (1 / root_degree))
         factors.append(max_divisor)
         value //= max_divisor
+    # FIXME: muGrid can't handle empty subdomain yet.
+    if np.multiply.reduce(factors) < value:
+        raise ValueError("Cannot factorize value into nb_factor integers without empty subdomains.")
     return factors
