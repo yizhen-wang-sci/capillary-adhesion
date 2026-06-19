@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import Colormap, LinearSegmentedColormap
+from matplotlib.colors import Colormap, LinearSegmentedColormap, to_rgb, is_color_like
 
 
 def split_continuous_indices(i_arr):
@@ -28,7 +28,6 @@ def split_continuous_indices(i_arr):
     # compensate. The indexing is then correct for the original array.
     i_break = (np.diff(i_arr) != 1).nonzero()[0] + 1
     return np.split(i_arr, i_break)
-
 
 
 def slice_colormap(cmap, low: float, high: float, bitwidth=8, name=None):
@@ -71,3 +70,50 @@ def slice_colormap(cmap, low: float, high: float, bitwidth=8, name=None):
         name = f"{base.name}[{low:.2f},{high:.2f}]"
     nb_samples = 2**bitwidth
     return LinearSegmentedColormap.from_list(name, base(np.linspace(low, high, nb_samples)), N=nb_samples)
+
+
+def create_fading_colors(base_color, nb_steps, *,
+                         alpha_start=0.0, alpha_end=1.0, gamma=1.0):
+    """Return an (nb_steps, 4) RGBA array: constant color, ramped alpha.
+
+    Parameters
+    ----------
+    base_color : color
+        The single color held constant across every step; only its alpha
+        varies. Any matplotlib color spec (name, hex, or RGB/RGBA tuple);
+        any alpha it carries is ignored, since alpha is set explicitly below.
+    nb_steps : int
+        Number of colors to generate (one per data point/segment). Must be >= 1.
+    alpha_start, alpha_end : float in [0, 1], keyword-only
+        Alpha of the first and last entry. Default 0 -> 1 (transparent to
+        opaque). Swap them (1 -> 0) to fade out, or use a partial range like
+        0.2 -> 1 to keep early points faintly visible.
+    gamma : float, keyword-only
+        Shapes the ramp via t**gamma: 1.0 linear, >1 stays fainter longer,
+        <1 reaches opaque sooner.
+
+    Returns
+    -------
+    numpy.ndarray, shape (nb_steps, 4)
+        Pass straight to ``scatter(c=...)`` or ``LineCollection(colors=...)``.
+
+    Raises
+    ------
+    ValueError
+        If `base_color` is not a valid matplotlib color, or `nb_steps` < 1.
+    """
+    if not is_color_like(base_color):
+        raise ValueError(
+            f"base_color must be a valid matplotlib color "
+            f"(name, hex, or RGB/RGBA tuple); got {base_color!r}")
+    if nb_steps < 1:
+        raise ValueError(f"nb_steps must be >= 1, got {nb_steps}")
+
+    # colors are stored as RGBA. We only want to have a changing transparency (A)
+    colors = np.empty((nb_steps, 4))
+    colors[:, :3] = np.asarray(to_rgb(base_color))
+
+    # step size. Gamma changes its linearity
+    t = np.linspace(0.0, 1.0, nb_steps) ** gamma
+    colors[:, 3] = alpha_start + (alpha_end - alpha_start) * t
+    return colors
