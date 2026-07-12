@@ -72,48 +72,74 @@ def slice_colormap(cmap, low: float, high: float, bitwidth=8, name=None):
     return LinearSegmentedColormap.from_list(name, base(np.linspace(low, high, nb_samples)), N=nb_samples)
 
 
-def create_fading_colors(base_color, nb_steps, *,
-                         alpha_start=0.0, alpha_end=1.0, gamma=1.0):
-    """Return an (nb_steps, 4) RGBA array: constant color, ramped alpha.
+def create_segment_colors(source, nb_steps, *,
+                          low=0.0, high=1.0,
+                          alpha_begin=1.0, alpha_end=1.0, gamma=1.0):
+    """Return an (nb_steps, 4) RGBA array for LineCollection(colors=...).
+
+    `source` decides the coloring mode:
+      - a single color (name, hex, RGB/RGBA tuple)  -> constant hue,
+        alpha ramps from `alpha_begin` to `alpha_end` (fading effect).
+      - a colormap (name or Colormap object)         -> hue sweeps across
+        the map from `low` to `high` (spectrum effect); alpha still ramps
+        from `alpha_begin` to `alpha_end` on top of it (defaults to fully
+        opaque, i.e. no fade, unless you set them).
 
     Parameters
     ----------
-    base_color : color
-        The single color held constant across every step; only its alpha
-        varies. Any matplotlib color spec (name, hex, or RGB/RGBA tuple);
-        any alpha it carries is ignored, since alpha is set explicitly below.
+    source : color or str or Colormap
+        A matplotlib color spec, or a registered colormap name / Colormap
+        instance. See above for how each is interpreted.
     nb_steps : int
-        Number of colors to generate (one per data point/segment). Must be >= 1.
-    alpha_start, alpha_end : float in [0, 1], keyword-only
-        Alpha of the first and last entry. Default 0 -> 1 (transparent to
-        opaque). Swap them (1 -> 0) to fade out, or use a partial range like
-        0.2 -> 1 to keep early points faintly visible.
+        Number of colors to generate (one per segment). Must be >= 1.
+    low, high : float in [0, 1], keyword-only
+        Sub-range of the colormap to sample. Ignored if `source` is a
+        plain color.
+    alpha_begin, alpha_end : float in [0, 1], keyword-only
+        Alpha of the first and last entry. Equal (default 1.0, 1.0) means
+        no fade -- fully opaque throughout. Use 0.0 -> 1.0 for fade-in,
+        1.0 -> 0.0 for fade-out, or any pair in between.
     gamma : float, keyword-only
-        Shapes the ramp via t**gamma: 1.0 linear, >1 stays fainter longer,
-        <1 reaches opaque sooner.
+        Shapes the alpha ramp via t**gamma: 1.0 linear, >1 stays close to
+        alpha_begin longer, <1 approaches alpha_end sooner.
 
     Returns
     -------
     numpy.ndarray, shape (nb_steps, 4)
-        Pass straight to ``scatter(c=...)`` or ``LineCollection(colors=...)``.
-
-    Raises
-    ------
-    ValueError
-        If `base_color` is not a valid matplotlib color, or `nb_steps` < 1.
     """
-    if not is_color_like(base_color):
-        raise ValueError(
-            f"base_color must be a valid matplotlib color "
-            f"(name, hex, or RGB/RGBA tuple); got {base_color!r}")
     if nb_steps < 1:
         raise ValueError(f"nb_steps must be >= 1, got {nb_steps}")
+    if not (0.0 <= low < high <= 1.0):
+        raise ValueError(f"need 0 <= low < high <= 1, got low={low}, high={high}")
+    for name, val in (("alpha_begin", alpha_begin), ("alpha_end", alpha_end)):
+        if not (0.0 <= val <= 1.0):
+            raise ValueError(f"{name} must be in [0, 1], got {val}")
 
-    # colors are stored as RGBA. We only want to have a changing transparency (A)
-    colors = np.empty((nb_steps, 4))
-    colors[:, :3] = np.asarray(to_rgb(base_color))
+    if is_color_like(source):
+        # If it is a color, create a sequence of the same color
+        colors = np.empty((nb_steps, 4))
+        colors[:, :3] = to_rgb(source)
+    else:
+        # If not a color, it should be a colormap
+        if isinstance(source, str):
+            try:
+                cmap = plt.get_cmap(source)
+            except ValueError:
+                raise ValueError(
+                    f"{source!r} is not a valid color or a registered "
+                    f"colormap name")
+        elif isinstance(source, Colormap):
+            cmap = source
+        else:
+            raise ValueError(
+                f"source must be a color, colormap name, or Colormap "
+                f"instance; got {source!r}")
+        # Create a color gradient from a slice of the colormap
+        colors = cmap(np.linspace(low, high, nb_steps))   # (nb_steps, 4)
 
-    # step size. Gamma changes its linearity
-    t = np.linspace(0.0, 1.0, nb_steps) ** gamma
-    colors[:, 3] = alpha_start + (alpha_end - alpha_start) * t
+    if nb_steps == 1:
+        colors[:, 3] = alpha_end
+    else:
+        t = np.linspace(0.0, 1.0, nb_steps) ** gamma
+        colors[:, 3] = alpha_begin + (alpha_end - alpha_begin) * t
     return colors

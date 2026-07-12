@@ -1,1 +1,1 @@
-from .visual import split_continuous_indices, slice_colormap, create_fading_colors
+from .visual import split_continuous_indices, slice_colormap, create_segment_colors
