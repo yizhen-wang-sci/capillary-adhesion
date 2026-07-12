@@ -1,6 +1,11 @@
+import logging
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import Colormap, LinearSegmentedColormap, to_rgb, is_color_like
+
+
+logger = logging.getLogger(__name__)
 
 
 def split_continuous_indices(i_arr):
@@ -138,3 +143,53 @@ def create_segment_colors(source, nb_steps, *,
         t = np.linspace(0.0, 1.0, nb_steps) ** gamma
         colors[:, 3] = alpha_begin + (alpha_end - alpha_begin) * t
     return colors
+
+
+def divide_into_segments(x, y, *, nb_segments=None):
+    """Group a series of data points into `nb_segments` groups.
+
+    Use case, pass as arguments of LineCollection.
+
+    Parameters
+    ----------
+    x, y : array-like
+        1-D sequences of equal length (>= 2 points).
+    nb_segments : int, optional, keyword-only
+        Desired number of segments. Must be >= 1 if given. Values are capped
+        at nb_points - 1 in which every point forms the start and end of
+        each segment.
+
+    Returns
+    -------
+    list of numpy.ndarray
+        the list contains `nb_segments` arrays, with shape
+        (nb_points_in_segment, 2). `nb_points_in_segment` can vary by one
+        between segments when the points can't be divided evenly.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    if x.size != y.size:
+        raise ValueError(
+            f"x and y must have the same length; got {x.size} and {y.size}")
+    if x.size < 2:
+        raise ValueError(
+            f"need at least 2 points to form a segment; got {x.size}")
+
+    max_segments = x.size - 1
+    if nb_segments is None:
+        nb_segments = max_segments
+    if nb_segments < 1:
+        raise ValueError(f"nb_segments must be >= 1, got {nb_segments}")
+
+    # Don't create points to satisfiy the nb_segments
+    if nb_segments > max_segments:
+        logger.warning(f"nb_segments {nb_segments} exceeds max_segments {max_segments}; reducing to max_segments")
+    nb_segments = min(nb_segments, max_segments)
+
+    # Round up so boundary indices are integers
+    boundary_idxs = np.round(np.linspace(0, x.size - 1, nb_segments + 1)).astype(int)
+
+    # Plus 1 at stop indices so it includes the ending point, which results in continuous line segments
+    return [np.column_stack([x[boundary_idxs[i_segm]:boundary_idxs[i_segm + 1] + 1],
+                             y[boundary_idxs[i_segm]:boundary_idxs[i_segm + 1] + 1]])
+            for i_segm in range(nb_segments)]
