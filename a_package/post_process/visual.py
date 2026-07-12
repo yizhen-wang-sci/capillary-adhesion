@@ -5,12 +5,8 @@ from matplotlib.colors import Colormap, LinearSegmentedColormap, to_rgb, is_colo
 
 def split_continuous_indices(i_arr):
     """
-    Splits a 1-dimensional array of indices into contiguous sub-arrays.
-
-    This function takes a 1-dimensional array of integer indices and divides it
-    into multiple sub-arrays wherever the difference between successive elements
-    is not equal to 1 (non-contiguous indices). Useful for segmenting continuous
-    parts of indices.
+    Splits a 1-dimensional array of indices into sub-arrays with contiguous indices.
+    Useful for axis.fill_between.
 
     Parameters
     ----------
@@ -32,9 +28,8 @@ def split_continuous_indices(i_arr):
 
 def slice_colormap(cmap, low: float, high: float, bitwidth=8, name=None):
     """
-    Extracts a portion of a given colormap and returns it as a new colormap. The function
-    enables slicing a colormap between specified low and high values, optionally setting
-    the number of samples and providing a name for the resulting colormap.
+    Extracts a portion of a given colormap from the given low to high values, and
+    set the discrete colors based on the (optional) bitwidth value.
 
     Parameters
     ----------
