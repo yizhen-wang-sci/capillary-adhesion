@@ -25,6 +25,10 @@ class SelfAffineRoughness:
     qT: float = 2*np.pi
     """The (angular) wavenumber below which the PSD is terminated. Defaults to 2π (1 cycle over unit length)."""
 
+    def __post_init__(self):
+        if not (self.qT <= self.qR <= self.qS):
+            raise ValueError("The three wavenumbers must be ordered as qT <= qR <= qS.")
+
     def mapto_isotropic_psd(self, wavevector: np.ndarray, component_axis: int | None = None):
         """
         Get the isotropic power spectral density (psd) of a given wavenumber.
@@ -52,9 +56,6 @@ class SelfAffineRoughness:
         psd[constant] = self.C0 * self.qR ** (-2 - 2 * self.H)
         psd[self_affine] = self.C0 * wavenumber[self_affine] ** (-2 - 2 * self.H)
         psd[zeroed] = 0
-
-        # Ensure mean value is zero
-        psd[wavenumber == 0] = 0
 
         return psd
 
