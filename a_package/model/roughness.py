@@ -10,6 +10,8 @@ import numpy.linalg as linalg
 import numpy.fft as fft
 import numpy.random as random
 
+from a_package.domain import Grid
+
 
 @dc.dataclass(init=True, frozen=True)
 class SelfAffineRoughness:
@@ -59,23 +61,57 @@ class SelfAffineRoughness:
 
         return psd
 
+    def generate_height_profile(self, grid: Grid, seed: int | None = None):
+        qx, qy = grid.form_spectral_mesh()
+        wavevector = np.stack([qx, qy], axis=0)
+        psd = self.mapto_isotropic_psd(wavevector, component_axis=0)
+        height = psd_to_height(psd, lateral_sizes=grid.domain_lengths, seed=seed)
+        return height
 
-def psd_to_height(psd: np.ndarray, seed: int | None = None, spatial_axes: Sequence[int] | None = None):
-    """Convert power spectral density to height field via inverse FFT.
 
-    seed: seed passed to RNG for reproducibility; None uses random seed.
-    spatial_axes: axes along which to apply FFT; None (by NumPy) uses the last 2 axes as spatial.
+def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, seed: int | None = None):
     """
-    # <h^2> corresponding to <PSD>, thus, take the square-root to match overall amplitude
-    amplitude = np.sqrt(psd)
+    Convert a power spectral density (PSD) to a height distribution in real space.
 
-    # impose some random phase angle following uniform distribution
+    This function takes a 2D power spectral density array and reconstructs the height
+    distribution in real space by applying an inverse Fourier transform. The process includes
+    scaling the spectral density to amplitude, introducing random phase angles for spatial
+    variability, and normalizing the output correctly.
+
+    Parameters
+    ----------
+    psd : numpy.ndarray
+        A 2D array representing the power spectral density.
+    lateral_sizes : Sequence[int], optional
+        A sequence representing the lateral sizes of the domain in each dimension.
+        If None, default sizes of ones are used.
+    seed : int, optional
+        Seed for the random number generator to ensure reproducibility.
+
+    Returns
+    -------
+    numpy.ndarray
+        A 2D array representing the height distribution in real space.
+    """
+    if psd.ndim != 2:
+        raise ValueError("psd must be a 2D array")
+
+    if lateral_sizes is None:
+        lateral_sizes = np.ones(psd.ndim)
+
+    # PSD is spectral density, we assume "bins-like" interpolation to reconstruct the distribution.
+    # To get the actual amplitude, multiply the density by the spectral spacing
+    spectral_spacing = (2 * np.pi)**psd.ndim / np.multiply.reduce(lateral_sizes)
+
+    # <PSD> is connected to <h^2>, thus, take the square-root to match units
+    amplitude = np.sqrt(psd * spectral_spacing)
+
+    # Generate RNG from seed for reproducibility
     rng = random.default_rng(seed)
+
+    # Impose some random phase angle following uniform distribution
     phase_angle = np.exp(1j * rng.uniform(0, 2 * np.pi, psd.shape))
 
-    # transform back to real space
-    return fft.ifft2(amplitude * phase_angle, axes=spatial_axes).real
-
-    # cancels out NumPy's prefactor of N1*N2
-    # FIXME: when spatial_axes=None
-    # nb_grid_pts = np.multiply.reduce(np.take(psd.shape, spatial_axes))
+    # Transform back to real space
+    # Set norm="forward" so that NumPy's ifft2 don't do normalization
+    return fft.ifft2(amplitude * phase_angle, norm="forward").real
