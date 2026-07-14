@@ -62,6 +62,32 @@ class SelfAffineRoughness:
         return psd
 
     def generate_height_profile(self, grid: Grid, seed: int | None = None):
+        """
+        Generates a height profile over the spatial domain specified by the input
+        grid, based on spectral properties.
+
+        The method takes a `Grid` object, constructs its spectral mesh, computes
+        the wavevector, and maps it to an isotropic power spectral density (PSD).
+        The PSD is then converted into a height profile using the provided grid's
+        domain lengths and an optional random seed.
+
+        Parameters
+        ----------
+        grid : Grid
+            An object representing the spatial domain over which the height profile
+            is to be generated. This object is expected to provide methods for
+            forming a spectral mesh and specifying domain lengths.
+
+        seed : int or None, optional
+            A random seed for reproducibility of the height profile generation.
+            If `None`, the random generation will not be seeded.
+
+        Returns
+        -------
+        numpy.ndarray
+            A 2D array representing the generated height profile based on the
+            given grid configuration and spectral properties.
+        """
         qx, qy = grid.form_spectral_mesh()
         wavevector = np.stack([qx, qy], axis=0)
         psd = self.mapto_isotropic_psd(wavevector, component_axis=0)
