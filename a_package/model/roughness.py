@@ -26,8 +26,8 @@ class SelfAffineRoughness:
     """The (angular) wavenumber below which the PSD is terminated. Defaults to 2π (1 cycle over unit length)."""
 
     def __post_init__(self):
-        if not (self.qT <= self.qR <= self.qS):
-            raise ValueError("The three wavenumbers must be ordered as qT <= qR <= qS.")
+        if not (0 < self.qT <= self.qR <= self.qS):
+            raise ValueError("The three wavenumbers must be positive and ordered as qT <= qR <= qS.")
 
     def mapto_isotropic_psd(self, wavevector: np.ndarray, component_axis: int | None = None):
         """
