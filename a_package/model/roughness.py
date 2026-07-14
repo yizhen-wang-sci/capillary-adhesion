@@ -124,13 +124,10 @@ def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, s
 
     if lateral_sizes is None:
         lateral_sizes = np.ones(psd.ndim)
+    spatial_area = np.multiply.reduce(lateral_sizes)
 
-    # PSD is spectral density, we assume "bins-like" interpolation to reconstruct the distribution.
-    # To get the actual amplitude, multiply the density by the spectral spacing
-    spectral_spacing = (2 * np.pi)**psd.ndim / np.multiply.reduce(lateral_sizes)
-
-    # <PSD> is connected to <h^2>, thus, take the square-root to match units
-    amplitude = np.sqrt(psd * spectral_spacing)
+    # Amplitude
+    amplitude = np.sqrt(psd * spatial_area * 4)
 
     # Generate RNG from seed for reproducibility
     rng = random.default_rng(seed)
@@ -138,6 +135,6 @@ def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, s
     # Impose some random phase angle following uniform distribution
     phase_angle = np.exp(1j * rng.uniform(0, 2 * np.pi, psd.shape))
 
-    # Transform back to real space
+    # Transform back to real space with normalization
     # Set norm="forward" so that NumPy's ifft2 don't do normalization
-    return fft.ifft2(amplitude * phase_angle, norm="forward").real
+    return fft.ifft2(amplitude * phase_angle, norm="forward").real / spatial_area
