@@ -133,8 +133,45 @@ def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, s
     rng = random.default_rng(seed)
 
     # Impose some random phase angle following uniform distribution
-    phase_angle = np.exp(1j * rng.uniform(0, 2 * np.pi, psd.shape))
+    phasor = generate_phasor_2D_random(psd.shape, seed)
 
     # Transform back to real space with normalization
     # Set norm="forward" so that NumPy's ifft2 don't do normalization
-    return fft.ifft2(amplitude * phase_angle, norm="forward").real / spatial_area
+    return fft.ifft2(amplitude * phasor, norm="forward").real / spatial_area
+
+
+def generate_phasor_2D_random(shape, seed=None):
+    """
+    Generate random phase angles for 2D power spectral density.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        A tuple of two integers (nx, ny) representing the shape of the 2D array.
+    seed : int, optional
+        Seed for the random number generator to ensure reproducibility.
+
+    Returns
+    -------
+    numpy.ndarray
+        A 2D complex array representing the phase_angle with random phase angles.
+    """
+    nx, ny = shape
+    phase_angle = np.empty((nx, ny), dtype=np.float64)
+    # Seeded RNG for reproducibility
+    rng = random.default_rng(seed)
+
+    # Random phase angle following uniform distribution for half of the spectrum
+    phase_angle[:, 0:ny // 2 + 1] = rng.uniform(-np.pi, np.pi, (nx, ny // 2 + 1))
+    # The other half is mirrored because real signal has symmetric phase spectrum
+    phase_angle[:, -1:ny // 2:-1] = -phase_angle[:, 1:ny // 2 + ny % 2]
+    # Phase angles at zero and Nyquist frequency must be 0 (they mirror to themselves)
+    phase_angle[0, 0] = 0
+    if nx % 2 == 0:
+        phase_angle[nx // 2, 0] = 0
+    if ny % 2 == 0:
+        phase_angle[0, ny // 2] = 0
+    if nx % 2 == 0 and ny % 2 == 0:
+        phase_angle[nx // 2, ny // 2] = 0
+
+    return np.exp(1j * phase_angle)
