@@ -95,7 +95,8 @@ class SelfAffineRoughness:
         return height
 
 
-def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, seed: int | None = None):
+def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, seed: int | None = None,
+                  random_amplitude: bool=False):
     """
     Convert a power spectral density (PSD) to a height distribution in real space.
 
@@ -113,6 +114,8 @@ def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, s
         If None, default sizes of ones are used.
     seed : int, optional
         Seed for the random number generator to ensure reproducibility.
+    random_amplitude : bool, optional
+        Whether to impose randomness on the amplitude of the height distribution.
 
     Returns
     -------
@@ -129,8 +132,10 @@ def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, s
     # Amplitude
     amplitude = np.sqrt(psd * spatial_area * 4)
 
-    # Generate RNG from seed for reproducibility
-    rng = random.default_rng(seed)
+    # Impose randomness on the amplitude if required
+    if random_amplitude:
+        rng = random.default_rng(seed)
+        amplitude *= abs(rng.chisquare(2, psd.shape))
 
     # Impose some random phase angle following uniform distribution
     phasor = generate_phasor_2D_random(psd.shape, seed)
