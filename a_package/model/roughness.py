@@ -13,7 +13,7 @@ import numpy.random as random
 from a_package.domain import Grid
 
 
-@dc.dataclass(init=True, frozen=True)
+@dc.dataclass(init=True)
 class SelfAffineRoughness:
     """Parameters defining self-affine roughness spectrum."""
     C0: float
@@ -60,6 +60,13 @@ class SelfAffineRoughness:
         psd[zeroed] = 0
 
         return psd
+
+    def correct_prefactor_by_rms_height(self, value: float):
+        self.C0 = 4 * np.pi * self.H * value ** 2 / ((1 + self.H) * self.qR**(-2*self.H) - self.qS**(-2*self.H))
+
+    def correct_prefactor_by_rms_slope(self, value: float):
+        self.C0 = 4 * np.pi * (1 - self.H) * value ** 2 / (-0.5 * (1 + self.H) * self.qR**(2-2*self.H)
+                                                           + self.qS**(2-2*self.H))
 
     def generate_height_profile(self, grid: Grid, seed: int | None = None):
         """
@@ -130,7 +137,8 @@ def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, s
     spatial_area = np.multiply.reduce(lateral_sizes)
 
     # Amplitude
-    amplitude = np.sqrt(psd * spatial_area * 4)
+    amplitude = np.sqrt(psd * spatial_area)
+    # amplitude = np.sqrt(psd * spatial_area * 2)
 
     # Impose randomness on the amplitude if required
     if random_amplitude:
