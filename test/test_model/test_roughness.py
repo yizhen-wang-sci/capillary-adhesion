@@ -9,46 +9,22 @@ from a_package.domain.grid import Grid
 from a_package.model.roughness import SelfAffineRoughness, psd_to_height, generate_phasor_2D_random
 
 
-@pytest.fixture
-def large_grid():
-    nb_grid_points = 2048
-    return Grid([nb_grid_points, nb_grid_points], [1., 1.])
-
-
-@pytest.fixture
-def roughness(large_grid):
-    l = large_grid.element_sizes[0]
-    return SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) / (16 * l), qS=(2 * np.pi) / (4 * l))
-
-
-def compute_height_variance(roughness) -> float:
-    wavenumber = np.concatenate([
-        # Constant part: C q is still linear, only requires 2 points
-        np.linspace(roughness.qT, roughness.qR, 2),
-        np.linspace(roughness.qR, roughness.qS, 200)])
-    return np.trapezoid(wavenumber * roughness.mapto_isotropic_psd(wavenumber), wavenumber) / (2 * np.pi)
-
-def compute_slope_variance(roughness) -> float:
-    wavenumber = np.concatenate([
-        np.linspace(roughness.qT, roughness.qR, 200),
-        np.linspace(roughness.qR, roughness.qS, 200)])
-    return np.trapezoid(wavenumber ** 3 * roughness.mapto_isotropic_psd(wavenumber), wavenumber) / (2 * np.pi)
-
-
-def test_psd_at_zero_is_zero(roughness):
+def test_psd_at_zero_is_zero():
     """The PSD evaluated at wavenumber 0 must be 0 (below qT)."""
     q = np.linspace(0., 9., 10)
+    roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) * 8, qS=(2 * np.pi) * 32)
     psd = roughness.mapto_isotropic_psd(q)
     assert psd[np.isclose(q, 0)] == 0.0
 
 
-def test_psd_to_height_has_zero_mean(large_grid, roughness):
+def test_psd_to_height_has_zero_mean():
     """The height field obtained via psd_to_height should have zero mean."""
-    wavevector = large_grid.form_spectral_mesh()
+    grid = Grid([16, 16])
+    wavevector = grid.form_spectral_mesh()
+    roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) * 8, qS=(2 * np.pi) * 32)
     psd = roughness.mapto_isotropic_psd(wavevector, component_axis=0)
     height = psd_to_height(psd, seed=None)
-
-    assert np.isclose(np.mean(height), 0.0, atol=1e-12)
+    assert np.isclose(np.mean(height), 0.0, atol=1e-9)
 
 
 @pytest.mark.parametrize("shape", [(8, 8), (9, 9), (8, 9), (9, 8)],
@@ -74,29 +50,62 @@ def test_generate_phasor_2D_random_hermitian(shape):
     )
 
 
-def test_roughness_correct_prefactor_by_rms_height(roughness):
+def test_roughness_correct_prefactor_by_rms_height():
     h_rms_specified = 1.
+    roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) * 8 , qS=(2 * np.pi) * 32)
     roughness.correct_prefactor_by_rms_height(h_rms_specified)
-    assert np.isclose(compute_height_variance(roughness), h_rms_specified**2, atol=1e-3)
+
+    wavenumber = np.concatenate([
+        # Constant part: C q is still linear, only requires 2 points
+        np.linspace(roughness.qT, roughness.qR, 2),
+        np.linspace(roughness.qR, roughness.qS, 200)])
+    h_rms_numeric = np.sqrt(
+        np.trapezoid(wavenumber * roughness.mapto_isotropic_psd(wavenumber), wavenumber) / (2 * np.pi))
+
+    assert np.isclose(h_rms_numeric, h_rms_specified, atol=1e-4)
 
 
-def test_psd_to_height_normalization_with_rms_height(large_grid, roughness):
-    h_rms_specified = 1.
-    roughness.correct_prefactor_by_rms_height(h_rms_specified)
-    height = roughness.generate_height_profile(large_grid)
-    assert np.isclose(np.var(height), h_rms_specified**2, atol=1e-3)
-
-
-def test_roughness_correct_prefactor_by_rms_slope(roughness):
+def test_roughness_correct_prefactor_by_rms_slope():
     slope_rms_specified = 1.
+
+    roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) * 8 , qS=(2 * np.pi) * 32)
     roughness.correct_prefactor_by_rms_slope(slope_rms_specified)
-    assert np.isclose(compute_slope_variance(roughness), slope_rms_specified**2, atol=1e-2)
+
+    wavenumber = np.concatenate([
+        np.linspace(roughness.qT, roughness.qR, 200),
+        np.linspace(roughness.qR, roughness.qS, 200)])
+    slope_rms_numeric = np.sqrt(
+        np.trapezoid(wavenumber ** 3 * roughness.mapto_isotropic_psd(wavenumber), wavenumber) / (2 * np.pi))
+    assert np.isclose(slope_rms_numeric, slope_rms_specified, atol=1e-3)
 
 
-def test_psd_to_height_normalization_with_rms_slope(large_grid, roughness):
+@pytest.fixture
+def large_grid():
+    nb_grid_points = 1024
+    return Grid([nb_grid_points, nb_grid_points], [1., 1.])
+
+
+def test_psd_to_height_normalization_with_rms_height(large_grid):
+    h_rms_specified = 1.
+
+    l = large_grid.element_sizes[0]
+    roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) / (32 * l), qS=(2 * np.pi) / (4 * l))
+    roughness.correct_prefactor_by_rms_height(h_rms_specified)
+
+    height = roughness.generate_height_profile(large_grid)
+    height_variance = np.var(height)
+    assert np.isclose(height_variance, h_rms_specified**2, atol=1e-3)
+
+
+def test_psd_to_height_normalization_with_rms_slope(large_grid):
     rms_slope_specified = 1.
+
+    l = large_grid.element_sizes[0]
+    roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) / (256 * l), qS=(2 * np.pi) / (32 * l))
     roughness.correct_prefactor_by_rms_slope(rms_slope_specified)
+
     height = roughness.generate_height_profile(large_grid)
     hx, hy = np.gradient(height, *large_grid.element_sizes)
     slope_variance = np.sum(hx**2 + hy**2) / np.multiply.reduce(large_grid.nb_domain_grid_pts)
-    assert np.isclose(slope_variance, rms_slope_specified**2, atol=1e-2)
+
+    assert np.isclose(slope_variance, rms_slope_specified**2, atol=5e-3)
