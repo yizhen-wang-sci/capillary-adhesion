@@ -38,6 +38,12 @@ pythonpath = [
   "."
 ]
 
+[tool.coverage.run]
+source = ["a_package"]
+
+[tool.coverage.report]
+fail_under = 60
+
 [project.urls]
 documentation = "https://imtek-simulation.github.io/python-skeleton/"
 repository = "https://github.com/imtek-simulation/python-skeleton"
