@@ -138,7 +138,6 @@ def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, s
 
     # Amplitude
     amplitude = np.sqrt(psd * spatial_area)
-    # amplitude = np.sqrt(psd * spatial_area * 2)
 
     # Impose randomness on the amplitude if required
     if random_amplitude:
@@ -176,15 +175,35 @@ def generate_phasor_2D_random(shape, seed=None):
 
     # Random phase angle following uniform distribution for half of the spectrum
     phase_angle[:, 0:ny // 2 + 1] = rng.uniform(-np.pi, np.pi, (nx, ny // 2 + 1))
-    # The other half is mirrored because real signal has symmetric phase spectrum
-    phase_angle[:, -1:ny // 2:-1] = -phase_angle[:, 1:ny // 2 + ny % 2]
-    # Phase angles at zero and Nyquist frequency must be 0 (they mirror to themselves)
+
+    # As the result of real valued signal, the phase spectrum must "hermitian". Due to cyclic, that means
+    # be skew-symmetric around (nx / 2, ny / 2): phase[nx - ix, ny - iy] = -phase[ix, iy]
+    # Here follows are the correction of the existed part and construction of the rest part based on symmetry
+
+    # Point (0, 0) maps to (nx, ny) ==in discrete cycles==> (0, 0), hence must be zeroed
     phase_angle[0, 0] = 0
+
+    # Half x-axis 0 < x < nx/2, y=0 maps to nx > x > nx/2, y = ny ==in discrete cycles==> nx > x > nx/2, y = 0
+    phase_angle[-1:nx // 2:-1, 0] = -phase_angle[1:nx // 2 + nx % 2, 0]
     if nx % 2 == 0:
         phase_angle[nx // 2, 0] = 0
+
+    # Half y-axis x=0, 0 < y < ny/2 maps to x=nx, ny > y > ny/2 ==in discrete cycles==> x=0, ny > y > ny/2
+    phase_angle[0, -1:ny // 2:-1] = -phase_angle[0, 1:ny // 2 + ny % 2]
     if ny % 2 == 0:
         phase_angle[0, ny // 2] = 0
-    if nx % 2 == 0 and ny % 2 == 0:
-        phase_angle[nx // 2, ny // 2] = 0
+
+    if ny % 2 == 0:
+        # Half x-axis at y-Nyquist 0 < x < nx/2, y=ny/2 maps to nx > x > nx/2, y=ny/2
+        phase_angle[-1:nx // 2:-1, ny // 2] = -phase_angle[1:nx // 2 + nx % 2, ny // 2]
+        if nx % 2 == 0:
+            phase_angle[nx // 2, ny // 2] = 0
+
+    # The following three part can be mirrored altogether
+    # - Quadrant 0 < x < nx/2, 0 < y < ny/2 maps to nx > x > nx/2, ny > y > ny/2
+    # - Half y-axis at x-Nyquist x=nx/2, 0 < y < ny/2 maps to x=nx/2, ny > y > ny/2
+    # - Quadrant nx > x > nx/2, 0 < y < ny/2 maps to 0 < x < nx/2, ny > y > ny/2
+    # Hence the region 0 < x < nx, 0 < y < ny/2 maps to nx > x > 0, ny > y > ny/2
+    phase_angle[-1:0:-1, -1:ny // 2:-1] = -phase_angle[1:, 1:ny // 2 + ny % 2]
 
     return np.exp(1j * phase_angle)
