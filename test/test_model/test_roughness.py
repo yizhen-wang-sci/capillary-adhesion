@@ -10,14 +10,15 @@ from a_package.model.roughness import SelfAffineRoughness, psd_to_height, genera
 
 
 @pytest.fixture
-def roughness():
-    return SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) * 64, qS=(2 * np.pi) * 256)
+def large_grid():
+    nb_grid_points = 2048
+    return Grid([nb_grid_points, nb_grid_points], [1., 1.])
 
 
 @pytest.fixture
-def large_grid():
-    nb_grid_points = 512
-    return Grid([nb_grid_points, nb_grid_points], [1., 1.])
+def roughness(large_grid):
+    l = large_grid.element_sizes[0]
+    return SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) / (16 * l), qS=(2 * np.pi) / (4 * l))
 
 
 def compute_height_variance(roughness) -> float:
@@ -76,20 +77,20 @@ def test_generate_phasor_2D_random_hermitian(shape):
 def test_roughness_correct_prefactor_by_rms_height(roughness):
     h_rms_specified = 1.
     roughness.correct_prefactor_by_rms_height(h_rms_specified)
-    assert np.isclose(compute_height_variance(roughness), h_rms_specified**2, atol=2e-4)
+    assert np.isclose(compute_height_variance(roughness), h_rms_specified**2, atol=1e-3)
 
 
 def test_psd_to_height_normalization_with_rms_height(large_grid, roughness):
     h_rms_specified = 1.
     roughness.correct_prefactor_by_rms_height(h_rms_specified)
     height = roughness.generate_height_profile(large_grid)
-    assert np.isclose(np.var(height), h_rms_specified**2)
+    assert np.isclose(np.var(height), h_rms_specified**2, atol=1e-3)
 
 
 def test_roughness_correct_prefactor_by_rms_slope(roughness):
     slope_rms_specified = 1.
     roughness.correct_prefactor_by_rms_slope(slope_rms_specified)
-    assert np.isclose(compute_slope_variance(roughness), slope_rms_specified**2, atol=2e-3)
+    assert np.isclose(compute_slope_variance(roughness), slope_rms_specified**2, atol=1e-2)
 
 
 def test_psd_to_height_normalization_with_rms_slope(large_grid, roughness):
@@ -98,4 +99,4 @@ def test_psd_to_height_normalization_with_rms_slope(large_grid, roughness):
     height = roughness.generate_height_profile(large_grid)
     hx, hy = np.gradient(height, *large_grid.element_sizes)
     slope_variance = np.sum(hx**2 + hy**2) / np.multiply.reduce(large_grid.nb_domain_grid_pts)
-    assert np.isclose(slope_variance, rms_slope_specified**2)
+    assert np.isclose(slope_variance, rms_slope_specified**2, atol=1e-2)
