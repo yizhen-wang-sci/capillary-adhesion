@@ -51,14 +51,18 @@ def get_git_hash():
                       cwd=package_root,     # run in package root
                       check=True)           # raise error if command fails
 
-    # Print information if there are uncommitted changes
-    result = subprocess.run(["git", "status", "--porcelain", "."], **extra_args)
-    is_dirty = len(result.stdout.splitlines()) > 0
-    if is_dirty:
-        logger.warning(f"Uncommitted changes in the package\n{result.stdout}\n")
-    # Get hash of the latest commit
-    result = subprocess.run(["git", "rev-parse", "HEAD"], **extra_args)
-    commit_hash = result.stdout.strip()
-    if is_dirty:
-        commit_hash += "-dirty"
-    return commit_hash
+    try:
+        # Print information if there are uncommitted changes
+        result = subprocess.run(["git", "status", "--porcelain", "."], **extra_args)
+        is_dirty = len(result.stdout.splitlines()) > 0
+        if is_dirty:
+            logger.warning(f"Uncommitted changes in the package\n{result.stdout}\n")
+        # Get hash of the latest commit
+        result = subprocess.run(["git", "rev-parse", "HEAD"], **extra_args)
+        commit_hash = result.stdout.strip()
+        if is_dirty:
+            commit_hash += "-dirty"
+        return commit_hash
+    except subprocess.CalledProcessError:
+        logger.warning("Failed to retrieve Git commit hash.")
+        return None
