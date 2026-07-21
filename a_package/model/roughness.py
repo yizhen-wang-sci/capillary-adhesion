@@ -62,10 +62,12 @@ class SelfAffineRoughness:
         return psd
 
     def correct_prefactor_by_rms_height(self, value: float):
-        self.C0 = 4 * np.pi * self.H * value ** 2 / ((1 + self.H) * self.qR**(-2*self.H) - self.qS**(-2*self.H))
+        cc = 1 - (self.qT /self.qR)**2
+        self.C0 = 4 * np.pi * self.H * value ** 2 / ((1 + self.H * cc) * self.qR**(-2*self.H) - self.qS**(-2*self.H))
 
     def correct_prefactor_by_rms_slope(self, value: float):
-        self.C0 = 4 * np.pi * (1 - self.H) * value ** 2 / (-0.5 * (1 + self.H) * self.qR**(2-2*self.H)
+        cc = 1 - (self.qT /self.qR)**4
+        self.C0 = 4 * np.pi * (1 - self.H) * value ** 2 / (-0.5 * (1 + self.H * cc) * self.qR**(2-2*self.H)
                                                            + self.qS**(2-2*self.H))
 
     def generate_height_profile(self, grid: Grid, seed: int | None = None):
