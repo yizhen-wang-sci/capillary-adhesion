@@ -63,6 +63,6 @@ def get_git_hash():
         if is_dirty:
             commit_hash += "-dirty"
         return commit_hash
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         logger.warning("Failed to retrieve Git commit hash.")
         return None
