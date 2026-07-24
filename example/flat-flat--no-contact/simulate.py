@@ -58,7 +58,7 @@ def main():
             record = run.new_record(**params)
             save_config(config, record.input)
         record = comm_world.bcast(record)
-        setup_logging(log_file=record.log)
+        setup_logging(file=record.log)
         io = SimulationIO(record.data, decomposition, communicator=comm_world)
 
         # simulation loop

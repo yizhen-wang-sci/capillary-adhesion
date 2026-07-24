@@ -78,9 +78,9 @@ def main():
         if comm_world.rank == 0:
             theta = config['capillary']['contact_angle_degree']
             record = run.new_record(theta=theta)
-            setup_logging(log_file=record.log)
             save_config(config, record.input)
         record = comm_world.bcast(record)
+        setup_logging(file=record.log)
 
         # initial guess
         phase_init = square_init_guess(grid, liquid_volume, np.amin(trajectory))

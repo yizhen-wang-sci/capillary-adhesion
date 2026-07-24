@@ -23,7 +23,7 @@ def main():
         # setup
         run = RunDir(os.path.dirname(__file__))
         record = RecordDir(run / fill)
-        setup_logging(log_file=record.log)
+        setup_logging(file=record.log)
         save_config(config, record.input)
         io = SimulationIO(record.data)
 
