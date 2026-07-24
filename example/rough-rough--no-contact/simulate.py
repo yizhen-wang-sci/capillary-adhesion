@@ -13,7 +13,8 @@ import numpy as np
 from mpi4py import MPI
 
 from a_package.domain import Grid, factorize_closest
-from a_package.model import CapillaryBridge, RigidContact, Term, formulate_constant_volume_phase_problem
+from a_package.model import CapillaryBridge, RigidContact, Term, formulate_constant_volume_phase_problem, \
+    extract_pressure_in_constant_volume_solution
 from a_package.simulation import (SimulationIO, SourceDir, RunDir, setup_logging, load_config,
                                   save_config, unroll_sweep, get_iso_time, get_git_hash)
 
@@ -123,7 +124,7 @@ def solve_constant_volume(original_shape, contact, capillary, optimizer, traject
         print(f"[rank{comm_world.rank}] It took {solution['nit']} iterations.")
 
         phase_local = solution['x'].reshape(original_shape)
-        pressure = -solution['dual']
+        pressure = pressure = extract_pressure_in_constant_volume_solution(solution)
 
         yield i_step, separation, gap_local, phase_local, pressure
 

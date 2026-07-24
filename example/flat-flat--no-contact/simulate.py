@@ -7,7 +7,8 @@ from NuMPI import MPI
 from a_package.simulation import SourceDir, RunDir, SimulationIO, load_config, unroll_sweep, save_config, \
     setup_logging, get_git_hash
 from a_package.domain import Grid, factorize_closest
-from a_package.model import CapillaryBridge, RigidContact, formulate_constant_volume_phase_problem, Term
+from a_package.model import CapillaryBridge, RigidContact, Term, formulate_constant_volume_phase_problem, \
+    extract_pressure_in_constant_volume_solution
 
 from config_helper import *
 
@@ -76,7 +77,7 @@ def main():
 
             # subtract quantities and save them
             phase = solution['x'].reshape(decomposition.nb_subdomain_grid_pts)
-            pressure = -solution['dual']
+            pressure = extract_pressure_in_constant_volume_solution(solution)
             print(f"rank={comm_world.rank}, before io save step")
             io.save_step(i_step, single_values={Term.separation: separation, Term.pressure: pressure},
                          fields={Term.gap: gap, Term.phase: phase})
