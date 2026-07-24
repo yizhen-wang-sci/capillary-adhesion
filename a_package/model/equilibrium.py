@@ -2,7 +2,7 @@
 Equilibrium formulations for capillary contact problems.
 """
 
-from a_package.domain import Problem
+from a_package.domain import Problem, OptimizerResult
 from .capillary import CapillaryBridge
 
 
@@ -27,6 +27,14 @@ def formulate_constant_volume_phase_problem(capillary: CapillaryBridge, volume: 
     if explicit_phase_bounds:
         args.update(dict(x_lb=capillary.phase_lb, x_ub=capillary.phase_ub))
     return Problem(**args)
+
+
+def extract_pressure_in_constant_volume_solution(result: OptimizerResult):
+    # NOTE: in NuMPI LinearConstraint, it defines lagrangian multiplier with "-lambda ...",
+    # hence lambda and pressure have the same sign. For this problem, precisely,
+    # lambda = pressure / surface tension
+    pressure_per_surface_tension = result['dual']
+    return pressure_per_surface_tension
 
 
 def formulate_constant_pressure_phase_problem(capillary: CapillaryBridge, pressure: float, explicit_phase_bounds: bool=True):
