@@ -1,0 +1,30 @@
+name: coverage
+
+on: [push]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Git checkout
+      uses: actions/checkout@v5
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+
+    - name: Install requirements
+      run: |
+        # Only the MPI runtime library is needed for mpi4py to load at import
+        # time; unlike test.yml, this job doesn't compile anything from
+        # source, so no -dev headers or FFTW are required.
+        sudo apt-get update
+        sudo apt-get install -y openmpi-bin
+        python -m pip install --upgrade pip
+        pip install .[test] mpi4py NuMPI muGrid
+        pip list
+
+    - name: Run tests with coverage
+      run: |
+        pytest --cov --cov-report=term-missing

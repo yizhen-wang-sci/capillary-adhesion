@@ -29,16 +29,20 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-    "flake8",
     "pytest",
-    "pytest-cov",
-    "pytest-flake8"
+    "pytest-cov"
 ]
 
 [tool.pytest.ini_options]
 pythonpath = [
   "."
 ]
+
+[tool.coverage.run]
+source = ["a_package"]
+
+[tool.coverage.report]
+fail_under = 60
 
 [project.urls]
 documentation = "https://imtek-simulation.github.io/python-skeleton/"

@@ -42,7 +42,9 @@ def get_iso_time():
 
 
 def get_git_hash():
-    """Get current git commit hash, or None if not in a git repo."""
+    """Retrieve the current Git commit hash of the repository. If the package directory has uncommitted
+       changes, "-dirty" will be appended to the commit hash.
+    """
     package_root = Path(__file__).parent.parent.resolve()
     extra_args = dict(capture_output=True,  # capture stdout and stderr
                       text=True,            # decode to str
@@ -50,13 +52,17 @@ def get_git_hash():
                       check=True)           # raise error if command fails
 
     try:
-        # Print warning information if there are uncommitted changes
-        result = subprocess.run(["git", "status", "--porcelain"], **extra_args)
-        if result.stdout:
-            logger.warning("WARNING: Uncommitted changes detected. This may affect reproducibility.")
-        # Get current git commit hash
+        # Print information if there are uncommitted changes
+        result = subprocess.run(["git", "status", "--porcelain", "."], **extra_args)
+        is_dirty = len(result.stdout.splitlines()) > 0
+        if is_dirty:
+            logger.warning(f"Uncommitted changes in the package\n{result.stdout}\n")
+        # Get hash of the latest commit
         result = subprocess.run(["git", "rev-parse", "HEAD"], **extra_args)
-        return result.stdout.strip()
-    except subprocess.CalledProcessError:
-        logger.warning("WARNING: Not in a git repository.")
+        commit_hash = result.stdout.strip()
+        if is_dirty:
+            commit_hash += "-dirty"
+        return commit_hash
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        logger.warning("Failed to retrieve Git commit hash.")
         return None
