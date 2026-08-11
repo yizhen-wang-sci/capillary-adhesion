@@ -9,6 +9,12 @@ from ._naming import NamingConvention, ParameterCombo, TaggedIndex
 
 logger = logging.getLogger(__name__)
 
+METADATA_FILE = "metadata.json"
+"""Name of the file a run's provenance and naming declaration go in."""
+
+_LITERAL_TO_TYPE = {"int": int, "float": float, "str": str, "bool": bool}
+"""The converters `record_naming_types` may name."""
+
 
 def _iter_parsed(path: Path, naming: NamingConvention):
     """Walk the subdirectories whose names follow a convention.
@@ -109,25 +115,23 @@ class _Dir:
 
 
 class SourceDir(_Dir):
-    """A directory of source scripts and configs; produces tagged snapshots."""
+    """A directory holding the recipe of a simulation: the scripts and configs it is run from."""
 
-    _suffixes = (".py", ".toml")
-    """Suffixes of the files a snapshot copies."""
-
-    def snapshot(self, tag: str, base_path: str | Path | None = None):
+    def snapshot(self, tag: str, base_path: str | Path | None = None, include_suffixes: tuple[str, ...] = (".py",)):
         """Copy the source files into a newly created, tagged directory.
 
         Args:
             tag: Tag naming the snapshot, indexed by `TaggedIndex`.
-            base_path: Where the snapshot directory is created. Defaults to the source
-                directory itself.
+            base_path: Where the snapshot directory is created. Defaults to the parent of the
+                source directory.
+            include_suffixes: Suffixes of the files a snapshot copies.
 
         Returns:
-            The snapshot, holding a copy of every top-level file whose suffix is in
-            `_suffixes`, with its metadata preserved. Subdirectories are not copied.
+            The snapshot, holding a copy of every file whose suffix is in `include_suffixes`,
+            with its metadata preserved. Subdirectories are not copied.
         """
         if base_path is None:
-            dest_base_path = self._path
+            dest_base_path = Path(self._path).parent
         else:
             dest_base_path = Path(base_path).resolve()
 
@@ -137,51 +141,87 @@ class SourceDir(_Dir):
 
         dest_dir = _Dir(dest_base_path / name, exist_ok=False)
         for entry in self._path.iterdir():
-            if entry.is_file() and entry.suffix in self._suffixes:
+            if entry.is_file() and entry.suffix in include_suffixes:
                 shutil.copy2(entry, dest_dir / entry.name)
         return dest_dir
 
 
-_DEFAULT_RECORD_NAMING = ParameterCombo()
-
-
 class RunDir(_Dir):
-    """A simulation run directory: scripts, configs, and its execution records."""
+    """A simulation run directory containing all the source files and execution records."""
 
-    def __init__(
-        self, path: str | Path, *, exist_ok: bool = True, record_naming: NamingConvention = _DEFAULT_RECORD_NAMING
-    ):
-        """Open a run directory, fixing the convention its records are named by.
+    def read_metadata(self) -> dict:
+        """Read the run's `metadata.json`.
 
-        Args:
-            path: The directory, created along with its missing parents.
-            exist_ok: Whether an already existing directory is accepted.
-            record_naming: Convention naming the record subdirectories. Defaults to a
-                `ParameterCombo` with no type coercion, so every value parses as a string.
+        Returns:
+            The entries stored, empty if the file is not there yet.
 
         Raises:
-            FileExistsError: If a file occupies the path, or if the directory exists while
-                `exist_ok` is False.
+            ValueError: If the file is there but does not parse.
         """
-        super().__init__(path, exist_ok=exist_ok)
-        self._record_naming = record_naming
+        metadata_path = self._path / METADATA_FILE
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as fp:
+                return json.load(fp)
+        except FileNotFoundError:
+            return {}
+        except json.JSONDecodeError as err:
+            raise ValueError(f"{metadata_path} is not valid JSON: {err}") from err
 
     def add_metadata(self, new: dict):
         """Merge entries into the run's `metadata.json`.
 
         Args:
-            new: Entries to store. They override the keys already present. A missing or
-                unparsable file is taken as empty.
+            new: Entries to store. They override the keys already present.
+
+        Raises:
+            ValueError: If the file is there but does not parse, via `read_metadata`.
         """
-        metadata_path = self._path / "metadata.json"
-        try:
-            with open(metadata_path, "r", encoding="utf-8") as fp:
-                metadata = json.load(fp)
-        except (FileNotFoundError, json.JSONDecodeError):
-            metadata = {}
+        metadata = self.read_metadata()
         metadata.update(new)
-        with open(metadata_path, "w", encoding="utf-8") as fp:
+        with open(self._path / METADATA_FILE, "w", encoding="utf-8") as fp:
             json.dump(metadata, fp, indent=2, sort_keys=False)
+
+    def declare_record_naming(self, types: dict[str, type]):
+        """Record which fields name this run's records, and what each parses back as.
+
+        Args:
+            types: Converter per field, as `ParameterCombo.types` takes it. Only the
+                converters in `_LITERAL_TO_TYPE` can be written down.
+
+        Raises:
+            ValueError: If a converter has no name in `_LITERAL_TO_TYPE`.
+        """
+        type_to_literal = {t: n for n, t in _LITERAL_TO_TYPE.items()}
+        try:
+            written = {field_name: type_to_literal[t] for field_name, t in types.items()}
+        except KeyError as err:
+            raise ValueError(
+                f"No name for converter {err.args[0]!r}; expected one of {sorted(type_to_literal.values())}"
+            ) from err
+        self.add_metadata({"record_naming_types": written})
+
+    @property
+    def record_naming(self) -> NamingConvention:
+        """The convention this run's records are named by.
+
+        Returns:
+            Built from the `record_naming_types` the run declared, untyped if it declared
+            none.
+
+        Raises:
+            ValueError: If the declaration names a converter that does not exist.
+        """
+        declared = self.read_metadata().get("record_naming_types")
+        if declared is None:
+            return ParameterCombo()
+        try:
+            types = {field_name: _LITERAL_TO_TYPE[name] for field_name, name in declared.items()}
+        except KeyError as err:
+            raise ValueError(
+                f"Unknown naming type {err.args[0]!r} in {self._path / METADATA_FILE}; "
+                f"expected one of {sorted(_LITERAL_TO_TYPE)}"
+            ) from err
+        return ParameterCombo(types=types)
 
     def new_record(self, **fields):
         """Create a record subdirectory for a new set of fields.
@@ -195,8 +235,8 @@ class RunDir(_Dir):
         Raises:
             FileExistsError: If the derived name is already taken.
         """
-        existing = [p.name for _, p in _iter_parsed(self._path, self._record_naming)]
-        name = self._record_naming.derive_next(existing, **fields)
+        existing = [p.name for _, p in _iter_parsed(self._path, self.record_naming)]
+        name = self.record_naming.derive_next(existing, **fields)
         return RecordDir(self._path / name, exist_ok=False)
 
     def find_records(self, **query):
@@ -209,7 +249,7 @@ class RunDir(_Dir):
         Returns:
             The matching records, in the order the filesystem lists them.
         """
-        return [RecordDir(p) for p in _find_matching(self._path, self._record_naming, **query)]
+        return [RecordDir(p) for p in _find_matching(self._path, self.record_naming, **query)]
 
     def get_record(self, **query):
         """Get the one record carrying every queried field.
@@ -224,25 +264,28 @@ class RunDir(_Dir):
             FileNotFoundError: If no record matches.
             LookupError: If more than one record matches.
         """
-        return RecordDir(_get_matching(self._path, self._record_naming, **query))
+        return RecordDir(_get_matching(self._path, self.record_naming, **query))
 
 
 class RecordDir(_Dir):
-    """A single execution record with standard artifacts: `input.cfg`, `data/`, `log.txt`."""
+    """A directory containing standard execution artifacts: input, log, data (result).
+
+    Note:
+        They are deliberately left as filesystem paths, specifying neither the format nor
+        whether the path holds a file or a directory. Both are the caller's to choose.
+    """
 
     @property
     def input(self):
-        """Path of the config the record was run with. The file itself is not created."""
-        return self._path / "input.cfg"
-
-    @property
-    def data(self):
-        """Path of the data subdirectory, created on first access."""
-        path = self._path / "data"
-        path.mkdir(exist_ok=True)
-        return path
+        """Where the config this was run with goes."""
+        return self._path / "input"
 
     @property
     def log(self):
-        """Path of the log file. The file itself is not created."""
-        return self._path / "log.txt"
+        """Where the log goes."""
+        return self._path / "log"
+
+    @property
+    def data(self):
+        """Where the data go."""
+        return self._path / "data"
