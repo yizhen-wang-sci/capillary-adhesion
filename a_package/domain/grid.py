@@ -107,7 +107,20 @@ class Grid:
         )
         return self.decomposition
 
-    def get_local(self, field):
+    def owned_layout(self):
+        """How this rank's part of the domain sits inside it, ghost layers excluded.
+
+        Returns:
+            The shape of the whole domain, the shape of the part this rank is the authority
+            for, and where that part begins in the index space of the domain, keyed by name.
+        """
+        return {
+            "domain_shape": tuple(self.decomposition.nb_domain_grid_pts),
+            "owned_shape": tuple(self.decomposition.nb_subdomain_grid_pts),
+            "owned_offset": tuple(self.decomposition.subdomain_locations),
+        }
+
+    def get_local(self, field: np.ndarray):
         """Return the local part of a field.
 
         Args:
