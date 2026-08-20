@@ -18,8 +18,8 @@ class Quantity:
     name: str
     """A unique name. Should reveal its meaning. Used as the identifier in QuantityFront."""
 
-    unit: "str | Quantity | None" = None
-    """A unit literal, or a constant quantity to measure against.
+    unit: "str | Scale | None" = None
+    """A unit literal, or a reference scale composed of constant quantities.
 
     Note:
         Empty str for unitless. None for not specified.
@@ -33,6 +33,16 @@ class Quantity:
        as basis (see QuantityFront.define) can be used in frame.
     """
 
+    def __pow__(self, exponent):
+        """Raise it to a power, so it reads as the unit of something else."""
+        return Scale(self) ** exponent
+
+    def __mul__(self, other):
+        """Multiply it by another, so it reads as the unit of something else."""
+        return Scale(self) * other
+
+    __rmul__ = __mul__
+
 
 BASIS = Quantity("_")
 """A reserved quantity, used internally to mark a quantity as basis.
@@ -40,6 +50,114 @@ BASIS = Quantity("_")
 Note:
     This exists to distinguish between a constant quantity and a basis quantity.
 """
+
+
+class Scale:
+    """A reference scale composed of constant quantities.
+
+    Note:
+        Use * and ** operators of a quantity to build a scale.
+    """
+
+    def __init__(self, composition: Quantity | Mapping[str, int | float]):
+        """Convert a quantity to a scale and verify all quantities involved are constant.
+
+        Args:
+            composition: A single quantity, or the combination of powers of several quantities,
+                keyed by name.
+
+        Raises:
+            QuantityError: If the scale measures against the basis marker, or against a quantity
+                that is not constant.
+        """
+        if isinstance(composition, Quantity):
+            # Reject non-constant quantities. Only what has one value can be measured against.
+            if len(composition.frame):
+                raise QuantityError(f"{composition.name} is not constant, so it cannot be used as a unit.")
+            self._composition = {composition.name: 1}
+        else:
+            self._composition = self._normalise(composition)
+
+        if BASIS.name in self._composition:
+            raise QuantityError(f"{BASIS.name} is reserved. It marks a quantity as basis.")
+
+    @staticmethod
+    def _normalise(composition: Mapping[str, int | float]) -> dict[str, int | float]:
+        """Drop the name when powers cancel out; reduce to integer if exponent is a whole-number.
+
+        Args:
+            composition: The power of each quantity, keyed by name.
+
+        Returns:
+            A clean mapping from quantity name to exponent.
+
+        Raises:
+            QuantityError: If an exponent is not finite.
+        """
+        normalised = {}
+        for name in composition:
+            exponent = composition[name]
+            if exponent == 0:
+                continue
+            try:
+                integer_part = int(exponent)
+            except (OverflowError, ValueError) as err:
+                # Rule out Inf and NaN
+                raise QuantityError(f"{exponent} cannot be an exponent.") from err
+            normalised[name] = integer_part if exponent == integer_part else exponent
+        return normalised
+
+    # =========================================================================
+    # Turn itself into a mapping.
+
+    def __contains__(self, item):
+        """Whether a quantity of that name composes it."""
+        return item in self._composition
+
+    def __getitem__(self, item):
+        """The exponent a composing quantity is raised to."""
+        return self._composition[item]
+
+    def __iter__(self):
+        """Iterate the composing quantities by name."""
+        return iter(self._composition)
+
+    def __len__(self):
+        """Number of composing quantities."""
+        return len(self._composition)
+
+    # =========================================================================
+    # Keep Quantity a frozen dataclass.
+
+    def __eq__(self, value):
+        """Whether two reference scales are equal."""
+        if not isinstance(value, (Quantity, Scale)):
+            return NotImplemented
+        return self._composition == Scale(value)._composition
+
+    def __hash__(self):
+        """The uniqueness based on the powers of quantities."""
+        return hash(tuple(sorted(self._composition.items())))
+
+    # =========================================================================
+    # Derive quantities and scales.
+
+    def __pow__(self, exponent):
+        """Power by raise every composing quantity to the power of the given exponent."""
+        return Scale({name: each * exponent for name, each in self._composition.items()})
+
+    def __mul__(self, other):
+        """Multiply by summing up exponents of quantities."""
+        if not isinstance(other, (Quantity, Scale)):
+            return NotImplemented
+
+        # A dict only to add up with, never to keep
+        summed = dict(self._composition)
+        for name, exponent in Scale(other)._composition.items():
+            summed[name] = summed.get(name, 0) + exponent
+        return Scale(summed)
+
+    __rmul__ = __mul__
 
 
 class QuantityBack(Protocol):
@@ -135,7 +253,7 @@ class QuantityFront:
     def define(
         self,
         name: str,
-        unit: str | Quantity | None = None,
+        unit: str | Quantity | Scale | None = None,
         frame: Sequence[str | Quantity] = (),
         is_basis: bool = False,
     ) -> Quantity:
@@ -152,9 +270,9 @@ class QuantityFront:
             The definition, which is also what `self[name]` gives back.
 
         Raises:
-            QuantityError: If the name is taken or reserved, the unit is not a constant
-                quantity, a member of the frame is not defined or is not a basis, or a basis
-                is given a frame.
+            QuantityError: If the name is taken or reserved, the unit is not a scale of
+                constant quantities, a member of the frame is not defined or is not a basis,
+                or a basis is given a frame.
         """
         if not name.isidentifier():
             raise QuantityError(f"{name} is not a valid identifier.")
@@ -162,9 +280,7 @@ class QuantityFront:
         if name == BASIS.name:
             raise QuantityError(f"{name} is reserved for the marker of basis.")
 
-        # Reject non-constant quantities. Only what has one value can be measured against.
-        if isinstance(unit, Quantity) and len(unit.frame):
-            raise QuantityError(f"{unit.name} is not constant, so it cannot be used as a unit.")
+        unit = self._normalise_unit(unit)
 
         if is_basis:
             # A basis quantity is marked with "BASIS" in frame
@@ -189,6 +305,25 @@ class QuantityFront:
         self._back.new_quantity(new)
         self._saved[name] = new
         return new
+
+    def _normalise_unit(self, unit: str | Quantity | Scale | None):
+        """Convert a quantity to scale. Collapse to an empty str if the scale is unitless.
+
+        Raises:
+            QuantityError: If the scale involves undefined quantities.
+        """
+        if unit is None or isinstance(unit, str):
+            return unit
+
+        scale = Scale(unit)
+        if not len(scale):
+            return ""
+
+        unknown = sorted(set(scale) - set(self._saved))
+        if len(unknown):
+            raise QuantityError(f"{unknown} are not defined, so they cannot be measured against.")
+
+        return scale
 
     def _to_quantity(self, name: str | Quantity):
         """Turn a name to the corresponding quantity."""
