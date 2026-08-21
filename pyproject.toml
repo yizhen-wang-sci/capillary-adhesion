@@ -32,6 +32,15 @@ test = [
     "pytest",
     "pytest-cov"
 ]
+lint = [
+    # Pinning the version to guarantee identical linting results across all environments.
+    "ruff==0.16.1"
+]
+
+[project.urls]
+documentation = "https://imtek-simulation.github.io/python-skeleton/"
+repository = "https://github.com/imtek-simulation/python-skeleton"
+changelog = "https://github.com/imtek-simulation/python-skeleton/blob/master/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 pythonpath = [
@@ -40,11 +49,53 @@ pythonpath = [
 
 [tool.coverage.run]
 source = ["a_package"]
+branch = true
 
 [tool.coverage.report]
-fail_under = 60
+fail_under = 70
+exclude_also = [
+    # Backward compatibility mechanism
+    "if sys.version_info",
+    # Entry points
+    "if __name__ == .__main__.:",
+    # Defensive assertion code
+    "raise AssertionError",
+    "raise NotImplementedError",
+    # Debug-only code
+    "def __repr__",
+    "if self\\.debug",
+    # Abstract methods or typing protocols
+    "@(abc\\.)?abstractmethod",
+    "class .*\\bProtocol\\):",
+    "\\.\\.\\."
+]
 
-[project.urls]
-documentation = "https://imtek-simulation.github.io/python-skeleton/"
-repository = "https://github.com/imtek-simulation/python-skeleton"
-changelog = "https://github.com/imtek-simulation/python-skeleton/blob/master/CHANGELOG.md"
+[tool.ruff]
+src = [".", "example/*"]
+line-length = 120
+
+[tool.ruff.lint]
+# Added on top of the default rule set:
+# E501: code line length
+# W505: doc line length
+# D: doc string presence and layout
+# NPY: legacy NumPy random, and NumPy 2 deprecations
+extend-select = ["E501", "W505", "D", "NPY"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["a_package"]
+
+[tool.ruff.lint.per-file-ignores]
+# Unused imports
+"a_package/**/__init__.py" = ["F401"]
+# Doc-string
+"example/**" = ["D"]
+"test/**" = ["D"]
+# Skip maintenance scripts totally
+"maintenance/**" = ["ALL"]
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 100
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
