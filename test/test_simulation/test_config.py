@@ -103,3 +103,8 @@ def test_backfill_config():
     assert result["a"]["b"] == 1  # config takes precedence
     assert result["a"]["c"] == 2  # filled from defaults
     assert result["d"] == 3       # filled from defaults
+
+
+def test_load_config_requires_a_path():
+    with pytest.raises(ValueError, match="At least one config path"):
+        load_config()

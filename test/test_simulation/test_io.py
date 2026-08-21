@@ -7,6 +7,7 @@ import numpy as np
 
 from a_package.domain import Grid, factorize_closest
 from a_package.simulation.io import SimulationIO
+from test.test_domain.utils import generate_global_random_field
 
 
 @pytest.fixture
@@ -145,3 +146,17 @@ def test_save_trajectory_fields(grid, decomposition, io, comm_world):
 
     for i, expected in enumerate(localized_fields):
         np.testing.assert_array_almost_equal(result["field"][i], expected)
+
+
+def test_save_step_refuses_a_negative_index(io):
+    with pytest.raises(ValueError, match="Negative indexing"):
+        io.save_step(-1, single_values={"x": 0.1})
+
+
+def test_field_array_length_counts_the_stored_steps(grid, decomposition, io, comm_world):
+    for i in range(3):
+        field = generate_global_random_field((1, 1, *grid.nb_domain_grid_pts), comm_world)
+        io.save_step(i, fields={"field": grid.get_local(field)})
+
+    field_array = io.load_trajectory(field_names=["field"])["field"]
+    assert len(field_array) == 3
