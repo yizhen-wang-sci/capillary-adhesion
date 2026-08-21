@@ -18,21 +18,18 @@ def adapt_shape(array: np.ndarray) -> Field:
     """Insert the missing leading axes so an array satisfies the field convention.
 
     Args:
-        array: 2D, holding the element axes alone; 3D, missing the sub-point axis; or 4D,
-            following the convention.
+        array: 2D, holding the element axes alone; or 4D, following the convention.
 
     Returns:
-        A 4D view of a 2D or 3D input; or a 4D input, unchanged.
+        A 4D view of a 2D input; or a 4D input, unchanged.
 
     Raises:
-        ValueError: If the array is neither 2D, 3D, nor 4D.
+        ValueError: If the array is neither 2D nor 4D.
     """
     match(np.ndim(array)):
         case 2:
             return np.expand_dims(array, axis=(field_component_ax, field_sub_pt_ax))
-        case 3:
-            return np.expand_dims(array, axis=field_sub_pt_ax)
         case 4:
             return array
         case _:
-            raise ValueError(f"Support array of 2/3/4D")
+            raise ValueError(f"Array of {np.ndim(array)}D, expect 2D or 4D")
