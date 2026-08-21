@@ -46,8 +46,14 @@ class NpyIO:
 
         Returns:
             This rank's subdomain, shaped as the decomposition prescribes.
+
+        Raises:
+            FileNotFoundError: If the file is missing for any rank, raised on every rank
+                before the collective read begins.
         """
-        return NuMPI.IO.load_npy(self._to_full_path(name),
+        path = self._to_full_path(name)
+        self._sync_error_any_rank(None if path.is_file() else FileNotFoundError(f"No file {path}"))
+        return NuMPI.IO.load_npy(path,
                                  self._subdomain_locations,
                                  self._nb_subdomain_grid_pts,
                                  comm=self._comm)
@@ -77,6 +83,19 @@ class NpyIO:
         error = self._comm.bcast(error, root=0)
         if error is not None:
             raise error
+
+    def _sync_error_any_rank(self, error):
+        """Gather the error of every rank and raise the first one, on every rank.
+
+        Args:
+            error: The error caught on this rank, or None.
+
+        Raises:
+            Exception: The error of the lowest-numbered rank that caught one.
+        """
+        for error in self._comm.allgather(error):
+            if error is not None:
+                raise error
 
     def load_singular(self, name: str):
         """Read an array on rank 0 only.
@@ -127,12 +146,13 @@ class NpyIO:
             The array, identical on every rank.
 
         Raises:
-            Exception: Whatever `numpy.load` raised on rank 0, re-raised on every rank.
+            Exception: Whatever `numpy.load` raised on the lowest-numbered rank that
+                failed, re-raised on every rank.
         """
         data, error = None, None
         try:
             data = np.load(self._to_full_path(name), allow_pickle=False)
         except Exception as e:
             error = e
-        self._sync_error(error)
+        self._sync_error_any_rank(error)
         return data
