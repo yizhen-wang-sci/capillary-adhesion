@@ -1,15 +1,19 @@
-"""
-Equilibrium formulations for capillary contact problems.
-"""
+"""Equilibrium formulations for capillary contact problems."""
 
 from a_package.domain import Problem, OptimizerResult
 from .capillary import CapillaryBridge
 
 
 def formulate_constant_volume_phase_problem(capillary: CapillaryBridge, volume: float, explicit_phase_bounds: bool=True):
-    """
-    min energy(phase)
-    s.t. volume(phase) == volume
+    """Minimise energy(phase) subject to volume(phase) == volume.
+
+    Args:
+        capillary: The physics model providing the energy and its Jacobian w.r.t. phase field.
+        volume: The liquid volume to hold constant.
+        explicit_phase_bounds: Whether to pass the phase bounds to the optimizer.
+
+    Returns:
+        An adapted problem the optimizer can handle, whose dual variable is the pressure.
     """
 
     # Exploit the linearity in the volume Jacobian
@@ -30,6 +34,14 @@ def formulate_constant_volume_phase_problem(capillary: CapillaryBridge, volume: 
 
 
 def extract_pressure_in_constant_volume_solution(result: OptimizerResult):
+    """Read the pressure out of a solved constant-volume problem.
+
+    Args:
+        result: From solving a problem built by `formulate_constant_volume_phase_problem`.
+
+    Returns:
+        The pressure, divided by the surface tension.
+    """
     # NOTE: in NuMPI LinearConstraint, it defines lagrangian multiplier with "-lambda ...",
     # hence lambda and pressure have the same sign. For this problem, precisely,
     # lambda = pressure / surface tension
@@ -38,14 +50,23 @@ def extract_pressure_in_constant_volume_solution(result: OptimizerResult):
 
 
 def formulate_constant_pressure_phase_problem(capillary: CapillaryBridge, pressure: float, explicit_phase_bounds: bool=True):
-    """
-    min energy(phase) - pressure * volume(phase)
+    """Minimise energy(phase) - pressure * volume(phase).
+
+    Args:
+        capillary: The physics model providing the energy and its Jacobian w.r.t. phase field.
+        pressure: The pressure to hold constant, in units of the surface tension.
+        explicit_phase_bounds: Whether to pass the phase bounds to the optimizer.
+
+    Returns:
+        An adapted problem the optimizer can handle.
     """
 
     def helmholtz_potential():
+        """Free energy of the capillary minus the work done against the constant pressure."""
         return capillary.get_energy() - pressure * capillary.get_volume()
 
     def helmholtz_potential_jacobian():
+        """Derivative of `helmholtz_potential` with respect to the phase."""
         return capillary.get_energy_jacobian() - pressure * capillary.get_volume_jacobian()
 
     # Exploit the linearity in the volume Jacobian

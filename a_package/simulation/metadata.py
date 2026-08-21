@@ -1,8 +1,4 @@
-"""
-Metadata utilities for tracking simulation provenance.
-
-Provides hashing and timestamping.
-"""
+"""Metadata utilities for tracking simulation provenance."""
 
 import hashlib
 import json
@@ -16,7 +12,14 @@ logger = logging.getLogger(__name__)
 
 
 def compute_script_hash(script_path: Path | str):
-    """Compute SHA256 hash of script file content."""
+    """Compute SHA256 hash of script file content.
+
+    Args:
+        script_path: The script to hash, read as bytes.
+
+    Returns:
+        The hash as a hex string.
+    """
     content = Path(script_path).read_bytes()
     return hashlib.sha256(content).hexdigest()
 
@@ -24,7 +27,12 @@ def compute_script_hash(script_path: Path | str):
 def compute_config_hash(config: dict):
     """Compute SHA256 hash of config dict.
 
-    Note: TOML datetime values are not JSON serializable. Use string dates in config.
+    Args:
+        config: The configuration to hash. Keys are sorted first, so two dicts that differ
+            only in key order hash alike.
+
+    Returns:
+        The hash as a hex string.
     """
     # sort keys for a consistent hash
     content = json.dumps(config, sort_keys=True).encode()
@@ -32,18 +40,30 @@ def compute_config_hash(config: dict):
 
 
 def get_timestamp():
-    """Generate timestamp string (YYMMDD-HHMMSS)."""
+    """Generate timestamp string (YYMMDD-HHMMSS).
+
+    Returns:
+        The local time, in a form usable within a file or directory name.
+    """
     return time.strftime("%y%m%d-%H%M%S", time.localtime())
 
 
 def get_iso_time():
-    """Generate ISO 8601 timestamp (YYYY-MM-DDTHH:MM:SS)."""
+    """Generate ISO 8601 timestamp (YYYY-MM-DDTHH:MM:SS).
+
+    Returns:
+        The local time, carrying no timezone offset.
+    """
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
 
 
 def get_git_hash():
-    """Retrieve the current Git commit hash of the repository. If the package directory has uncommitted
-       changes, "-dirty" will be appended to the commit hash.
+    """Retrieve the current Git commit hash of the repository.
+
+    Returns:
+        The hash of the latest commit, with "-dirty" appended if the package directory has
+        uncommitted changes, which is also logged as a warning. None if `git` is missing or
+        a command failed.
     """
     package_root = Path(__file__).parent.parent.resolve()
     extra_args = dict(capture_output=True,  # capture stdout and stderr

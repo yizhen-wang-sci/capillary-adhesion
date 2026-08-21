@@ -1,6 +1,4 @@
-"""
-Solving the numerical optimization problem. No physics meaning in this file.
-"""
+"""Solving the numerical optimization problem. No physics meaning in this file."""
 
 import logging
 import timeit
@@ -22,17 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class Problem:
-    """Numerical optimization problem with optional constraints.
-
-    x* = arg min f(x)
-    s.t. A x - b == 0 (linear equality constraints)
-    s.t. g(x) == 0 (equality constraints)
-    s.t. x_lb <= x <= x_ub (simple bounds)
-
-    Accessing constraints not provided at instantiation raises AttributeError.
-    Return values are reshaped to the conventions optimizers expect.
-    So far, b, g, x_lb, and x_ub are assumed to be scalars.
-    """
+    """A minimisation of f(x), optionally subject to A x - b == 0, g(x) == 0, x_lb <= x <= x_ub."""
 
     def __init__(self,
                  get_x: Callable[[], np.ndarray],
@@ -47,6 +35,22 @@ class Problem:
                  x_ub: float | None = None,
                  is_zeroed: np.ndarray | None = None,
                  communicator=MPI.COMM_SELF):
+        """Store the model's callables, and whichever constraints were given.
+
+        Args:
+            get_x: Read the model's current x.
+            set_x: Write the model's x.
+            get_f: The objective at the current x.
+            get_f_Dx: The objective's gradient at the current x.
+            A: Jacobian of the linear equality constraint.
+            b: Right-hand side of the linear equality constraint.
+            get_g: The general equality constraint at the current x.
+            get_g_Dx: That constraint's gradient at the current x.
+            x_lb: Lower bound, applied to every entry of x.
+            x_ub: Upper bound, applied to every entry of x.
+            is_zeroed: Mask of entries held at zero.
+            communicator: Communicator spanning the ranks the unknowns are spread across.
+        """
         self._get_x = get_x
         self._set_x = set_x
         self._get_f = get_f
@@ -69,28 +73,33 @@ class Problem:
 
     @property
     def has_linear_constraints(self):
+        """Whether a linear equality constraint was given."""
         return hasattr(self, "_A") and hasattr(self, "_b")
 
     @property
     def has_equality_constraints(self):
+        """Whether a general equality constraint was given."""
         return hasattr(self, "_get_g") and hasattr(self, "_get_g_Dx")
 
     @property
     def has_bounds(self):
+        """Whether simple bounds were given."""
         return hasattr(self, "_x_lb") and hasattr(self, "_x_ub")
 
     @property
     def has_zeros(self):
+        """Whether a zero mask was given."""
         return hasattr(self, "_is_zero")
 
     def get_x(self):
+        """The model's current unknowns, ravelled."""
         return np.asarray(self._get_x()).ravel()
 
     def set_x(self, x):
         """Set x, skipping the underlying call when x is unchanged.
 
-        Caching matters because optimizers typically re-query f and its
-        gradient at the same point during backtracking.
+        Args:
+            x: The new unknowns, in the model's own shape.
         """
         is_changed = np.any(np.asarray(x).ravel() != self.get_x())
         is_changed = self.communicator.allreduce(is_changed, op=MPI.LOR)
@@ -98,35 +107,72 @@ class Problem:
             self._set_x(x)
 
     def get_f(self):
+        """The objective at the current x, as a scalar."""
         return np.asarray(self._get_f()).item()
 
     def get_f_Dx(self):
+        """The objective's gradient at the current x, ravelled."""
         return np.asarray(self._get_f_Dx()).ravel()
 
     @property
     def A(self):
+        """Jacobian of the linear equality constraint.
+
+        Raises:
+            AttributeError: If no linear equality constraint was given.
+        """
         return self._A
 
     @property
     def b(self):
+        """Right-hand side of the linear equality constraint.
+
+        Raises:
+            AttributeError: If no linear equality constraint was given.
+        """
         return self._b
 
     def get_g(self):
+        """The general equality constraint at the current x, as a scalar.
+
+        Raises:
+            AttributeError: If no general equality constraint was given.
+        """
         return np.asarray(self._get_g()).item()
 
     def get_g_Dx(self):
+        """That constraint's gradient at the current x, ravelled.
+
+        Raises:
+            AttributeError: If no general equality constraint was given.
+        """
         return np.asarray(self._get_g_Dx()).ravel()
 
     @property
     def x_lb(self):
+        """Lower bound on every entry of x.
+
+        Raises:
+            AttributeError: If no lower bound was given.
+        """
         return self._x_lb
 
     @property
     def x_ub(self):
+        """Upper bound on every entry of x.
+
+        Raises:
+            AttributeError: If no upper bound was given.
+        """
         return self._x_ub
 
     @property
     def is_zero(self):
+        """Mask of entries held at zero, ravelled.
+
+        Raises:
+            AttributeError: If no zero mask was given.
+        """
         return np.asarray(self._is_zero).ravel()
 
 
@@ -146,15 +192,41 @@ class OptimizerResult(TypedDict, total=False):
 
 
 class Optimizer(Protocol):
+    """The interface a solving strategy presents to a caller."""
 
     def solve_minimisation(self, problem: Problem, x0: np.ndarray, *args, callback=None, **kwargs) -> OptimizerResult:
-        pass
+        """Minimise the objective of `problem`, starting from `x0`.
+
+        Args:
+            problem: The problem to solve.
+            x0: Initial guess.
+            *args: Positional extras an implementation may take.
+            callback: Called once per iteration by the underlying solver.
+            **kwargs: Strategy-specific options.
+
+        Returns:
+            The result of the minimisation.
+        """
+        raise NotImplementedError
 
 
 class AugmentedLagrangian(Optimizer):
+    """Approximates the equality constraint by a penalty term, and the bounds by clipping."""
 
     def __init__(self, max_outer_loop: int=20, max_inner_iter: int = 1000, tol_gradient: float = 1e-6,
                  tol_eq_constraint: float = 1e-6, tol_creeping: float = 1e-12):
+        """Set the loop limits and the convergence tolerances.
+
+        Args:
+            max_outer_loop: Limit on the number of outer loops.
+            max_inner_iter: Iteration limit of one inner minimisation.
+            tol_gradient: Tolerance on the gradient of the Lagrangian.
+            tol_eq_constraint: Tolerance on the equality constraint.
+            tol_creeping: Tolerance on the relative decrease of the objective.
+
+        Raises:
+            ValueError: If `max_outer_loop` is negative.
+        """
         if max_outer_loop < 0:
             raise ValueError("Maximum number of loop must be non-negative.")
         self.max_outer_loop = max_outer_loop
@@ -171,11 +243,17 @@ class AugmentedLagrangian(Optimizer):
         self.bound_weight_multiplier = 2e-1
 
     def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
-        """
-        :param problem: Problem instance
-        :param x0: Initial guess.
-        :param kwargs: Additional parameters like lam0, alpha0, beta0, etc.
-        :return: OptimizerResult
+        """Minimise the objective by an outer loop over augmented Lagrangian sub-problems.
+
+        Args:
+            problem: The problem to solve.
+            x0: Initial guess, clipped into the bounds when there are any.
+            callback: Called once per iteration of the inner minimisation.
+            **kwargs: `lam0`, `alpha0` and `beta0`, the initial multiplier and penalty weights.
+
+        Returns:
+            The result of the minimisation, carrying `dual` and `final_penalty` when there is an
+            equality constraint.
         """
         lam0 = kwargs.pop("lam0", None)
         alpha0 = kwargs.pop("alpha0", None)
@@ -347,21 +425,19 @@ class AugmentedLagrangian(Optimizer):
 
 def solve_unconstrained(self, problem: Problem, x0: np.ndarray, max_iter: int, tol_gradient: float,
                         tol_creeping: float, callback=None):
-    """
-    Solve unconstrained minimization using L-BFGS.
+    """Minimise the objective by L-BFGS, with no constraint.
 
-    Parameters
-    ----------
-    problem : Problem
-        Problem instance.
-    x0 : np.ndarray
-        Initial guess.
-    max_iter : int
-        Maximum number of iterations.
+    Args:
+        self: Unused.
+        problem: The problem to solve.
+        x0: Initial guess. Its shape is restored on the returned x.
+        max_iter: Iteration limit.
+        tol_gradient: Tolerance on the projected gradient.
+        tol_creeping: Tolerance on the relative decrease of the objective.
+        callback: Called once per iteration by SciPy.
 
-    Returns
-    -------
-    SolverResult
+    Returns:
+        The result of the minimisation.
     """
     x_shape = x0.shape
     t_exec = -timeit.default_timer()
@@ -409,6 +485,16 @@ def solve_unconstrained(self, problem: Problem, x0: np.ndarray, max_iter: int, t
 
 
 def approx_eq_by_augmented_lagrangian(problem: Problem, lam: float, alpha: float):
+    """Reform the equality constraint into a penalty term on the objective.
+
+    Args:
+        problem: The constrained problem.
+        lam: Multiplier of the constraint.
+        alpha: Weight of the quadratic penalty.
+
+    Returns:
+        A problem minimising f + lam * g + 0.5 * alpha * g**2, carrying the bounds over.
+    """
 
     def get_augmented_lagrangian():
         g = problem.get_g()
@@ -428,6 +514,15 @@ def approx_eq_by_augmented_lagrangian(problem: Problem, lam: float, alpha: float
 
 
 def approx_bound_by_clipping(problem: Problem):
+    """Reform the bounds into clipping on x and projection on the gradient.
+
+    Args:
+        problem: The bounded problem.
+
+    Returns:
+        A problem whose x is clipped into the bounds, and whose gradient is zeroed where it
+        points out of them.
+    """
 
     def set_x_clipped(x: np.ndarray):
         problem.set_x(np.clip(x, problem.x_lb, problem.x_ub))
@@ -443,6 +538,15 @@ def approx_bound_by_clipping(problem: Problem):
 
 
 def approx_bound_by_squashing(problem: Problem, beta: float=1e-2):
+    """Reform the bounds into a squashing of an unbounded x, plus a barrier term.
+
+    Args:
+        problem: The bounded problem.
+        beta: Weight of the barrier term.
+
+    Returns:
+        A problem over the unbounded x, squashed into the bounds before reaching the model.
+    """
     # store the "free x" as extra states
     free_x = problem.get_x()
 
@@ -470,52 +574,96 @@ def approx_bound_by_squashing(problem: Problem, beta: float=1e-2):
 
 
 def squashing(x: np.ndarray, x_lb: float, x_ub: float):
+    """Map x into the interval (x_lb, x_ub) by a tanh centred on its midpoint.
+
+    Args:
+        x: The unbounded values.
+        x_lb: Lower bound.
+        x_ub: Upper bound.
+    """
     x_c = (x_ub + x_lb) / 2
     return (x_ub - x_lb) / 2 * np.tanh(x - x_c) + x_c
 
 
 def squashing_Dx(x: np.ndarray, x_lb: float, x_ub: float):
+    """Derivative of `squashing` with respect to x.
+
+    Args:
+        x: The unbounded values.
+        x_lb: Lower bound.
+        x_ub: Upper bound.
+    """
     x_c = (x_ub + x_lb) / 2
     return (x_ub - x_lb) / 2 * (1 - np.tanh(x - x_c)**2)
 
 
 def inverse_squashing(x: np.ndarray, x_lb: float, x_ub: float):
+    """Map x back out of the interval (x_lb, x_ub), the inverse of `squashing`.
+
+    Args:
+        x: The bounded values, clipped just inside the interval before inversion.
+        x_lb: Lower bound.
+        x_ub: Upper bound.
+    """
     x_c = (x_ub + x_lb) / 2
     clipped = np.clip(2 / (x_ub - x_lb) * (x - x_c), -0.999999, 0.999999)
     return np.arctanh(clipped) + x_c
 
 
 def barrier_squashed(x: np.ndarray, x_lb: float, x_ub: float):
+    """Quadratic barrier on the distance from the midpoint of the bounds.
+
+    Args:
+        x: The values to penalise.
+        x_lb: Lower bound.
+        x_ub: Upper bound.
+    """
     # barrier = (inverse_squashing(x, x_lb, x_ub) - x_c)**2
     x_c = (x_ub + x_lb) / 2
     return 0.5 * np.sum((x - x_c)**2)
 
 
 def barrier_squashed_Dx(x: np.ndarray, x_lb: float, x_ub: float):
+    """Derivative of `barrier_squashed` with respect to x.
+
+    Args:
+        x: The values to penalise.
+        x_lb: Lower bound.
+        x_ub: Upper bound.
+    """
     x_c = (x_ub + x_lb) / 2
     return x - x_c
 
 
 class ProjectedLbfgs(Optimizer):
-    """Can handle linear equality constraint and box inequality constraint.
-
-    Two convergence criteria are wired to ``NuMPI.Optimization.l_bfgs_projected``:
-
-    - ``tol_gradient`` (``gtol``) — infinity norm of the KKT-masked tangent
-      gradient. The classic projected-gradient criterion.
-    - ``tol_step`` (``xtol``) — infinity norm of the iterate step
-      ``max(abs(x_new - x_prev))``. Set to ``0.0`` (default) to disable.
-
-    The solver declares convergence as soon as **either** criterion is met.
-    """
+    """Hands a linear equality constraint and box bounds to NuMPI to enforce natively."""
 
     def __init__(self, max_inner_iter: int = 1000, tol_gradient: float = 1e-6,
                  tol_step: float = 0.0):
+        """Set the iteration limit and the two convergence tolerances.
+
+        Args:
+            max_inner_iter: Iteration limit handed to NuMPI.
+            tol_gradient: Tolerance on the infinity norm of the KKT-masked tangent gradient.
+            tol_step: Tolerance on the infinity norm of the iterate step. Zero disables it.
+        """
         self.max_inner_iter = max_inner_iter
         self.tol_gradient = tol_gradient
         self.tol_step = tol_step
 
     def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
+        """Minimise the objective subject to a linear equality constraint and bounds.
+
+        Args:
+            problem: The problem to solve.
+            x0: Initial guess. Its shape is restored on the returned x.
+            callback: Called once per iteration by NuMPI.
+            **kwargs: To match the `Optimizer` interface.
+
+        Returns:
+            The result of the minimisation, carrying `dual`, the multiplier of the linear
+            constraint.
+        """
         linear_constraint = NuMPI.Optimization.LinearConstraint(problem.A, problem.b, NuMPI.Tools.Reduction(problem.communicator))
 
         def compute_f(x):
@@ -556,13 +704,30 @@ class ProjectedLbfgs(Optimizer):
 
 
 class BoundedLbfgs(Optimizer):
-    """Can handle linear equality constraint and box inequality constraint."""
+    """Hands box bounds to NuMPI to enforce natively, without an equality constraint."""
 
     def __init__(self, max_inner_iter: int = 1000, tol_gradient: float = 1e-6):
+        """Set the iteration limit and the gradient tolerance.
+
+        Args:
+            max_inner_iter: Iteration limit handed to NuMPI.
+            tol_gradient: Tolerance on the projected gradient.
+        """
         self.max_inner_iter = max_inner_iter
         self.tol_gradient = tol_gradient
 
     def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
+        """Minimise the objective subject to box bounds only.
+
+        Args:
+            problem: The problem to solve.
+            x0: Initial guess. Its shape is restored on the returned x.
+            callback: Called once per iteration by NuMPI.
+            **kwargs: To match the `Optimizer` interface.
+
+        Returns:
+            The result of the minimisation.
+        """
 
         def compute_f(x):
             problem.set_x(x)

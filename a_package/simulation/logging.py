@@ -1,12 +1,4 @@
-"""
-Logging configuration.
-
-Used in scripts (including conftest.py) to configure logging via
-`setup_logging`. Library modules should simply do:
-
-    import logging
-    logger = logging.getLogger(__name__)
-"""
+"""Logging configuration, called by scripts (including conftest.py)."""
 
 import logging
 import sys
@@ -23,69 +15,46 @@ _adjusted_loggers: set[str] = set()
 
 
 class _StreamToLogger:
-    """File-like shim that redirects writes (e.g. from ``print``) into a logger.
-
-    Needed because ``print`` bypasses the logging module entirely, so its
-    output never reaches a file handler set up via `setup_logging`.
-    """
+    """File-like shim that redirects writes (e.g. from `print`) into a logger."""
 
     def __init__(self, logger: logging.Logger, level: int):
+        """Bind the shim to a logger and a level.
+
+        Args:
+            logger: Where the writes are sent.
+            level: Level each write is logged at.
+        """
         self._logger = logger
         self._level = level
 
     def write(self, message: str) -> None:
+        """Log `message`, dropping it if it is blank once stripped.
+
+        Args:
+            message: The text to log.
+        """
         message = message.rstrip()
         if message:
             # stacklevel=2: attribute the record to print()'s caller, not to write() itself
             self._logger.log(self._level, message, stacklevel=2)
 
     def flush(self) -> None:
+        """Accept `flush` to complete the file-like interface."""
         pass
 
 
 def setup_logging(test: bool = False, file: str | Path | None = None, *,
                   modules: list[str] | None = None):
-    """Configure logging. Safe to call multiple times. See the behavior matrix
-    below for exactly what each argument combination does.
+    """Configure logging. Safe to call multiple times.
 
-    Parameters
-    ----------
-    test
-        Verbose console format and raises level to DEBUG (scoped to `modules`
-        if given). Default False: brief format, level INFO.
-    file
-        Path to also append everything to, always verbose. Default None:
-        console only. Attached to root, or to `modules` if given (scoped).
-    modules
-        Names of loggers to scope DEBUG level and/or file attachment to.
-        Any override from a *previous* call that isn't repeated here is
-        undone first, so each call's effect is self-contained.
-
-    Notes
-    -----
-    The file handler always appends (never truncates), since the same `file`
-    path may be opened by more than one process (e.g. every MPI rank calling
-    `setup_logging`, not just rank 0): truncating on open would let whichever
-    process opens last silently wipe out what earlier ones already wrote.
-    Remove the file (or use a new path) first if a fresh log is wanted.
-
-    `print()` always lands on the real stdout, formatted per the console
-    format, in every combination below — `file`/`modules` only ever add a
-    *second* destination (the file) for it, never redirect it away from
-    stdout.
-
-    Behavior matrix (test / file / modules, each given or not):
-
-        test   file  modules | level                          | console | file contents
-        -----  ----  ------- | ------------------------------ | ------- | --------------------------------------------
-        false   -      -     | root INFO                      | brief   | (no file)
-        false   -      yes   | root INFO                      | brief   | (no file)
-        false  yes     -     | root INFO                      | brief   | everything (INFO+) + print, verbose
-        false  yes     yes   | root INFO                      | brief   | only named modules' INFO+ + print, verbose
-        true    -      -     | root DEBUG                     | verbose | (no file)
-        true    -      yes   | named modules DEBUG, root INFO | verbose | (no file)
-        true   yes     -     | root DEBUG                     | verbose | everything (DEBUG+) + print, verbose
-        true   yes     yes   | named modules DEBUG, root INFO | verbose | only named modules' DEBUG+ + print, verbose
+    Args:
+        test: Verbose console format and level DEBUG. Default False: brief format, level
+            INFO.
+        file: Path to append everything to, always verbose. Appended to, never truncated.
+            Default None: console only.
+        modules: Names of the loggers that DEBUG level and the file are scoped to. Default
+            None: the whole app. A scope set by a previous call and not repeated here is
+            undone first.
     """
     root = logging.getLogger()
     print_logger = logging.getLogger("print")

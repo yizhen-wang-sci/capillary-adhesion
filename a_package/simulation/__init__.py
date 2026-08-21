@@ -1,3 +1,5 @@
+"""Running a simulation and storing its results."""
+
 from .io import SimulationIO
 from .dirs import SourceDir, RunDir, RecordDir, TaggedIndex, ParameterCombo, NamingConvention
 from .logging import setup_logging

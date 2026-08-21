@@ -1,3 +1,5 @@
+"""Standardized names for the quantities a simulation stores."""
+
 import sys
 if sys.version_info >= (3, 11):
     from enum import StrEnum
