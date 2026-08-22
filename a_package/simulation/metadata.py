@@ -69,6 +69,7 @@ def get_git_hash():
         "capture_output": True,  # capture stdout and stderr
         "text": True,  # decode to str
         "cwd": package_root,  # run in package root
+        "timeout": 30,  # seconds
     }
 
     try:
@@ -83,6 +84,6 @@ def get_git_hash():
         if is_dirty:
             commit_hash += "-dirty"
         return commit_hash
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
         logger.warning("Failed to retrieve Git commit hash.")
         return None

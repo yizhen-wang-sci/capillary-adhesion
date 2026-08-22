@@ -31,6 +31,7 @@ def test_git_hash_of_a_modified_package_is_marked_dirty(caplog):
     "error",
     [
         subprocess.CalledProcessError(returncode=128, cmd=["git"]),
+        subprocess.TimeoutExpired(cmd=["git"], timeout=30),
         FileNotFoundError("git"),
     ],
 )
