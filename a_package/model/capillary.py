@@ -81,7 +81,8 @@ class PhaseMixture:
         """
         liquid_vapour = self.compute_local_perimeter(phase, phase_grad) * gap * self._curv * self._epsilon
         # FIXME: switch on whether to use small-slope-approx.?
-        # upper and lower surface, hence the 2. (height gradient square is one order higher and omitted)
+        # upper and lower surface, hence the 2.
+        # (height gradient square is one order higher and omitted)
         liquid_solid = 2.0 * phase
         return liquid_vapour + self._gamma * liquid_solid
 

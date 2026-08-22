@@ -112,19 +112,21 @@ class Quadrature(ABC):
 class NodalQuadrature(Quadrature):
     """Quadrature by summing up nodal values."""
 
-    quad_pt_coords = [[0.0, 0.0]]
-    quad_pt_weights = [1.0]
+    quad_pt_coords: ClassVar[np.ndarray] = np.array([[0.0, 0.0]])
+    quad_pt_weights: ClassVar[np.ndarray] = np.array([1.0])
 
 
 class CentroidQuadrature(Quadrature):
     """Quadrature with two points, each located at the centroid of a triangular element."""
 
-    quad_pt_coords = [[1 / 3, 1 / 3], [2 / 3, 2 / 3]]
-    quad_pt_weights = [0.5, 0.5]
+    quad_pt_coords: ClassVar[np.ndarray] = np.array([[1 / 3, 1 / 3], [2 / 3, 2 / 3]])
+    quad_pt_weights: ClassVar[np.ndarray] = np.array([0.5, 0.5])
 
 
 class ThreePtQuadrature(Quadrature):
     """Quadrature with three points per triangle, so six per pixel."""
 
-    quad_pt_coords = [[4 / 6, 1 / 6], [1 / 6, 1 / 6], [1 / 6, 4 / 6], [2 / 6, 5 / 6], [5 / 6, 5 / 6], [5 / 6, 2 / 6]]
-    quad_pt_weights = [1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6]
+    quad_pt_coords: ClassVar[np.ndarray] = np.array(
+        [[4 / 6, 1 / 6], [1 / 6, 1 / 6], [1 / 6, 4 / 6], [2 / 6, 5 / 6], [5 / 6, 5 / 6], [5 / 6, 2 / 6]]
+    )
+    quad_pt_weights: ClassVar[np.ndarray] = np.array([1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6])

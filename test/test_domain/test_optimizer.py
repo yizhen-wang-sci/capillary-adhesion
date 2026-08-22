@@ -5,8 +5,8 @@ from a_package.domain.optimizer import Problem, ProjectedLbfgs
 
 
 def test_problem(decompose_stitch, comm_world):
-    """A testing problem where the objective is to minimize the gradient, while keeping the sum quantity constant,
-    with a sinusoidal field as the initial guess."""
+    """A testing problem where the objective is to minimize the gradient, while keeping the
+    sum quantity constant, with a sinusoidal field as the initial guess."""
     nb_pts = (8, 8)
     grid = Grid(nb_pts)
 

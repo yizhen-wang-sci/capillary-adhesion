@@ -43,7 +43,8 @@ class Grid:
         self.element_area = np.multiply.reduce(self.element_sizes, initial=1.0)
 
         if decomposition is None:
-            # default to no decomposition, where all processes have its grid representing the same global domain.
+            # default to no decomposition, where all processes have its grid representing
+            # the same global domain.
             decomposition = muGrid.CartesianDecomposition(
                 muGrid.Communicator(MPI.COMM_SELF),
                 list(self.nb_domain_grid_pts),
@@ -118,7 +119,8 @@ class Grid:
         return field[(..., *self.decomposition.icoords)]
 
     # FIXME: now there shall be a difference between local and global indices
-    # where the global indices are from decomposition.subdomain_locations and do not exceed the nb_domain_grid_pts.
+    # where the global indices are from decomposition.subdomain_locations and do not exceed
+    # the nb_domain_grid_pts.
     # While the local ones are simply from 0 to decomposition.nb_subdomain_grid_pts (endpoint).
 
     # =========================================================================

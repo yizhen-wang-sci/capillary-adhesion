@@ -66,7 +66,9 @@ class SimulationIO:
 
         return result
 
-    def save_step(self, index: int, fields: dict[str, Field] | None = None, single_values: dict[str, float] | None = None):
+    def save_step(
+        self, index: int, fields: dict[str, Field] | None = None, single_values: dict[str, float] | None = None
+    ):
         """Store the quantities of one step.
 
         Args:
@@ -136,7 +138,9 @@ class SimulationIO:
 
         return result
 
-    def save_trajectory(self, fields: dict[str, list[Field]] | None = None, single_values: dict[str, np.ndarray] | None = None):
+    def save_trajectory(
+        self, fields: dict[str, list[Field]] | None = None, single_values: dict[str, np.ndarray] | None = None
+    ):
         """Store whole trajectories at once.
 
         Args:
@@ -206,7 +210,8 @@ class _FieldArray:
         Returns:
             That step, as this rank's subdomain.
         """
-        # FIXME: in order for __iter__ to work, this shall capture an error and raise it as IndexError.
+        # FIXME: in order for __iter__ to work, this shall capture an error
+        # and raise it as IndexError.
         return self._io.load_distributed(_format_filename(self._name, index))
 
     def __setitem__(self, index: int, value):

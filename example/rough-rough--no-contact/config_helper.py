@@ -2,7 +2,6 @@
 Configuration helpers for parallel_rough_rigid_contact simulations.
 """
 
-
 import numpy as np
 
 from a_package.domain import Grid, ProjectedLbfgs

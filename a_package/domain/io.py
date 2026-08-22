@@ -92,9 +92,9 @@ class NpyIO:
         Raises:
             Exception: The error of the lowest-numbered rank that caught one.
         """
-        for error in self._comm.allgather(error):
-            if error is not None:
-                raise error
+        for gathered in self._comm.allgather(error):
+            if gathered is not None:
+                raise gathered
 
     def load_singular(self, name: str):
         """Read an array on rank 0 only.
@@ -112,7 +112,7 @@ class NpyIO:
         if self._comm.rank == 0:
             try:
                 data = np.load(self._to_full_path(name), allow_pickle=False)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 error = e
         self._sync_error(error)
         return data
@@ -131,7 +131,7 @@ class NpyIO:
         if self._comm.rank == 0:
             try:
                 np.save(self._to_full_path(name), data)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 error = e
         self._sync_error(error)
 
@@ -151,7 +151,7 @@ class NpyIO:
         data, error = None, None
         try:
             data = np.load(self._to_full_path(name), allow_pickle=False)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             error = e
         self._sync_error_any_rank(error)
         return data

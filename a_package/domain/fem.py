@@ -54,7 +54,8 @@ class FirstOrderElement:
                     pixel_op_gradient[(i_component, i_subpt, *coords)] = coeff / element_sizes[i_component]
         self._op_gradient = muGrid.GenericLinearOperator(offset, pixel_op_gradient)
 
-        # FIXME: the below shall be faster, but it seems using a different convention, which makes them not the same
+        # FIXME: the below shall be faster, but it seems using a different convention,
+        # which makes them not the same
         # self._op_gradient = muGrid.FEMGradientOperator(spatial_dim=2, grid_spacing=element_sizes)
 
     def interpolate_value(self, field_in: muGrid.Field, field_out: muGrid.Field):

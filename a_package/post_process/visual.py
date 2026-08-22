@@ -147,7 +147,8 @@ def divide_into_segments(x, y, *, nb_segments=None):
     # Round up so boundary indices are integers
     boundary_idxs = np.round(np.linspace(0, x.size - 1, nb_segments + 1)).astype(int)
 
-    # Plus 1 at stop indices so it includes the ending point, which results in continuous line segments
+    # Plus 1 at stop indices so it includes the ending point,
+    # which results in continuous line segments
     return [
         np.column_stack(
             [

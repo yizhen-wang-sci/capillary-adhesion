@@ -153,7 +153,7 @@ def solve_constant_volume(original_shape, contact, capillary, optimizer, traject
         print(f"[rank{comm_world.rank}] It took {solution['nit']} iterations.")
 
         phase_local = solution["x"].reshape(original_shape)
-        pressure = pressure = extract_pressure_in_constant_volume_solution(solution)
+        pressure = extract_pressure_in_constant_volume_solution(solution)
 
         yield i_step, separation, gap_local, phase_local, pressure
 

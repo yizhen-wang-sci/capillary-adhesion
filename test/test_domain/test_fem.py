@@ -54,7 +54,8 @@ def test_ref_impl_gradient(mock_grid):
     lx, ly = mock_grid.element_sizes
     Lx, Ly = mock_grid.domain_lengths
     value = 0.5 * (xm - 0.5 * Lx) ** 2 + 0.5 * (ym - 0.5 * Ly) ** 2
-    # the implemented gradient is based on a linear polynomial, hence shift the evaluation point to the element center.
+    # the implemented gradient is based on a linear polynomial,
+    # hence shift the evaluation point to the element center.
     expected_gradient = np.stack([(xm + 0.5 * lx) - 0.5 * Lx, (ym + 0.5 * ly) - 0.5 * Ly], axis=0)
 
     fe = RefFirstOrderElement(mock_grid, [[0.0, 0.0]])

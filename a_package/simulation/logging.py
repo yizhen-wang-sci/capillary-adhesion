@@ -1,5 +1,6 @@
 """Logging configuration, called by scripts (including conftest.py)."""
 
+import contextlib
 import logging
 import sys
 from pathlib import Path
@@ -62,10 +63,8 @@ def setup_logging(test: bool = False, file: str | Path | None = None, *, modules
     for logger in (root, print_logger, *(logging.getLogger(name) for name in _adjusted_loggers)):
         for handler in list(logger.handlers):
             logger.removeHandler(handler)
-            try:
+            with contextlib.suppress(Exception):
                 handler.close()
-            except Exception:
-                pass
     print_logger.propagate = False
 
     # Undo any previous call's per-module DEBUG level overrides

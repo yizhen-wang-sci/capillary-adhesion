@@ -351,10 +351,15 @@ class SourceDir(_Dir):
         return dest_dir
 
 
+_DEFAULT_RECORD_NAMING = ParameterCombo()
+
+
 class RunDir(_Dir):
     """A simulation run directory: scripts, configs, and its execution records."""
 
-    def __init__(self, path: str | Path, *, exist_ok: bool = True, record_naming: NamingConvention = ParameterCombo()):
+    def __init__(
+        self, path: str | Path, *, exist_ok: bool = True, record_naming: NamingConvention = _DEFAULT_RECORD_NAMING
+    ):
         """Open a run directory, fixing the convention its records are named by.
 
         Args:
