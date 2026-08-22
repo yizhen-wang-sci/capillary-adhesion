@@ -1,6 +1,7 @@
 """
 Tests of the `storing.py` file.
 """
+
 import numpy as np
 import pytest
 

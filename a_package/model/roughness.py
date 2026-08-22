@@ -14,6 +14,7 @@ from a_package.domain import Grid
 @dc.dataclass(init=True)
 class SelfAffineRoughness:
     """Parameters defining self-affine roughness spectrum."""
+
     C0: float
     """Prefactor."""
     H: float
@@ -23,7 +24,7 @@ class SelfAffineRoughness:
     rolls off."""
     qS: float
     """The (angular) wavenumber above which the PSD is negligible."""
-    qT: float = 2*np.pi
+    qT: float = 2 * np.pi
     """The (angular) wavenumber below which the PSD is terminated. Defaults to 2π, one
     cycle over unit length."""
 
@@ -71,8 +72,10 @@ class SelfAffineRoughness:
         Args:
             value: The RMS height to match.
         """
-        cc = 1 - (self.qT /self.qR)**2
-        self.C0 = 4 * np.pi * self.H * value ** 2 / ((1 + self.H * cc) * self.qR**(-2*self.H) - self.qS**(-2*self.H))
+        cc = 1 - (self.qT / self.qR) ** 2
+        self.C0 = (
+            4 * np.pi * self.H * value**2 / ((1 + self.H * cc) * self.qR ** (-2 * self.H) - self.qS ** (-2 * self.H))
+        )
 
     def correct_prefactor_by_rms_slope(self, value: float):
         """Set the prefactor `C0` so the spectrum has a given RMS slope.
@@ -80,9 +83,14 @@ class SelfAffineRoughness:
         Args:
             value: The RMS slope to match.
         """
-        cc = 1 - (self.qT /self.qR)**4
-        self.C0 = 4 * np.pi * (1 - self.H) * value ** 2 / (-0.5 * (1 + self.H * cc) * self.qR**(2-2*self.H)
-                                                           + self.qS**(2-2*self.H))
+        cc = 1 - (self.qT / self.qR) ** 4
+        self.C0 = (
+            4
+            * np.pi
+            * (1 - self.H)
+            * value**2
+            / (-0.5 * (1 + self.H * cc) * self.qR ** (2 - 2 * self.H) + self.qS ** (2 - 2 * self.H))
+        )
 
     def generate_height_profile(self, grid: Grid, seed: int | None = None):
         """Generate a height profile over the spatial domain of a grid.
@@ -101,8 +109,9 @@ class SelfAffineRoughness:
         return height
 
 
-def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, seed: int | None = None,
-                  random_amplitude: bool=False):
+def psd_to_height(
+    psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, seed: int | None = None, random_amplitude: bool = False
+):
     """Construct a height profile based on the given power spectral density (PSD).
 
     Args:
@@ -157,7 +166,7 @@ def generate_phasor_2D_random(shape, seed=None):
     rng = random.default_rng(seed)
 
     # Random phase angle following uniform distribution for half of the spectrum
-    phase_angle[:, 0:ny // 2 + 1] = rng.uniform(-np.pi, np.pi, (nx, ny // 2 + 1))
+    phase_angle[:, 0 : ny // 2 + 1] = rng.uniform(-np.pi, np.pi, (nx, ny // 2 + 1))
 
     # As the result of real valued signal, the phase spectrum must "hermitian". Due to cyclic, that means
     # be skew-symmetric around (nx / 2, ny / 2): phase[nx - ix, ny - iy] = -phase[ix, iy]
@@ -167,18 +176,18 @@ def generate_phasor_2D_random(shape, seed=None):
     phase_angle[0, 0] = 0
 
     # Half x-axis 0 < x < nx/2, y=0 maps to nx > x > nx/2, y = ny ==in discrete cycles==> nx > x > nx/2, y = 0
-    phase_angle[-1:nx // 2:-1, 0] = -phase_angle[1:nx // 2 + nx % 2, 0]
+    phase_angle[-1 : nx // 2 : -1, 0] = -phase_angle[1 : nx // 2 + nx % 2, 0]
     if nx % 2 == 0:
         phase_angle[nx // 2, 0] = 0
 
     # Half y-axis x=0, 0 < y < ny/2 maps to x=nx, ny > y > ny/2 ==in discrete cycles==> x=0, ny > y > ny/2
-    phase_angle[0, -1:ny // 2:-1] = -phase_angle[0, 1:ny // 2 + ny % 2]
+    phase_angle[0, -1 : ny // 2 : -1] = -phase_angle[0, 1 : ny // 2 + ny % 2]
     if ny % 2 == 0:
         phase_angle[0, ny // 2] = 0
 
     if ny % 2 == 0:
         # Half x-axis at y-Nyquist 0 < x < nx/2, y=ny/2 maps to nx > x > nx/2, y=ny/2
-        phase_angle[-1:nx // 2:-1, ny // 2] = -phase_angle[1:nx // 2 + nx % 2, ny // 2]
+        phase_angle[-1 : nx // 2 : -1, ny // 2] = -phase_angle[1 : nx // 2 + nx % 2, ny // 2]
         if nx % 2 == 0:
             phase_angle[nx // 2, ny // 2] = 0
 
@@ -187,6 +196,6 @@ def generate_phasor_2D_random(shape, seed=None):
     # - Half y-axis at x-Nyquist x=nx/2, 0 < y < ny/2 maps to x=nx/2, ny > y > ny/2
     # - Quadrant nx > x > nx/2, 0 < y < ny/2 maps to 0 < x < nx/2, ny > y > ny/2
     # Hence the region 0 < x < nx, 0 < y < ny/2 maps to nx > x > 0, ny > y > ny/2
-    phase_angle[-1:0:-1, -1:ny // 2:-1] = -phase_angle[1:, 1:ny // 2 + ny % 2]
+    phase_angle[-1:0:-1, -1 : ny // 2 : -1] = -phase_angle[1:, 1 : ny // 2 + ny % 2]
 
     return np.exp(1j * phase_angle)

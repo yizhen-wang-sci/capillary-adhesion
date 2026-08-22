@@ -18,7 +18,7 @@ show_me_plot = False
 
 @pytest.fixture
 def mock_decomposed_grid():
-    grid = Grid([3, 3], [3., 3.])
+    grid = Grid([3, 3], [3.0, 3.0])
     nb_subdomains = factorize_closest(MPI.COMM_WORLD.Get_size(), 2)
     grid.decompose(nb_subdomains, (1, 1), communicator=MPI.COMM_WORLD)
     return grid
@@ -41,7 +41,7 @@ def sphere_flat(mock_decomposed_grid):
     R = 10 * np.sqrt(np.sum(np.square(mock_decomposed_grid.element_sizes)))
     Lx, Ly = mock_decomposed_grid.domain_lengths
     xm, ym = mock_decomposed_grid.form_spatial_mesh()
-    h = -np.sqrt(np.clip(R**2 - (xm - 0.5*Lx)**2 - (ym - 0.5*Ly)**2, 0, np.inf))
+    h = -np.sqrt(np.clip(R**2 - (xm - 0.5 * Lx) ** 2 - (ym - 0.5 * Ly) ** 2, 0, np.inf))
     # Set the tip center as the unit height.
     return h - h.min() + 1
 
@@ -65,7 +65,7 @@ def inner_circle_field(mock_decomposed_grid):
     xm, ym = mock_decomposed_grid.form_spatial_mesh()
     Lx, Ly = mock_decomposed_grid.domain_lengths
     phase = np.zeros(mock_decomposed_grid.nb_domain_grid_pts)
-    inner = (xm/Lx)**2 + (ym/Ly)**2 <= 0.5**2
+    inner = (xm / Lx) ** 2 + (ym / Ly) ** 2 <= 0.5**2
     phase[inner] = 1.0
     return phase
 
@@ -171,7 +171,9 @@ def test_energy_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, tes
     capillary.set_phase(mock_decomposed_grid.get_local(test_field))
     impl_jacobian = capillary.get_energy_jacobian()
 
-    assert_jacobian_correct(impl_jacobian, mock_decomposed_grid.get_local(numeric_jacobian), small_steps, show_plot=show_me_plot)
+    assert_jacobian_correct(
+        impl_jacobian, mock_decomposed_grid.get_local(numeric_jacobian), small_steps, show_plot=show_me_plot
+    )
 
 
 def test_volume_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, test_field, comm_world, small_steps):
@@ -189,4 +191,6 @@ def test_volume_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, tes
     capillary.set_phase(mock_decomposed_grid.get_local(test_field))
     impl_jacobian = capillary.get_volume_jacobian()
 
-    assert_jacobian_correct(impl_jacobian, mock_decomposed_grid.get_local(numeric_jacobian), small_steps, show_plot=show_me_plot)
+    assert_jacobian_correct(
+        impl_jacobian, mock_decomposed_grid.get_local(numeric_jacobian), small_steps, show_plot=show_me_plot
+    )

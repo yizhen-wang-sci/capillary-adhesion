@@ -1,6 +1,7 @@
 """
 Configuration helpers for parallel_rough_rigid_contact simulations.
 """
+
 from typing import Any
 
 import numpy as np
@@ -9,7 +10,7 @@ from a_package.domain import Grid, ProjectedLbfgs
 from a_package.model import PhaseMixture
 
 
-__all__ = ['build_grid', 'build_phase_mixture', 'build_optimizer', 'build_trajectory']
+__all__ = ["build_grid", "build_phase_mixture", "build_optimizer", "build_trajectory"]
 
 
 def build_grid(config: dict):
@@ -33,8 +34,9 @@ def build_phase_mixture(config: dict):
 def build_optimizer(config: dict):
     """Build solver from configuration."""
     section = config["optimizer"]
-    return ProjectedLbfgs(max_inner_iter=section["max_nb_iters"], tol_gradient=section["tol_gradient"],
-                          tol_step=section["tol_step"])
+    return ProjectedLbfgs(
+        max_inner_iter=section["max_nb_iters"], tol_gradient=section["tol_gradient"], tol_step=section["tol_step"]
+    )
 
 
 def build_trajectory(config: dict):

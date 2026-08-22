@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class Quadrature(ABC):
     """An integral approximated as a weighted sum of values at the quadrature points."""
 
-    quad_pt_coords:  ClassVar[np.ndarray]
+    quad_pt_coords: ClassVar[np.ndarray]
     """Coordinates of the quadrature points within a unit pixel, one row each. Read-only."""
     quad_pt_weights: ClassVar[np.ndarray]
     """Weight of each quadrature point, summing to 1. Read-only."""
@@ -42,15 +42,17 @@ class Quadrature(ABC):
             raise TypeError(f"{cls.__name__} must define class attribute(s): {', '.join(missing)}")
 
         # Value validation
-        coords  = np.asarray(cls.quad_pt_coords,  dtype=float)
+        coords = np.asarray(cls.quad_pt_coords, dtype=float)
         weights = np.asarray(cls.quad_pt_weights, dtype=float)
         if coords.ndim != 2:
             raise ValueError(f"{cls.__name__}: quad_pt_coords must be 2-D, got shape {coords.shape}")
         if weights.ndim != 1:
             raise ValueError(f"{cls.__name__}: quad_pt_weights must be 1-D, got shape {weights.shape}")
         if coords.shape[0] != weights.size:
-            raise ValueError(f"{cls.__name__}: number of quadrature points ({coords.shape[0]}) must "
-                             f"match number of weights ({weights.size})")
+            raise ValueError(
+                f"{cls.__name__}: number of quadrature points ({coords.shape[0]}) must "
+                f"match number of weights ({weights.size})"
+            )
         if not np.isclose(weights.sum(), 1.0):
             raise ValueError(f"{cls.__name__}: quadrature weights must sum to 1, got {weights.sum()}")
 
@@ -111,17 +113,20 @@ class Quadrature(ABC):
 
 class NodalQuadrature(Quadrature):
     """Quadrature by summing up nodal values."""
-    quad_pt_coords = [[0., 0.]]
-    quad_pt_weights = [1.]
+
+    quad_pt_coords = [[0.0, 0.0]]
+    quad_pt_weights = [1.0]
 
 
 class CentroidQuadrature(Quadrature):
     """Quadrature with two points, each located at the centroid of a triangular element."""
+
     quad_pt_coords = [[1 / 3, 1 / 3], [2 / 3, 2 / 3]]
     quad_pt_weights = [0.5, 0.5]
 
 
 class ThreePtQuadrature(Quadrature):
     """Quadrature with three points per triangle, so six per pixel."""
+
     quad_pt_coords = [[4 / 6, 1 / 6], [1 / 6, 1 / 6], [1 / 6, 4 / 6], [2 / 6, 5 / 6], [5 / 6, 5 / 6], [5 / 6, 2 / 6]]
     quad_pt_weights = [1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6]

@@ -62,22 +62,20 @@ def test_problem(decompose_stitch, comm_world):
         fem.propag_sens_value(field_quadr_3, field_quadr_3_back_sens)
         return field_quadr_3_back_sens.s[0, 0, ...]
 
-    problem = Problem(set_x=set_field, get_x=get_field, get_f=objective, get_f_Dx=objective_gradient,
-                      A=constraint_jacobian().ravel(), b=grid.element_area * np.sum(mean_field),
-                      communicator=comm_world)
+    problem = Problem(
+        set_x=set_field,
+        get_x=get_field,
+        get_f=objective,
+        get_f_Dx=objective_gradient,
+        A=constraint_jacobian().ravel(),
+        b=grid.element_area * np.sum(mean_field),
+        communicator=comm_world,
+    )
     optimizer = ProjectedLbfgs(max_inner_iter=10)
 
     result = optimizer.solve_minimisation(problem, x0=grid.get_local(sinusoidal_field))
-    solved_field = result['x'].reshape(decomposition.nb_subdomain_grid_pts)
+    solved_field = result["x"].reshape(decomposition.nb_subdomain_grid_pts)
     print(result)
-    assert result['success']
-    assert result['nit'] < optimizer.max_inner_iter
+    assert result["success"]
+    assert result["nit"] < optimizer.max_inner_iter
     np.testing.assert_allclose(solved_field, grid.get_local(mean_field))
-
-
-
-
-
-
-
-

@@ -13,10 +13,24 @@ import numpy as np
 from mpi4py import MPI
 
 from a_package.domain import Grid, factorize_closest
-from a_package.model import CapillaryBridge, RigidContact, Term, formulate_constant_volume_phase_problem, \
-    extract_pressure_in_constant_volume_solution
-from a_package.simulation import (SimulationIO, SourceDir, RunDir, setup_logging, load_config,
-                                  save_config, unroll_sweep, get_iso_time, get_git_hash)
+from a_package.model import (
+    CapillaryBridge,
+    RigidContact,
+    Term,
+    formulate_constant_volume_phase_problem,
+    extract_pressure_in_constant_volume_solution,
+)
+from a_package.simulation import (
+    SimulationIO,
+    SourceDir,
+    RunDir,
+    setup_logging,
+    load_config,
+    save_config,
+    unroll_sweep,
+    get_iso_time,
+    get_git_hash,
+)
 
 from config_helper import *
 
@@ -67,16 +81,18 @@ def main():
         contact.set_mean_separation(z_min)
         gap_at_min = contact.get_gap()
         capillary.set_gap(gap_at_min)
-        volume_percent = config['constraint']['liquid_volume_percent']
+        volume_percent = config["constraint"]["liquid_volume_percent"]
         liquid_volume = capillary.get_max_volume() * (volume_percent / 100.0)
 
-        print(f"Problem size: {'x'.join(str(dim) for dim in grid.nb_domain_grid_pts)}. "
-              f"Simulating for {len(trajectory)} separation values at volume={liquid_volume}({volume_percent}%)...")
+        print(
+            f"Problem size: {'x'.join(str(dim) for dim in grid.nb_domain_grid_pts)}. "
+            f"Simulating for {len(trajectory)} separation values at volume={liquid_volume}({volume_percent}%)..."
+        )
 
         # records
         record = None
         if comm_world.rank == 0:
-            theta = config['capillary']['contact_angle_degree']
+            theta = config["capillary"]["contact_angle_degree"]
             record = run.new_record(theta=theta)
             save_config(config, record.input)
         record = comm_world.bcast(record)
@@ -88,15 +104,29 @@ def main():
 
         # IO and save setup
         io = SimulationIO(record.data, decomposition, communicator=comm_world)
-        io.save_constant(fields={Term.upper_solid: upper_surface_local, Term.lower_solid: lower_surface_local,
-                                 Term.phase_init: phase_init_local})
+        io.save_constant(
+            fields={
+                Term.upper_solid: upper_surface_local,
+                Term.lower_solid: lower_surface_local,
+                Term.phase_init: phase_init_local,
+            }
+        )
 
         # Simulation and save results
         for i_step, separation, gap_local, phase_local, pressure in solve_constant_volume(
-                decomposition.nb_subdomain_grid_pts, contact, capillary, optimizer, trajectory, liquid_volume,
-                phase_init_local):
-            io.save_step(i_step, single_values={Term.separation: separation, Term.pressure: pressure},
-                         fields={Term.phase: phase_local, Term.gap: gap_local})
+            decomposition.nb_subdomain_grid_pts,
+            contact,
+            capillary,
+            optimizer,
+            trajectory,
+            liquid_volume,
+            phase_init_local,
+        ):
+            io.save_step(
+                i_step,
+                single_values={Term.separation: separation, Term.pressure: pressure},
+                fields={Term.phase: phase_local, Term.gap: gap_local},
+            )
 
 
 def square_init_guess(grid: Grid, volume, mean_separation):
@@ -104,7 +134,9 @@ def square_init_guess(grid: Grid, volume, mean_separation):
     Nx, Ny = grid.nb_domain_grid_pts
     phase = np.zeros(grid.nb_domain_grid_pts)
     phase[
-        Nx // 2 - half_nb_domain_grid_pts:Nx // 2 + half_nb_domain_grid_pts, Ny // 2 - half_nb_domain_grid_pts:Ny // 2 + half_nb_domain_grid_pts] = 1.0
+        Nx // 2 - half_nb_domain_grid_pts : Nx // 2 + half_nb_domain_grid_pts,
+        Ny // 2 - half_nb_domain_grid_pts : Ny // 2 + half_nb_domain_grid_pts,
+    ] = 1.0
     return phase
 
 
@@ -123,7 +155,7 @@ def solve_constant_volume(original_shape, contact, capillary, optimizer, traject
         solution = optimizer.solve_minimisation(problem, x0=phase_local)
         print(f"[rank{comm_world.rank}] It took {solution['nit']} iterations.")
 
-        phase_local = solution['x'].reshape(original_shape)
+        phase_local = solution["x"].reshape(original_shape)
         pressure = pressure = extract_pressure_in_constant_volume_solution(solution)
 
         yield i_step, separation, gap_local, phase_local, pressure

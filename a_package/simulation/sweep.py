@@ -100,8 +100,7 @@ def _concretize(sweeps: list[dict]):
             values = np.logspace(start, stop, int(num)).tolist()
         else:
             raise ValueError(
-                f"Sweep at path '{path}' has no supported value specification. "
-                "Use linspace, logspace, or values."
+                f"Sweep at path '{path}' has no supported value specification. Use linspace, logspace, or values."
             )
         result[path] = values
     return result
@@ -125,7 +124,7 @@ def _iter_updates(sweep_specs: dict[str, list]):
                 zip producing ("a.b", 2), ("c", 4)
     """
     for combo in itertools.product(*sweep_specs.values()):
-        yield zip(sweep_specs.keys(), combo) 
+        yield zip(sweep_specs.keys(), combo)
 
 
 def _set_nested(config: dict, path: str, value: Any):

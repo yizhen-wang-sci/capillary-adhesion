@@ -26,7 +26,7 @@ def adapt_shape(array: np.ndarray) -> Field:
     Raises:
         ValueError: If the array is neither 2D nor 4D.
     """
-    match(np.ndim(array)):
+    match np.ndim(array):
         case 2:
             return np.expand_dims(array, axis=(field_component_ax, field_sub_pt_ax))
         case 4:

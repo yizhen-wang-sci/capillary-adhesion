@@ -66,10 +66,12 @@ def get_git_hash():
         a command failed.
     """
     package_root = Path(__file__).parent.parent.resolve()
-    extra_args = dict(capture_output=True,  # capture stdout and stderr
-                      text=True,            # decode to str
-                      cwd=package_root,     # run in package root
-                      check=True)           # raise error if command fails
+    extra_args = dict(
+        capture_output=True,  # capture stdout and stderr
+        text=True,  # decode to str
+        cwd=package_root,  # run in package root
+        check=True,
+    )  # raise error if command fails
 
     try:
         # Print information if there are uncommitted changes

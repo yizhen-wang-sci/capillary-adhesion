@@ -43,13 +43,14 @@ def main():
     plt.show()
 
 
-def animate_gap_and_phase(records: list[RecordDir], record_fill_below: RecordDir | None = None,
-                          record_fill_above: RecordDir | None = None):
+def animate_gap_and_phase(
+    records: list[RecordDir], record_fill_below: RecordDir | None = None, record_fill_above: RecordDir | None = None
+):
     """Create animation of phase and gap evolution."""
 
     # get the theta values
     naming = ParameterCombo()
-    thetas = [float(naming.parse(record.name)['theta']) for record in records]
+    thetas = [float(naming.parse(record.name)["theta"]) for record in records]
 
     # sort records by ascending theta values
     thetas, records = zip(*sorted(zip(thetas, records), key=lambda elem: elem[0], reverse=False))
@@ -79,30 +80,56 @@ def animate_gap_and_phase(records: list[RecordDir], record_fill_below: RecordDir
 
     # The figure contains one plot for each theta, and two extra plots to show level-set over gaps
     nb_cols = nb_runs + 2
-    fig, axs = plt.subplots(1, nb_cols, figsize=(nb_cols*2.4, 2.4), sharex=True, sharey=True, constrained_layout=True)
-    axs_phase_field = axs[1:nb_cols-1]
-    axs_gap = [axs[0], axs[nb_cols-1]]
+    fig, axs = plt.subplots(1, nb_cols, figsize=(nb_cols * 2.4, 2.4), sharex=True, sharey=True, constrained_layout=True)
+    axs_phase_field = axs[1 : nb_cols - 1]
+    axs_gap = [axs[0], axs[nb_cols - 1]]
     if record_fill_below:
         axs_fill_below = [axs[0], axs_phase_field[0]]
     if record_fill_above:
-        axs_fill_above = [axs_phase_field[-1], axs[nb_cols-1]]
+        axs_fill_above = [axs_phase_field[-1], axs[nb_cols - 1]]
 
     # Draw objects with dummy data to be updated by animation
     xm, ym = grid.form_index_mesh(endpoint=True)
     gap_colormaps = [
-        ax.pcolormesh(xm, ym, np.full(grid.nb_domain_grid_pts, np.nan), cmap=cmap_gap, vmin=0, vmax=max_gap,
-                      shading="auto") for ax in axs_gap]
+        ax.pcolormesh(
+            xm, ym, np.full(grid.nb_domain_grid_pts, np.nan), cmap=cmap_gap, vmin=0, vmax=max_gap, shading="auto"
+        )
+        for ax in axs_gap
+    ]
     phase_colormaps = [
-        ax.pcolormesh(xm, ym, np.full(grid.nb_domain_grid_pts, np.nan), cmap=cmap_phase_field, vmin=0, vmax=1.5,
-                      shading="auto") for ax in axs_phase_field]
+        ax.pcolormesh(
+            xm, ym, np.full(grid.nb_domain_grid_pts, np.nan), cmap=cmap_phase_field, vmin=0, vmax=1.5, shading="auto"
+        )
+        for ax in axs_phase_field
+    ]
     if record_fill_below:
         fill_below_colormaps = [
-            ax.pcolormesh(xm, ym, np.full(grid.nb_domain_grid_pts, np.nan), cmap=cmap_level_set, vmin=0, vmax=1.5,
-                          shading="auto", alpha=0.3) for ax in axs_fill_below]
+            ax.pcolormesh(
+                xm,
+                ym,
+                np.full(grid.nb_domain_grid_pts, np.nan),
+                cmap=cmap_level_set,
+                vmin=0,
+                vmax=1.5,
+                shading="auto",
+                alpha=0.3,
+            )
+            for ax in axs_fill_below
+        ]
     if record_fill_above:
         fill_above_colormaps = [
-            ax.pcolormesh(xm, ym, np.full(grid.nb_domain_grid_pts, np.nan), cmap=cmap_level_set, vmin=0, vmax=1.5,
-                          shading="auto", alpha=0.3) for ax in axs_fill_above]
+            ax.pcolormesh(
+                xm,
+                ym,
+                np.full(grid.nb_domain_grid_pts, np.nan),
+                cmap=cmap_level_set,
+                vmin=0,
+                vmax=1.5,
+                shading="auto",
+                alpha=0.3,
+            )
+            for ax in axs_fill_above
+        ]
 
     # formatting
     for ax in axs:
@@ -132,7 +159,7 @@ def animate_gap_and_phase(records: list[RecordDir], record_fill_below: RecordDir
             for colormap in fill_below_colormaps:
                 data = fill_below_io.load_trajectory(field_names=[Term.phase])
                 phase = data[Term.phase][i_step % one_round_trip].squeeze()
-                phase[phase < 1-eps] = np.nan
+                phase[phase < 1 - eps] = np.nan
                 colormap.set_array(phase)
             ret.extend(fill_below_colormaps)
 
@@ -140,7 +167,7 @@ def animate_gap_and_phase(records: list[RecordDir], record_fill_below: RecordDir
             for colormap in fill_above_colormaps:
                 data = fill_above_io.load_trajectory(field_names=[Term.phase])
                 phase = data[Term.phase][i_step % one_round_trip].squeeze()
-                phase[phase < 1-eps] = np.nan
+                phase[phase < 1 - eps] = np.nan
                 colormap.set_array(phase)
             ret.extend(fill_above_colormaps)
 

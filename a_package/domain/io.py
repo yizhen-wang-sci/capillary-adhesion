@@ -53,10 +53,7 @@ class NpyIO:
         """
         path = self._to_full_path(name)
         self._sync_error_any_rank(None if path.is_file() else FileNotFoundError(f"No file {path}"))
-        return NuMPI.IO.load_npy(path,
-                                 self._subdomain_locations,
-                                 self._nb_subdomain_grid_pts,
-                                 comm=self._comm)
+        return NuMPI.IO.load_npy(path, self._subdomain_locations, self._nb_subdomain_grid_pts, comm=self._comm)
 
     def save_distributed(self, name: str, data):
         """Write a decomposed array, each rank contributing its subdomain.
@@ -65,11 +62,13 @@ class NpyIO:
             name: Name of the array, without the `.npy` suffix.
             data: This rank's subdomain. Made contiguous before writing.
         """
-        NuMPI.IO.save_npy(self._to_full_path(name),
-                          np.ascontiguousarray(data),
-                          self._subdomain_locations,
-                          self._nb_domain_grid_pts,
-                          comm=self._comm)
+        NuMPI.IO.save_npy(
+            self._to_full_path(name),
+            np.ascontiguousarray(data),
+            self._subdomain_locations,
+            self._nb_domain_grid_pts,
+            comm=self._comm,
+        )
 
     def _sync_error(self, error):
         """Broadcast rank 0's error, if any, and raise it on every rank.

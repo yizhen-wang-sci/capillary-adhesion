@@ -66,10 +66,12 @@ def test_unroll_sweep_multiple_sweeps(config_multiple_sweeps):
     """Multiple sweeps - yields Cartesian product."""
     results = []
     for config in unroll_sweep(config_multiple_sweeps):
-        results.append((
-            config["problem"]["capillary"]["contact_angle"],
-            config["solver"]["tolerance"],
-        ))
+        results.append(
+            (
+                config["problem"]["capillary"]["contact_angle"],
+                config["solver"]["tolerance"],
+            )
+        )
 
     # 2 angles * 3 tolerances = 6 combinations
     assert len(results) == 6

@@ -43,7 +43,7 @@ def main():
         contact.set_mean_separation(z_min)
         gap_at_min = contact.get_gap()
         capillary.set_gap(gap_at_min)
-        volume_percent = config['constraint']['liquid_volume_percent']
+        volume_percent = config["constraint"]["liquid_volume_percent"]
         liquid_volume = capillary.get_max_volume() * (volume_percent / 100.0)
 
         for idx, separation in enumerate(trajectory):
@@ -82,8 +82,8 @@ def solve_phase_by_level_set(capillary: CapillaryBridge, gap: np.ndarray, volume
             to_fill = gap < height
         else:
             to_fill = gap > height
-        phase[to_fill] = 1.
-        phase[~to_fill] = 0.
+        phase[to_fill] = 1.0
+        phase[~to_fill] = 0.0
         capillary.set_phase(phase)
 
     def compute_volume_deviation(height):

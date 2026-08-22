@@ -21,7 +21,7 @@ class SimulationIO:
         """
         self._io = NpyIO(store_dir, decomposition, communicator)
 
-    def save_constant(self, fields: dict[str, Field]=None, single_values: dict[str, float]=None):
+    def save_constant(self, fields: dict[str, Field] = None, single_values: dict[str, float] = None):
         """Store quantities that hold for the whole simulation.
 
         Args:
@@ -39,7 +39,7 @@ class SimulationIO:
         for name, value in single_values.items():
             self._io.save_singular(name, np.array([value]))
 
-    def load_constant(self, field_names: list[str]=None, single_value_names: list[str]=None):
+    def load_constant(self, field_names: list[str] = None, single_value_names: list[str] = None):
         """Read back quantities that hold for the whole simulation.
 
         Args:
@@ -66,7 +66,7 @@ class SimulationIO:
 
         return result
 
-    def save_step(self, index: int, fields: dict[str, Field]=None, single_values: dict[str, float]=None):
+    def save_step(self, index: int, fields: dict[str, Field] = None, single_values: dict[str, float] = None):
         """Store the quantities of one step.
 
         Args:
@@ -102,13 +102,13 @@ class SimulationIO:
                 if array.size <= index:
                     # We need to extend the array.
                     new_array = np.empty(index + 1)
-                    new_array[:array.size] = array
-                    new_array[array.size:index] = np.nan
+                    new_array[: array.size] = array
+                    new_array[array.size : index] = np.nan
                     array = new_array
                 array[index] = value
             self._io.save_singular(name, array)
 
-    def load_step(self, index: int, field_names: list[str]=None, single_value_names: list[str]=None):
+    def load_step(self, index: int, field_names: list[str] = None, single_value_names: list[str] = None):
         """Read back the quantities of one step.
 
         Args:
@@ -136,7 +136,7 @@ class SimulationIO:
 
         return result
 
-    def save_trajectory(self, fields: dict[str, list[Field]]=None, single_values: dict[str, np.ndarray]=None):
+    def save_trajectory(self, fields: dict[str, list[Field]] = None, single_values: dict[str, np.ndarray] = None):
         """Store whole trajectories at once.
 
         Args:
@@ -158,7 +158,7 @@ class SimulationIO:
         for name, traj in single_values.items():
             result[name] = self._io.save_singular(name, traj)
 
-    def load_trajectory(self, field_names: list[str]=None, single_value_names: list[str]=None):
+    def load_trajectory(self, field_names: list[str] = None, single_value_names: list[str] = None):
         """Read back whole trajectories.
 
         Args:
@@ -225,7 +225,7 @@ class _FieldArray:
         name_prefix = f"{self._name}--"
         for entry in self._io.root_path.iterdir():
             if entry.name.startswith(name_prefix):
-                i_update = int(entry.name[len(name_prefix):].replace(entry.suffix, ""))
+                i_update = int(entry.name[len(name_prefix) :].replace(entry.suffix, ""))
                 i_current = max(i_current, i_update)
         return i_current + 1
 

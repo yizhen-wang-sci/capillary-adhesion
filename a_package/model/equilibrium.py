@@ -4,7 +4,9 @@ from a_package.domain import Problem, OptimizerResult
 from .capillary import CapillaryBridge
 
 
-def formulate_constant_volume_phase_problem(capillary: CapillaryBridge, volume: float, explicit_phase_bounds: bool=True):
+def formulate_constant_volume_phase_problem(
+    capillary: CapillaryBridge, volume: float, explicit_phase_bounds: bool = True
+):
     """Minimise energy(phase) subject to volume(phase) == volume.
 
     Args:
@@ -25,7 +27,8 @@ def formulate_constant_volume_phase_problem(capillary: CapillaryBridge, volume: 
         A=capillary.get_volume_jacobian().ravel(),
         b=volume,
         is_zeroed=capillary.gap_is_closed,
-        communicator=capillary.communicator)
+        communicator=capillary.communicator,
+    )
 
     # Explicit boundaries in case feasibility must be enforced
     if explicit_phase_bounds:
@@ -45,11 +48,13 @@ def extract_pressure_in_constant_volume_solution(result: OptimizerResult):
     # NOTE: in NuMPI LinearConstraint, it defines lagrangian multiplier with "-lambda ...",
     # hence lambda and pressure have the same sign. For this problem, precisely,
     # lambda = pressure / surface tension
-    pressure_per_surface_tension = result['dual']
+    pressure_per_surface_tension = result["dual"]
     return pressure_per_surface_tension
 
 
-def formulate_constant_pressure_phase_problem(capillary: CapillaryBridge, pressure: float, explicit_phase_bounds: bool=True):
+def formulate_constant_pressure_phase_problem(
+    capillary: CapillaryBridge, pressure: float, explicit_phase_bounds: bool = True
+):
     """Minimise energy(phase) - pressure * volume(phase).
 
     Args:
@@ -76,7 +81,8 @@ def formulate_constant_pressure_phase_problem(capillary: CapillaryBridge, pressu
         get_f=helmholtz_potential,
         get_f_Dx=helmholtz_potential_jacobian,
         is_zeroed=capillary.gap_is_closed,
-        communicator=capillary.communicator)
+        communicator=capillary.communicator,
+    )
 
     # Explicit boundaries in case feasibility must be enforced
     if explicit_phase_bounds:

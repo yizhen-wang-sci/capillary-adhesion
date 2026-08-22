@@ -55,9 +55,7 @@ def slice_colormap(cmap, low: float, high: float, bitwidth=8, name=None):
     return LinearSegmentedColormap.from_list(name, base(np.linspace(low, high, nb_samples)), N=nb_samples)
 
 
-def create_segment_colors(source, nb_steps, *,
-                          low=0.0, high=1.0,
-                          alpha_begin=1.0, alpha_end=1.0, gamma=1.0):
+def create_segment_colors(source, nb_steps, *, low=0.0, high=1.0, alpha_begin=1.0, alpha_end=1.0, gamma=1.0):
     """Build a sequence of RGBA colors, one per segment.
 
     Args:
@@ -96,17 +94,13 @@ def create_segment_colors(source, nb_steps, *,
             try:
                 cmap = plt.get_cmap(source)
             except ValueError:
-                raise ValueError(
-                    f"{source!r} is not a valid color or a registered "
-                    f"colormap name")
+                raise ValueError(f"{source!r} is not a valid color or a registered colormap name")
         elif isinstance(source, Colormap):
             cmap = source
         else:
-            raise ValueError(
-                f"source must be a color, colormap name, or Colormap "
-                f"instance; got {source!r}")
+            raise ValueError(f"source must be a color, colormap name, or Colormap instance; got {source!r}")
         # Create a color gradient from a slice of the colormap
-        colors = cmap(np.linspace(low, high, nb_steps))   # (nb_steps, 4)
+        colors = cmap(np.linspace(low, high, nb_steps))  # (nb_steps, 4)
 
     if nb_steps == 1:
         colors[:, 3] = alpha_end
@@ -136,11 +130,9 @@ def divide_into_segments(x, y, *, nb_segments=None):
     x = np.asarray(x, dtype=float).ravel()
     y = np.asarray(y, dtype=float).ravel()
     if x.size != y.size:
-        raise ValueError(
-            f"x and y must have the same length; got {x.size} and {y.size}")
+        raise ValueError(f"x and y must have the same length; got {x.size} and {y.size}")
     if x.size < 2:
-        raise ValueError(
-            f"need at least 2 points to form a segment; got {x.size}")
+        raise ValueError(f"need at least 2 points to form a segment; got {x.size}")
 
     max_segments = x.size - 1
     if nb_segments is None:
@@ -157,6 +149,12 @@ def divide_into_segments(x, y, *, nb_segments=None):
     boundary_idxs = np.round(np.linspace(0, x.size - 1, nb_segments + 1)).astype(int)
 
     # Plus 1 at stop indices so it includes the ending point, which results in continuous line segments
-    return [np.column_stack([x[boundary_idxs[i_segm]:boundary_idxs[i_segm + 1] + 1],
-                             y[boundary_idxs[i_segm]:boundary_idxs[i_segm + 1] + 1]])
-            for i_segm in range(nb_segments)]
+    return [
+        np.column_stack(
+            [
+                x[boundary_idxs[i_segm] : boundary_idxs[i_segm + 1] + 1],
+                y[boundary_idxs[i_segm] : boundary_idxs[i_segm + 1] + 1],
+            ]
+        )
+        for i_segm in range(nb_segments)
+    ]

@@ -43,8 +43,7 @@ class _StreamToLogger:
         pass
 
 
-def setup_logging(test: bool = False, file: str | Path | None = None, *,
-                  modules: list[str] | None = None):
+def setup_logging(test: bool = False, file: str | Path | None = None, *, modules: list[str] | None = None):
     """Configure logging. Safe to call multiple times.
 
     Args:

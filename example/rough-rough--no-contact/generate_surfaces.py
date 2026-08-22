@@ -111,19 +111,13 @@ def preview_surface_approaching(grid: Grid, upper: np.ndarray, lower: np.ndarray
         separation = trajectory[i_frame]
         upper_z = (upper.squeeze() + separation) / unit
 
-        ax_3d.plot_surface(
-            X / unit, Y / unit, lower_z,
-            alpha=0.7, cmap="Blues", edgecolor="none"
-        )
-        ax_3d.plot_surface(
-            X / unit, Y / unit, upper_z,
-            alpha=0.7, cmap="Greens", edgecolor="none"
-        )
+        ax_3d.plot_surface(X / unit, Y / unit, lower_z, alpha=0.7, cmap="Blues", edgecolor="none")
+        ax_3d.plot_surface(X / unit, Y / unit, upper_z, alpha=0.7, cmap="Greens", edgecolor="none")
         ax_3d.set_xlabel(r"$x/a$")
         ax_3d.set_ylabel(r"$y/a$")
         ax_3d.set_zlabel(r"$z/a$")
         ax_3d.set_zlim(z_min, z_max)
-        ax_3d.set_title(f"Surfaces (sep={separation/unit:.2f}a)")
+        ax_3d.set_title(f"Surfaces (sep={separation / unit:.2f}a)")
 
         # Right: Gap topography
         im = ax_gap.imshow(
@@ -141,11 +135,9 @@ def preview_surface_approaching(grid: Grid, upper: np.ndarray, lower: np.ndarray
 
         return []
 
-    anim = animation.FuncAnimation(
-        fig, update, frames=len(trajectory), interval=200, repeat_delay=2000
-    )
+    anim = animation.FuncAnimation(fig, update, frames=len(trajectory), interval=200, repeat_delay=2000)
     return anim
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

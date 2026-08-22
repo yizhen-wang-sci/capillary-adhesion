@@ -3,6 +3,7 @@
 import logging
 from typing import Callable, Protocol, TypedDict
 import sys
+
 if sys.version_info >= (3, 11):
     from typing import Required
 else:
@@ -20,19 +21,21 @@ logger = logging.getLogger(__name__)
 class Problem:
     """A minimisation of f(x), optionally subject to A x - b == 0, g(x) == 0, x_lb <= x <= x_ub."""
 
-    def __init__(self,
-                 get_x: Callable[[], np.ndarray],
-                 set_x: Callable[[np.ndarray], None],
-                 get_f: Callable[[], float],
-                 get_f_Dx: Callable[[], np.ndarray],
-                 A: np.ndarray | None = None,
-                 b: float | None = None,
-                 get_g: Callable[[], float] | None = None,
-                 get_g_Dx: Callable[[], np.ndarray] | None = None,
-                 x_lb: float | None = None,
-                 x_ub: float | None = None,
-                 is_zeroed: np.ndarray | None = None,
-                 communicator=MPI.COMM_SELF):
+    def __init__(
+        self,
+        get_x: Callable[[], np.ndarray],
+        set_x: Callable[[np.ndarray], None],
+        get_f: Callable[[], float],
+        get_f_Dx: Callable[[], np.ndarray],
+        A: np.ndarray | None = None,
+        b: float | None = None,
+        get_g: Callable[[], float] | None = None,
+        get_g_Dx: Callable[[], np.ndarray] | None = None,
+        x_lb: float | None = None,
+        x_ub: float | None = None,
+        is_zeroed: np.ndarray | None = None,
+        communicator=MPI.COMM_SELF,
+    ):
         """Store the model's callables, and whichever constraints were given.
 
         Args:
@@ -208,30 +211,10 @@ class Optimizer(Protocol):
         raise NotImplementedError
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class ProjectedLbfgs(Optimizer):
     """Hands a linear equality constraint and box bounds to NuMPI to enforce natively."""
 
-    def __init__(self, max_inner_iter: int = 1000, tol_gradient: float = 1e-6,
-                 tol_step: float = 0.0):
+    def __init__(self, max_inner_iter: int = 1000, tol_gradient: float = 1e-6, tol_step: float = 0.0):
         """Set the iteration limit and the two convergence tolerances.
 
         Args:
@@ -256,7 +239,9 @@ class ProjectedLbfgs(Optimizer):
             The result of the minimisation, carrying `dual`, the multiplier of the linear
             constraint.
         """
-        linear_constraint = NuMPI.Optimization.LinearConstraint(problem.A, problem.b, NuMPI.Tools.Reduction(problem.communicator))
+        linear_constraint = NuMPI.Optimization.LinearConstraint(
+            problem.A, problem.b, NuMPI.Tools.Reduction(problem.communicator)
+        )
 
         def compute_f(x):
             problem.set_x(x)
@@ -291,8 +276,13 @@ class ProjectedLbfgs(Optimizer):
             comm=problem.communicator,
             callback=callback,
         )
-        return OptimizerResult(x=result['x'].reshape(init_shape), dual=result['multiplier'], success=result['success'],
-                               message=result['message'], nit=result['nit'])
+        return OptimizerResult(
+            x=result["x"].reshape(init_shape),
+            dual=result["multiplier"],
+            success=result["success"],
+            message=result["message"],
+            nit=result["nit"],
+        )
 
 
 class BoundedLbfgs(Optimizer):
@@ -357,5 +347,6 @@ class BoundedLbfgs(Optimizer):
             comm=problem.communicator,
             callback=callback,
         )
-        return OptimizerResult(x=result['x'].reshape(init_shape), success=result['success'],
-                               message=result['message'], nit=result['nit'])
+        return OptimizerResult(
+            x=result["x"].reshape(init_shape), success=result["success"], message=result["message"], nit=result["nit"]
+        )

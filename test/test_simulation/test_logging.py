@@ -12,8 +12,7 @@ import re
 from a_package.simulation.logging import setup_logging
 
 _BRIEF_LINE = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] .+$", re.MULTILINE)
-_VERBOSE_LINE = re.compile(
-    r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\[[\w.]+::\w+#L\d+\] \w+: .+$", re.MULTILINE)
+_VERBOSE_LINE = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\[[\w.]+::\w+#L\d+\] \w+: .+$", re.MULTILINE)
 
 
 def _assert_print_only_on_stdout(out, err, needle="print msg"):

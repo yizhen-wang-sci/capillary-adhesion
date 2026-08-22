@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # Naming conventions
 # =============================================================================
 
+
 class NamingConvention(Protocol):
     """Interface for encoding, decoding, and generating directory names."""
 
@@ -195,10 +196,7 @@ class ParameterCombo(NamingConvention):
         Raises:
             FileExistsError: If the same combination is already taken.
         """
-        params = {
-            k: (self.types[k](v) if k in self.types else v)
-            for k, v in params.items()
-        }
+        params = {k: (self.types[k](v) if k in self.types else v) for k, v in params.items()}
         name = self.format(**params)
         if name in existing:
             raise FileExistsError(
@@ -211,6 +209,7 @@ class ParameterCombo(NamingConvention):
 # =============================================================================
 # Query helpers (private)
 # =============================================================================
+
 
 def _iter_parsed(path: Path, naming: NamingConvention):
     """Walk the subdirectories whose names follow a convention.
@@ -242,10 +241,7 @@ def _find_matching(path: Path, naming: NamingConvention, **query) -> list[Path]:
     Returns:
         The matching subdirectories.
     """
-    return [
-        p for parsed, p in _iter_parsed(path, naming)
-        if all(parsed.get(k) == v for k, v in query.items())
-    ]
+    return [p for parsed, p in _iter_parsed(path, naming) if all(parsed.get(k) == v for k, v in query.items())]
 
 
 def _get_matching(path: Path, naming: NamingConvention, **query) -> Path:
@@ -274,6 +270,7 @@ def _get_matching(path: Path, naming: NamingConvention, **query) -> Path:
 # =============================================================================
 # Directories
 # =============================================================================
+
 
 class _Dir:
     """Wrapper around a filesystem directory that ensures the path exists."""

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class PhaseMixture:
     """Liquid-vapour mixture forming an interface, contained in a gap between solids."""
 
-    def __init__(self, eta: float, theta: float, epsilon: float=1.0, component_axis: int=field_component_ax):
+    def __init__(self, eta: float, theta: float, epsilon: float = 1.0, component_axis: int = field_component_ax):
         """Derive the curvature and wetting prefactors from the contact angle.
 
         Args:
@@ -35,12 +35,12 @@ class PhaseMixture:
     @property
     def phase_vapour(self):
         """Phase-field value representing vapour phase."""
-        return 0.
+        return 0.0
 
     @property
     def phase_liquid(self):
         """Phase-field value representing liquid phase."""
-        return 1.
+        return 1.0
 
     @property
     def perimeter_prefactor(self):
@@ -64,8 +64,10 @@ class PhaseMixture:
         Returns:
             Perimeter density, with the component axis kept.
         """
-        return self.perimeter_prefactor * ((1 / self._eta) * self.double_well_penalty(
-            phase, self._component_axis) + self._eta * self.square_penalty(phase_grad, self._component_axis))
+        return self.perimeter_prefactor * (
+            (1 / self._eta) * self.double_well_penalty(phase, self._component_axis)
+            + self._eta * self.square_penalty(phase_grad, self._component_axis)
+        )
 
     def compute_local_energy(self, gap: Field, phase: Field, phase_grad: Field):
         """Compute local energy density, of the liquid-vapour and liquid-solid interfaces.
@@ -115,10 +117,22 @@ class PhaseMixture:
         Returns:
             Derivative with respect to the phase, then to its gradient.
         """
-        liquid_vapour_D_phase = (self.perimeter_prefactor * (1 / self._eta)
-                                 * self.double_well_penalty_derivative(phase) * gap * self._curv * self._epsilon)
-        liquid_vapour_D_phase_grad = (self.perimeter_prefactor * self._eta
-                                      * self.square_penalty_derivative(phase_grad) * gap * self._curv * self._epsilon)
+        liquid_vapour_D_phase = (
+            self.perimeter_prefactor
+            * (1 / self._eta)
+            * self.double_well_penalty_derivative(phase)
+            * gap
+            * self._curv
+            * self._epsilon
+        )
+        liquid_vapour_D_phase_grad = (
+            self.perimeter_prefactor
+            * self._eta
+            * self.square_penalty_derivative(phase_grad)
+            * gap
+            * self._curv
+            * self._epsilon
+        )
 
         liquid_solid_D_phase = 2.0
 
@@ -195,7 +209,9 @@ class CapillaryBridge:
         self._quadr_value_2 = muGrid.Field(self._collection.real_field("quadr_value_2", 1, "quadr"))
         self._quadr_value_2_back_sens = muGrid.Field(self._collection.real_field("quadr_value_2_back_sens", 1, "nodal"))
         self._quadr_gradient = muGrid.Field(self._collection.real_field("quadr_gradient", 2, "quadr"))
-        self._quadr_gradient_back_sens = muGrid.Field(self._collection.real_field("quadr_gradient_back_sens", 1, "nodal"))
+        self._quadr_gradient_back_sens = muGrid.Field(
+            self._collection.real_field("quadr_gradient_back_sens", 1, "nodal")
+        )
 
     def get_gap(self):
         """Return nodal gap field."""
@@ -228,7 +244,7 @@ class CapillaryBridge:
                 gap is closed.
         """
         self._nodal_phase.s[...] = np.reshape(value, (1, 1, *self._decomposition.nb_subdomain_grid_pts))
-        self._nodal_phase.s[self.gap_is_closed] = 0.
+        self._nodal_phase.s[self.gap_is_closed] = 0.0
         self._decomposition.communicate_ghosts(self._nodal_phase)
         self._fem.interpolate_value(self._nodal_phase, self._quadr_phase)
         self._fem.interpolate_gradient(self._nodal_phase, self._quadr_phase_gradient)
@@ -258,20 +274,24 @@ class CapillaryBridge:
 
     def get_energy(self):
         """Compute total capillary energy."""
-        integrand = self._mixture.compute_local_energy(self._quadr_gap.s, self._quadr_phase.s,
-                                                       self._quadr_phase_gradient.s)
+        integrand = self._mixture.compute_local_energy(
+            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
+        )
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_energy_jacobian(self):
         """Compute gradient of energy w.r.t. nodal phase."""
         [energy_D_phase, energy_D_phase_gradient] = self._mixture.compute_local_energy_jacobian(
-            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s)
+            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
+        )
 
         self._quadr_value_1.s[...] = self._quadrature.propag_integral_weight(energy_D_phase, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_value_1)
         self._fem.propag_sens_value(self._quadr_value_1, self._quadr_value_1_back_sens)
 
-        self._quadr_gradient.s[...] = self._quadrature.propag_integral_weight(energy_D_phase_gradient, self._grid.element_area)
+        self._quadr_gradient.s[...] = self._quadrature.propag_integral_weight(
+            energy_D_phase_gradient, self._grid.element_area
+        )
         self._decomposition.communicate_ghosts(self._quadr_gradient)
         self._fem.propag_sens_gradient(self._quadr_gradient, self._quadr_gradient_back_sens)
 
