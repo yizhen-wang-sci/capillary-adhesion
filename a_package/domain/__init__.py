@@ -5,4 +5,4 @@ from .field import Field, adapt_shape, field_component_ax, field_sub_pt_ax, fiel
 from .io import NpyIO
 from .fem import FirstOrderElement
 from .quadrature import Quadrature, NodalQuadrature, CentroidQuadrature, ThreePtQuadrature
-from .optimizer import Optimizer, Problem, OptimizerResult, AugmentedLagrangian, ProjectedLbfgs, BoundedLbfgs
+from .optimizer import Optimizer, Problem, OptimizerResult, ProjectedLbfgs, BoundedLbfgs
