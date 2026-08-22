@@ -319,7 +319,12 @@ class BoundedLbfgs(Optimizer):
 
         Returns:
             The result of the minimisation.
+
+        Raises:
+            TypeError: If the problem carries a linear or an equality constraint.
         """
+        if problem.has_linear_constraints or problem.has_equality_constraints:
+            raise TypeError("BoundedLbfgs does not support linear or equality constraints")
 
         def compute_f(x):
             problem.set_x(x)
