@@ -4,25 +4,24 @@ import sys
 import numpy as np
 from NuMPI import MPI
 
-from a_package.simulation import (
-    SourceDir,
-    RunDir,
-    SimulationIO,
-    load_config,
-    unroll_sweep,
-    save_config,
-    setup_logging,
-    get_git_hash,
-)
 from a_package.domain import Grid, factorize_closest
 from a_package.model import (
     CapillaryBridge,
     RigidContact,
     Term,
-    formulate_constant_volume_phase_problem,
     extract_pressure_in_constant_volume_solution,
+    formulate_constant_volume_phase_problem,
 )
-
+from a_package.simulation import (
+    RunDir,
+    SimulationIO,
+    SourceDir,
+    get_git_hash,
+    load_config,
+    save_config,
+    setup_logging,
+    unroll_sweep,
+)
 from config_helper import *
 
 comm_world = MPI.COMM_WORLD
@@ -31,7 +30,7 @@ comm_world = MPI.COMM_WORLD
 def main():
     # CLI arguments
     if len(sys.argv) != 2:
-        raise ValueError(f"Provide one config file.")
+        raise ValueError("Provide one config file.")
     config_file = sys.argv[1]
     config_origin = load_config(config_file)
 

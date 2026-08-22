@@ -1,11 +1,11 @@
 """The discrete space, and the coordinate systems over it."""
 
-from typing import Sequence
+from collections.abc import Sequence
 
-import numpy as np
-import numpy.fft as fft
 import muGrid
+import numpy as np
 from NuMPI import MPI
+from numpy import fft
 
 
 class Grid:

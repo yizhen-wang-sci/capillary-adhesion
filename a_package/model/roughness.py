@@ -1,12 +1,10 @@
 """Self-affine rough surface generation."""
 
 import dataclasses as dc
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
-import numpy.linalg as linalg
-import numpy.fft as fft
-import numpy.random as random
+from numpy import fft, linalg, random
 
 from a_package.domain import Grid
 

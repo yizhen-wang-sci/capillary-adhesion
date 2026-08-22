@@ -1,8 +1,7 @@
-import pytest
 import numpy as np
+import pytest
 
-from a_package.domain.fem import LinearFiniteElementPixel, FirstOrderElement
-
+from a_package.domain.fem import FirstOrderElement, LinearFiniteElementPixel
 from test.test_domain.reference import RefFirstOrderElement
 from test.test_domain.utils import generate_global_random_field
 

@@ -1,9 +1,7 @@
+import numpy as np
 import pytest
 
-import numpy as np
-
-from a_package.domain.quadrature import NodalQuadrature, CentroidQuadrature, ThreePtQuadrature
-
+from a_package.domain.quadrature import CentroidQuadrature, NodalQuadrature, ThreePtQuadrature
 from test.test_domain.utils import generate_global_random_field
 
 

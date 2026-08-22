@@ -1,19 +1,19 @@
 """Solving the numerical optimization problem. No physics meaning in this file."""
 
 import logging
-from typing import Callable, Protocol, TypedDict
 import sys
+from collections.abc import Callable
+from typing import Protocol, TypedDict
 
 if sys.version_info >= (3, 11):
     from typing import Required
 else:
     from typing_extensions import Required
 
-import numpy as np
 import NuMPI.Optimization
 import NuMPI.Tools
+import numpy as np
 from NuMPI import MPI
-
 
 logger = logging.getLogger(__name__)
 

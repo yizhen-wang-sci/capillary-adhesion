@@ -1,16 +1,14 @@
 import os
 import sys
 
-import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
+import numpy as np
+from matplotlib import animation
 
 from a_package.domain import Grid
-from a_package.model import SelfAffineRoughness, psd_to_height, Term
+from a_package.model import SelfAffineRoughness, Term, psd_to_height
 from a_package.simulation import SourceDir, load_config
-
 from config_helper import *
-
 
 visual_check = True
 
@@ -18,7 +16,7 @@ visual_check = True
 def main():
     # CLI arguments
     if len(sys.argv) != 2:
-        raise ValueError(f"Provide one config file.")
+        raise ValueError("Provide one config file.")
     config_file = sys.argv[1]
     config = load_config(config_file)
 
@@ -38,7 +36,7 @@ def main():
     # visual check
     if visual_check:
         trajectory = build_trajectory(config)
-        anime = preview_surface_approaching(grid, upper, lower, trajectory)
+        preview_surface_approaching(grid, upper, lower, trajectory)
         plt.show()
 
         skip = input("Save [Y/n]? ").strip().lower() in ("n", "no")
@@ -120,7 +118,7 @@ def preview_surface_approaching(grid: Grid, upper: np.ndarray, lower: np.ndarray
         ax_3d.set_title(f"Surfaces (sep={separation / unit:.2f}a)")
 
         # Right: Gap topography
-        im = ax_gap.imshow(
+        ax_gap.imshow(
             gap / unit,
             extent=[x[0] / unit, x[-1] / unit, y[0] / unit, y[-1] / unit],
             origin="lower",

@@ -7,8 +7,7 @@ import numpy as np
 from a_package.domain import Grid, ProjectedLbfgs
 from a_package.model import PhaseMixture
 
-
-__all__ = ["build_grid", "build_phase_mixture", "build_optimizer", "build_trajectory"]
+__all__ = ["build_grid", "build_optimizer", "build_phase_mixture", "build_trajectory"]
 
 
 def build_grid(config: dict):

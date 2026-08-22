@@ -2,12 +2,11 @@
 
 import logging
 
-import numpy as np
 import muGrid
+import numpy as np
 from NuMPI import MPI
 
-from a_package.domain import Grid, FirstOrderElement, CentroidQuadrature, Field, field_component_ax, field_sub_pt_ax
-
+from a_package.domain import CentroidQuadrature, Field, FirstOrderElement, Grid, field_component_ax, field_sub_pt_ax
 
 logger = logging.getLogger(__name__)
 

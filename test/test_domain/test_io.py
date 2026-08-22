@@ -4,7 +4,6 @@ Tests of the `storing.py` file.
 
 import numpy as np
 import pytest
-
 from NuMPI.Testing.Assertions import assert_all_array_equal
 
 from a_package.domain.io import NpyIO

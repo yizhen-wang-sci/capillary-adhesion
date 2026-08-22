@@ -5,13 +5,13 @@ Tests of the capillary model.
 import math
 import sys
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 from NuMPI import MPI
 
 from a_package.domain.grid import Grid, factorize_closest
-from a_package.model.capillary import PhaseMixture, CapillaryBridge
+from a_package.model.capillary import CapillaryBridge, PhaseMixture
 
 show_me_plot = False
 

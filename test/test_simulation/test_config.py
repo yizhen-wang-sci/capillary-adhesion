@@ -7,7 +7,7 @@ import tempfile
 
 import pytest
 
-from a_package.simulation.config import load_config, save_config, backfill_config
+from a_package.simulation.config import backfill_config, load_config, save_config
 
 
 @pytest.fixture

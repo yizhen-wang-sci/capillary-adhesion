@@ -1,4 +1,3 @@
-import pytest
 import numpy as np
 
 from test.test_domain.utils import generate_global_random_field, generate_global_range_field

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from a_package.domain.grid import Grid
-from a_package.model.roughness import SelfAffineRoughness, psd_to_height, generate_phasor_2D_random
+from a_package.model.roughness import SelfAffineRoughness, generate_phasor_2D_random, psd_to_height
 
 
 def test_psd_at_zero_is_zero():

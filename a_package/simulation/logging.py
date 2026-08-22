@@ -40,7 +40,6 @@ class _StreamToLogger:
 
     def flush(self) -> None:
         """Accept `flush` to complete the file-like interface."""
-        pass
 
 
 def setup_logging(test: bool = False, file: str | Path | None = None, *, modules: list[str] | None = None):

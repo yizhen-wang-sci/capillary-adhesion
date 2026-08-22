@@ -1,9 +1,9 @@
 """Finite element interpolation on a regular grid."""
 
-from typing import Sequence
+from collections.abc import Sequence
 
-import numpy as np
 import muGrid
+import numpy as np
 
 
 class FirstOrderElement:

@@ -2,8 +2,8 @@
 
 import pathlib
 
-import numpy as np
 import NuMPI.IO
+import numpy as np
 from NuMPI import MPI
 
 

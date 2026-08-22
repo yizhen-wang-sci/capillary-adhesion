@@ -2,8 +2,8 @@
 Tests for SimulationIO.
 """
 
-import pytest
 import numpy as np
+import pytest
 
 from a_package.domain import Grid, factorize_closest
 from a_package.simulation.io import SimulationIO

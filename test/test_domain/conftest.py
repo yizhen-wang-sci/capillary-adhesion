@@ -1,8 +1,7 @@
-import pytest
 import numpy as np
+import pytest
 
 from a_package.domain import Grid, factorize_closest
-
 
 # @pytest.fixture(params=[[6, 6], [4, 9]], ids=["square_grid", "rectangle_grid"])
 # def _nb_elements(request):

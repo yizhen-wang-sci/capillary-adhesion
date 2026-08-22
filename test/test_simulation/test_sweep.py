@@ -4,8 +4,8 @@ Tests for parameter sweep expansion.
 
 import copy
 
-import pytest
 import numpy as np
+import pytest
 
 from a_package.simulation.sweep import size_of_sweep, unroll_sweep
 

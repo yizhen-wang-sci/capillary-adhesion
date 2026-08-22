@@ -7,9 +7,7 @@ from typing import ClassVar
 import numpy as np
 from NuMPI import MPI
 
-
 from .field import Field, field_element_axs
-
 
 logger = logging.getLogger(__name__)
 

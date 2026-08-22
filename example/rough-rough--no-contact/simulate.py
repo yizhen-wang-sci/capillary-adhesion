@@ -5,7 +5,6 @@ Usage:
     python simulate.py config.toml
 """
 
-import logging
 import os
 import sys
 
@@ -17,23 +16,21 @@ from a_package.model import (
     CapillaryBridge,
     RigidContact,
     Term,
-    formulate_constant_volume_phase_problem,
     extract_pressure_in_constant_volume_solution,
+    formulate_constant_volume_phase_problem,
 )
 from a_package.simulation import (
+    RunDir,
     SimulationIO,
     SourceDir,
-    RunDir,
-    setup_logging,
+    get_git_hash,
+    get_iso_time,
     load_config,
     save_config,
+    setup_logging,
     unroll_sweep,
-    get_iso_time,
-    get_git_hash,
 )
-
 from config_helper import *
-
 
 visual_check = False
 comm_world = MPI.COMM_WORLD
@@ -44,7 +41,7 @@ def main():
     try:
         config_file = sys.argv[1]
     except IndexError:
-        print(f"One config file is required via CLI.")
+        print("One config file is required via CLI.")
         sys.exit(1)
     config_origin = load_config(config_file)
 

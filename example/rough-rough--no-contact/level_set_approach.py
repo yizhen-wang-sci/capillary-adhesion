@@ -4,15 +4,14 @@ import sys
 import numpy as np
 
 from a_package.model import CapillaryBridge, RigidContact, Term
-from a_package.simulation import SimulationIO, RunDir, RecordDir, setup_logging, load_config, save_config
-
+from a_package.simulation import RecordDir, RunDir, SimulationIO, load_config, save_config, setup_logging
 from config_helper import *
 
 
 def main():
     # CLI
     if len(sys.argv) < 2:
-        print(f"At least one config file is required via CLI.")
+        print("At least one config file is required via CLI.")
         sys.exit(1)
     if len(sys.argv) > 2:
         print("Only the first config file is loaded")

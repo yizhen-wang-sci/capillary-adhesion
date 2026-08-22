@@ -2,10 +2,9 @@
 
 import logging
 
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import Colormap, LinearSegmentedColormap, to_rgb, is_color_like
-
+import numpy as np
+from matplotlib.colors import Colormap, LinearSegmentedColormap, is_color_like, to_rgb
 
 logger = logging.getLogger(__name__)
 

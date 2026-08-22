@@ -1,8 +1,7 @@
 import numpy as np
-import pytest
 
+from a_package.domain import CentroidQuadrature, FirstOrderElement, Grid
 from a_package.domain.optimizer import Problem, ProjectedLbfgs
-from a_package.domain import Grid, CentroidQuadrature, FirstOrderElement
 
 
 def test_problem(decompose_stitch, comm_world):
@@ -11,7 +10,7 @@ def test_problem(decompose_stitch, comm_world):
     nb_pts = (8, 8)
     grid = Grid(nb_pts)
 
-    decompose, stitch = decompose_stitch
+    decompose, _stitch = decompose_stitch
     decomposition = decompose(grid)
 
     mean_field = np.ones(nb_pts)

@@ -3,10 +3,10 @@ Reference implementations in serial. Can be used to compare with the parallel im
 """
 
 import numpy as np
-import scipy.sparse as sparse
+from scipy import sparse
 
-from a_package.domain.grid import Grid
 from a_package.domain.fem import LinearFiniteElementPixel
+from a_package.domain.grid import Grid
 
 
 class RefFirstOrderElement:

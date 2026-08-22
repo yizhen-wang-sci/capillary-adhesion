@@ -1,12 +1,11 @@
 import os
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib import animation
 
 from a_package.model import Term
-from a_package.simulation import RunDir, RecordDir, ParameterCombo, SimulationIO, load_config, UnitConversion
-
+from a_package.simulation import ParameterCombo, RecordDir, RunDir, SimulationIO, UnitConversion, load_config
 from config_helper import *
 
 # Color constants
