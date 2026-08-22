@@ -32,4 +32,4 @@ def adapt_shape(array: np.ndarray) -> Field:
         case 4:
             return array
         case _:
-            raise ValueError(f"Array of {np.ndim(array)}D, expect 2D or 4D")
+            raise ValueError(f"Expect a 2D or 4D array, got {np.ndim(array)}D")
