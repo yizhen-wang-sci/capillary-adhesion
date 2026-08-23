@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from a_package.domain.quadrature import CentroidQuadrature, NodalQuadrature, ThreePtQuadrature
-from test.test_domain.utils import generate_global_random_field
+from test.utils import generate_global_random_field
 
 
 @pytest.fixture(params=[NodalQuadrature, CentroidQuadrature, ThreePtQuadrature])
