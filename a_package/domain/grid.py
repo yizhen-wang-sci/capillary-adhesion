@@ -138,7 +138,6 @@ class Grid:
 
     # =========================================================================
     # Index: 0, 1, 2, ..., N-1
-    # =========================================================================
 
     def form_index_axis(self, ax_index: int, endpoint: bool = False):
         """Indices along the specified axis: 0, 1, 2, ..., N-1.
@@ -168,7 +167,6 @@ class Grid:
 
     # =========================================================================
     # Spatial: 0, d, 2d, ..., (N-1)d
-    # =========================================================================
 
     def form_spatial_axis(self, ax_index: int, endpoint: bool = False):
         """Spatial coordinates along the specified axis: 0, d, 2d, ..., (N-1)d.
@@ -199,7 +197,6 @@ class Grid:
 
     # =========================================================================
     # Spectral: 2π / (N * pixel_size * ref_scale) * fftfreq indices
-    # =========================================================================
 
     def form_spectral_axis(self, ax_index: int):
         """Spectral wavenumbers along the specified axis, in FFT order.

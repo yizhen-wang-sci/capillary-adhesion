@@ -249,6 +249,7 @@ class QuantityFront:
         return len(self._saved)
 
     # =========================================================================
+    # Define quantities and address their values.
 
     def define(
         self,
