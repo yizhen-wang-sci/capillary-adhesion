@@ -8,4 +8,3 @@ from .equilibrium import (
     formulate_constant_volume_phase_problem,
 )
 from .roughness import SelfAffineRoughness, psd_to_height
-from .term import Term
