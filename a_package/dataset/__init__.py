@@ -1,6 +1,6 @@
 """Dataset as the boundary between simulation and visualisation."""
 
-from .back_npy import NpyIO
+from .back_npy import NpyBack, NpyIO
 from .dirs import RecordDir, RunDir, SourceDir
 from .input_toml import read_input, write_input
 from .log_text import brief_format, log_into, open_log_file, verbose_format
