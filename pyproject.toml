@@ -88,10 +88,10 @@ known-first-party = ["a_package"]
 [tool.ruff.lint.per-file-ignores]
 # Unused imports
 "a_package/**/__init__.py" = ["F401"]
-# Doc-string
-"example/**" = ["D"]
+# Docstrings
 "test/**" = ["D"]
-# Skip maintenance scripts totally
+# Skip totally
+"example/**" = ["ALL"]
 "maintenance/**" = ["ALL"]
 
 [tool.ruff.lint.pycodestyle]

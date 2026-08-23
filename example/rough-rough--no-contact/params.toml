@@ -1,45 +1,55 @@
 # Rough over rough surface configuration
 
-[[sweep]]
 # Sweep over different contact angles
+
+[[batch]]
 path="capillary.contact_angle_degree"
-values=[0, 60, 75, 90, 105, 120, 180]
+values=[5, 60, 75, 90, 105, 120, 175]
 
 [grid]
-pixel_size = 0.01
+lateral_size = 1.0
 nb_pixels = 1024
 
-[surface]
 [surface.upper]
 shape = "rough"
-prefactor = 1e6
-rolloff_wavelength_pixels = 64
-cutoff_wavelength_pixels = 8
-hurst_exponent = 0.95
+
+[surface.upper.rough]
+length_unit = "pixel"
+rolloff_wavelength = 64
+cutoff_wavelength = 8
+hurst_exponent = 0.8
+prefactor = 1e1
 seed = 0
 
 [surface.lower]
 shape = "rough"
-prefactor = 1e6
-rolloff_wavelength_pixels = 64
-cutoff_wavelength_pixels = 8
-hurst_exponent = 0.95
+
+[surface.lower.rough]
+length_unit = "pixel"
+rolloff_wavelength = 64
+cutoff_wavelength = 8
+hurst_exponent = 0.8
+prefactor = 1e1
 seed = 1
 
 [capillary]
-interface_thickness = 0.02
-contact_angle_degree = 120
-
-[optimizer]
-max_nb_iters = 1000
-tol_gradient = 1e-6
-tol_step = 1e-6
+length_unit = "pixel"
+interface_thickness = 2
+contact_angle_degree = 90
+perimeter_weight = 1e-3
 
 [trajectory]
-min_separation = 0.005
-max_separation = 0.015
-step_size = 0.001
+length_unit = "lateral"
+max_separation = 1.5
+min_separation = 0.5
+nb_decrements = 100
 round_trip = true
+nb_cycles = 10
 
 [constraint]
 liquid_volume_percent = 50.0
+
+[optimizer]
+max_nb_iters = 5000
+tol_gradient = 1e-8
+tol_step = 1e-8
