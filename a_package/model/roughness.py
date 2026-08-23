@@ -1,14 +1,10 @@
-"""
-Self-affine rough surface generation.
-"""
+"""Self-affine rough surface generation."""
 
 import dataclasses as dc
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
-import numpy.linalg as linalg
-import numpy.fft as fft
-import numpy.random as random
+from numpy import fft, linalg, random
 
 from a_package.domain import Grid
 
@@ -16,32 +12,39 @@ from a_package.domain import Grid
 @dc.dataclass(init=True)
 class SelfAffineRoughness:
     """Parameters defining self-affine roughness spectrum."""
+
     C0: float
-    """Prefactor"""
+    """Prefactor."""
     H: float
-    """Hurst exponent"""
+    """Hurst exponent."""
     qR: float
-    """The (angular) wavenumber below which the PSD keeps constant, above which the PSD rolls off."""
+    """The (angular) wavenumber below which the PSD keeps constant, and above which it
+    rolls off."""
     qS: float
     """The (angular) wavenumber above which the PSD is negligible."""
-    qT: float = 2*np.pi
-    """The (angular) wavenumber below which the PSD is terminated. Defaults to 2π (1 cycle over unit length)."""
+    qT: float = 2 * np.pi
+    """The (angular) wavenumber below which the PSD is terminated. Defaults to 2π, one
+    cycle over unit length."""
 
     def __post_init__(self):
+        """Check that the three wavenumbers are ordered.
+
+        Raises:
+            ValueError: If the wavenumbers are not positive and ordered as qT <= qR <= qS.
+        """
         if not (0 < self.qT <= self.qR <= self.qS):
             raise ValueError("The three wavenumbers must be positive and ordered as qT <= qR <= qS.")
 
     def mapto_isotropic_psd(self, wavevector: np.ndarray, component_axis: int | None = None):
-        """
-        Get the isotropic power spectral density (psd) of a given wavenumber.
+        """Get the isotropic power spectral density (PSD) of the given wavenumber / wavevector.
 
-        Parameters
-        ----------
-        wavevector : NumPy
-            Wavevector with components in radians, i.e. 2*pi / wavelength.
-        component_axis : int | None
-            If None, wavevector is treated as single component wavenumber.
-            If int, compute magnitude via norm along this axis.
+        Args:
+            wavevector: Wavevector with components in radians, i.e. 2*pi / wavelength.
+            component_axis: If None, wavevector is treated as single component wavenumber.
+                If int, compute magnitude via norm along this axis.
+
+        Returns:
+            The isotropic PSD, zero outside the interval [qT, qS).
         """
         if component_axis is None:
             wavenumber = wavevector
@@ -62,40 +65,40 @@ class SelfAffineRoughness:
         return psd
 
     def correct_prefactor_by_rms_height(self, value: float):
-        cc = 1 - (self.qT /self.qR)**2
-        self.C0 = 4 * np.pi * self.H * value ** 2 / ((1 + self.H * cc) * self.qR**(-2*self.H) - self.qS**(-2*self.H))
+        """Set the prefactor `C0` so the spectrum has a given RMS height.
+
+        Args:
+            value: The RMS height to match.
+        """
+        cc = 1 - (self.qT / self.qR) ** 2
+        self.C0 = (
+            4 * np.pi * self.H * value**2 / ((1 + self.H * cc) * self.qR ** (-2 * self.H) - self.qS ** (-2 * self.H))
+        )
 
     def correct_prefactor_by_rms_slope(self, value: float):
-        cc = 1 - (self.qT /self.qR)**4
-        self.C0 = 4 * np.pi * (1 - self.H) * value ** 2 / (-0.5 * (1 + self.H * cc) * self.qR**(2-2*self.H)
-                                                           + self.qS**(2-2*self.H))
+        """Set the prefactor `C0` so the spectrum has a given RMS slope.
+
+        Args:
+            value: The RMS slope to match.
+        """
+        cc = 1 - (self.qT / self.qR) ** 4
+        self.C0 = (
+            4
+            * np.pi
+            * (1 - self.H)
+            * value**2
+            / (-0.5 * (1 + self.H * cc) * self.qR ** (2 - 2 * self.H) + self.qS ** (2 - 2 * self.H))
+        )
 
     def generate_height_profile(self, grid: Grid, seed: int | None = None):
-        """
-        Generates a height profile over the spatial domain specified by the input
-        grid, based on spectral properties.
+        """Generate a height profile over the spatial domain of a grid.
 
-        The method takes a `Grid` object, constructs its spectral mesh, computes
-        the wavevector, and maps it to an isotropic power spectral density (PSD).
-        The PSD is then converted into a height profile using the provided grid's
-        domain lengths and an optional random seed.
+        Args:
+            grid: The spatial domain, providing the spectral mesh and the domain lengths.
+            seed: Seed for the random number generator. If None, the generation is not seeded.
 
-        Parameters
-        ----------
-        grid : Grid
-            An object representing the spatial domain over which the height profile
-            is to be generated. This object is expected to provide methods for
-            forming a spectral mesh and specifying domain lengths.
-
-        seed : int or None, optional
-            A random seed for reproducibility of the height profile generation.
-            If `None`, the random generation will not be seeded.
-
-        Returns
-        -------
-        numpy.ndarray
-            A 2D array representing the generated height profile based on the
-            given grid configuration and spectral properties.
+        Returns:
+            A 2D array holding the height profile.
         """
         qx, qy = grid.form_spectral_mesh()
         wavevector = np.stack([qx, qy], axis=0)
@@ -104,32 +107,23 @@ class SelfAffineRoughness:
         return height
 
 
-def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, seed: int | None = None,
-                  random_amplitude: bool=False):
-    """
-    Convert a power spectral density (PSD) to a height distribution in real space.
+def psd_to_height(
+    psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, seed: int | None = None, random_amplitude: bool = False
+):
+    """Construct a height profile based on the given power spectral density (PSD).
 
-    This function takes a 2D power spectral density array and reconstructs the height
-    distribution in real space by applying an inverse Fourier transform. The process includes
-    scaling the spectral density to amplitude, introducing random phase angles for spatial
-    variability, and normalizing the output correctly.
+    Args:
+        psd: A 2D array representing the power spectral density.
+        lateral_sizes: A sequence representing the lateral sizes of the domain in each
+            dimension. If None, default sizes of ones are used.
+        seed: Seed for the random number generator to ensure reproducibility.
+        random_amplitude: Whether to impose randomness on the amplitude of the height profile.
 
-    Parameters
-    ----------
-    psd : numpy.ndarray
-        A 2D array representing the power spectral density.
-    lateral_sizes : Sequence[int], optional
-        A sequence representing the lateral sizes of the domain in each dimension.
-        If None, default sizes of ones are used.
-    seed : int, optional
-        Seed for the random number generator to ensure reproducibility.
-    random_amplitude : bool, optional
-        Whether to impose randomness on the amplitude of the height distribution.
+    Returns:
+        A 2D array representing the height profile in real space.
 
-    Returns
-    -------
-    numpy.ndarray
-        A 2D array representing the height distribution in real space.
+    Raises:
+        ValueError: If `psd` is not a 2D array.
     """
     if psd.ndim != 2:
         raise ValueError("psd must be a 2D array")
@@ -155,20 +149,14 @@ def psd_to_height(psd: np.ndarray, lateral_sizes: Sequence[int] | None = None, s
 
 
 def generate_phasor_2D_random(shape, seed=None):
-    """
-    Generate random phase angles for 2D power spectral density.
+    """Generate random phase angles for 2D power spectral density.
 
-    Parameters
-    ----------
-    shape : tuple of int
-        A tuple of two integers (nx, ny) representing the shape of the 2D array.
-    seed : int, optional
-        Seed for the random number generator to ensure reproducibility.
+    Args:
+        shape: A tuple of two integers (nx, ny) representing the shape of the 2D array.
+        seed: Seed for the random number generator to ensure reproducibility.
 
-    Returns
-    -------
-    numpy.ndarray
-        A 2D complex array representing the phase_angle with random phase angles.
+    Returns:
+        A 2D complex array holding the hermitian phasor.
     """
     nx, ny = shape
     phase_angle = np.empty((nx, ny), dtype=np.float64)
@@ -176,28 +164,32 @@ def generate_phasor_2D_random(shape, seed=None):
     rng = random.default_rng(seed)
 
     # Random phase angle following uniform distribution for half of the spectrum
-    phase_angle[:, 0:ny // 2 + 1] = rng.uniform(-np.pi, np.pi, (nx, ny // 2 + 1))
+    phase_angle[:, 0 : ny // 2 + 1] = rng.uniform(-np.pi, np.pi, (nx, ny // 2 + 1))
 
-    # As the result of real valued signal, the phase spectrum must "hermitian". Due to cyclic, that means
+    # As the result of real valued signal, the phase spectrum must "hermitian".
+    # Due to cyclic, that means
     # be skew-symmetric around (nx / 2, ny / 2): phase[nx - ix, ny - iy] = -phase[ix, iy]
-    # Here follows are the correction of the existed part and construction of the rest part based on symmetry
+    # Here follows are the correction of the existed part and construction of the rest part
+    # based on symmetry
 
     # Point (0, 0) maps to (nx, ny) ==in discrete cycles==> (0, 0), hence must be zeroed
     phase_angle[0, 0] = 0
 
-    # Half x-axis 0 < x < nx/2, y=0 maps to nx > x > nx/2, y = ny ==in discrete cycles==> nx > x > nx/2, y = 0
-    phase_angle[-1:nx // 2:-1, 0] = -phase_angle[1:nx // 2 + nx % 2, 0]
+    # Half x-axis 0 < x < nx/2, y=0 maps to nx > x > nx/2, y = ny
+    # ==in discrete cycles==> nx > x > nx/2, y = 0
+    phase_angle[-1 : nx // 2 : -1, 0] = -phase_angle[1 : nx // 2 + nx % 2, 0]
     if nx % 2 == 0:
         phase_angle[nx // 2, 0] = 0
 
-    # Half y-axis x=0, 0 < y < ny/2 maps to x=nx, ny > y > ny/2 ==in discrete cycles==> x=0, ny > y > ny/2
-    phase_angle[0, -1:ny // 2:-1] = -phase_angle[0, 1:ny // 2 + ny % 2]
+    # Half y-axis x=0, 0 < y < ny/2 maps to x=nx, ny > y > ny/2
+    # ==in discrete cycles==> x=0, ny > y > ny/2
+    phase_angle[0, -1 : ny // 2 : -1] = -phase_angle[0, 1 : ny // 2 + ny % 2]
     if ny % 2 == 0:
         phase_angle[0, ny // 2] = 0
 
     if ny % 2 == 0:
         # Half x-axis at y-Nyquist 0 < x < nx/2, y=ny/2 maps to nx > x > nx/2, y=ny/2
-        phase_angle[-1:nx // 2:-1, ny // 2] = -phase_angle[1:nx // 2 + nx % 2, ny // 2]
+        phase_angle[-1 : nx // 2 : -1, ny // 2] = -phase_angle[1 : nx // 2 + nx % 2, ny // 2]
         if nx % 2 == 0:
             phase_angle[nx // 2, ny // 2] = 0
 
@@ -206,6 +198,6 @@ def generate_phasor_2D_random(shape, seed=None):
     # - Half y-axis at x-Nyquist x=nx/2, 0 < y < ny/2 maps to x=nx/2, ny > y > ny/2
     # - Quadrant nx > x > nx/2, 0 < y < ny/2 maps to 0 < x < nx/2, ny > y > ny/2
     # Hence the region 0 < x < nx, 0 < y < ny/2 maps to nx > x > 0, ny > y > ny/2
-    phase_angle[-1:0:-1, -1:ny // 2:-1] = -phase_angle[1:, 1:ny // 2 + ny % 2]
+    phase_angle[-1:0:-1, -1 : ny // 2 : -1] = -phase_angle[1:, 1 : ny // 2 + ny % 2]
 
     return np.exp(1j * phase_angle)

@@ -4,15 +4,14 @@ import sys
 import numpy as np
 
 from a_package.model import CapillaryBridge, RigidContact, Term
-from a_package.simulation import SimulationIO, RunDir, RecordDir, setup_logging, load_config, save_config
-
+from a_package.simulation import RecordDir, RunDir, SimulationIO, load_config, save_config, setup_logging
 from config_helper import *
 
 
 def main():
     # CLI
     if len(sys.argv) < 2:
-        print(f"At least one config file is required via CLI.")
+        print("At least one config file is required via CLI.")
         sys.exit(1)
     if len(sys.argv) > 2:
         print("Only the first config file is loaded")
@@ -43,7 +42,7 @@ def main():
         contact.set_mean_separation(z_min)
         gap_at_min = contact.get_gap()
         capillary.set_gap(gap_at_min)
-        volume_percent = config['constraint']['liquid_volume_percent']
+        volume_percent = config["constraint"]["liquid_volume_percent"]
         liquid_volume = capillary.get_max_volume() * (volume_percent / 100.0)
 
         for idx, separation in enumerate(trajectory):
@@ -82,8 +81,8 @@ def solve_phase_by_level_set(capillary: CapillaryBridge, gap: np.ndarray, volume
             to_fill = gap < height
         else:
             to_fill = gap > height
-        phase[to_fill] = 1.
-        phase[~to_fill] = 0.
+        phase[to_fill] = 1.0
+        phase[~to_fill] = 0.0
         capillary.set_phase(phase)
 
     def compute_volume_deviation(height):

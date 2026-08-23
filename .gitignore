@@ -1,3 +1,11 @@
+# Dot files
+.*
+!.gitignore
+
+# Data files
+*.npy
+*.json
+
 # Temporary files
 *~
 
@@ -9,6 +17,3 @@
 /dist
 *egg-info
 /venv
-
-# Other
-/cases

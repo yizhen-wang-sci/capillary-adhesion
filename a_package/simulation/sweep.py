@@ -1,34 +1,41 @@
-"""
-Parameter sweep expansion for parametric exploration.
+"""Parameter sweep expansion for parametric exploration.
 
-Supported sweep format in config TOML:
+Example:
+    A sweep is declared in the config TOML that `config.py` loads:
 
-    [[sweep]]
-    path = "problem.capillary.contact_angle"
-    values = [30, 60, 90]
+        [[sweep]]
+        path = "problem.capillary.contact_angle"
+        values = [30, 60, 90]
 
-    [[sweep]]
-    path = "problem.upper.roughness.rms"
-    linspace = [0.1, 1.0, 5]  # start, stop, num
+        [[sweep]]
+        path = "problem.upper.roughness.rms"
+        linspace = [0.1, 1.0, 5]  # start, stop, num
 
-    [[sweep]]
-    path = "solver.tolerance"
-    logspace = [-6, -3, 4]  # 10^start to 10^stop, num points
+        [[sweep]]
+        path = "solver.tolerance"
+        logspace = [-6, -3, 4]  # 10^start to 10^stop, num points
 
-Above generates 3 * 5 * 4 = 60 config combinations.
+    The above generates 3 * 5 * 4 = 60 config combinations.
 """
 
 import itertools
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import numpy as np
 
 
 def size_of_sweep(config: dict) -> int:
-    """
-    Return number of configs the sweep would yield.
+    """Return number of configs the sweep would yield.
 
-    Does not modify config.
+    Args:
+        config: The configuration. Not modified, its "sweep" key stays in place.
+
+    Returns:
+        Size of the Cartesian product over the sweeps, 1 if no sweep is defined.
+
+    Raises:
+        ValueError: If two sweeps share a path, or a sweep has no value specification.
     """
     sweep_spec = _concretize(config.get("sweep", []))
     if len(sweep_spec) == 0:
@@ -40,14 +47,19 @@ def size_of_sweep(config: dict) -> int:
 
 
 def unroll_sweep(config: dict) -> Iterator[dict]:
-    """
-    Iterate over sweep parameter combinations.
+    """Iterate over sweep parameter combinations.
 
-    Pops "sweep" key from config and yields the same dict object
-    with each parameter combination applied in place. Caller must
-    copy if individual configs need to be preserved.
+    Args:
+        config: The configuration. Its "sweep" key is popped, and the swept paths are
+            written in place.
 
-    If no sweep defined, yields config once unchanged.
+    Yields:
+        The same dict object every time, carrying one combination. If no sweep is defined,
+        it is yielded once unchanged.
+
+    Raises:
+        ValueError: If two sweeps share a path, or a sweep has no value specification.
+        KeyError: If a swept path leads through a key the config does not have.
     """
     sweep_spec = _concretize(config.pop("sweep", []))
     for update in _iter_updates(sweep_spec):
@@ -57,11 +69,22 @@ def unroll_sweep(config: dict) -> Iterator[dict]:
 
 
 def _concretize(sweeps: list[dict]):
-    """
-    Expand linspace/logspace into explicit values list and merge sweeps into one specification dict
+    """Expand linspace/logspace into explicit values, and merge the sweeps into one dict.
 
-    Input:  [{"path": "a.b", "linspace": [0, 1, 3]}, ...]
-    Output: {"a.b": [0.0, 0.5, 1.0], ...}
+    Args:
+        sweeps: The sweeps as read from config, each with a "path" and one of "values",
+            "linspace" or "logspace".
+
+    Returns:
+        The values to sweep, keyed by path.
+
+    Raises:
+        ValueError: If two sweeps share a path, or a sweep carries none of the three value
+            specifications.
+
+    Example:
+        Input:  [{"path": "a.b", "linspace": [0, 1, 3]}, ...]
+        Output: {"a.b": [0.0, 0.5, 1.0], ...}
     """
     result = {}
     for sweep in sweeps:
@@ -78,29 +101,44 @@ def _concretize(sweeps: list[dict]):
             values = np.logspace(start, stop, int(num)).tolist()
         else:
             raise ValueError(
-                f"Sweep at path '{path}' has no supported value specification. "
-                "Use linspace, logspace, or values."
+                f"Sweep at path '{path}' has no supported value specification. Use linspace, logspace, or values."
             )
         result[path] = values
     return result
 
 
 def _iter_updates(sweep_specs: dict[str, list]):
-    """
-    Yield iterable of (path, value) pairs for each Cartesian product combination.
+    """Yield iterable of (path, value) pairs for each Cartesian product combination.
 
-    Input:  {"a.b": [1, 2], "c": [3, 4]}
-    Yields: zip producing ("a.b", 1), ("c", 3)
-            zip producing ("a.b", 1), ("c", 4)
-            zip producing ("a.b", 2), ("c", 3)
-            zip producing ("a.b", 2), ("c", 4)
+    Args:
+        sweep_specs: The values to sweep, keyed by path.
+
+    Yields:
+        The paths zipped with one combination of their values. The last path varies
+        fastest.
+
+    Example:
+        Input:  {"a.b": [1, 2], "c": [3, 4]}
+        Yields: zip producing ("a.b", 1), ("c", 3)
+                zip producing ("a.b", 1), ("c", 4)
+                zip producing ("a.b", 2), ("c", 3)
+                zip producing ("a.b", 2), ("c", 4)
     """
     for combo in itertools.product(*sweep_specs.values()):
-        yield zip(sweep_specs.keys(), combo) 
+        yield zip(sweep_specs.keys(), combo)
 
 
 def _set_nested(config: dict, path: str, value: Any):
-    """Set value at dot-notation path. E.g., "a.b.c" sets config["a"]["b"]["c"]."""
+    """Set value at dot-notation path. E.g., "a.b.c" sets config["a"]["b"]["c"].
+
+    Args:
+        config: The configuration, modified in place.
+        path: The keys to walk, separated by dots.
+        value: The value to write.
+
+    Raises:
+        KeyError: If a key along the way is missing. Only the last key is created.
+    """
     keys = path.split(".")
     obj = config
     for key in keys[:-1]:

@@ -1,17 +1,16 @@
 import numpy as np
-import pytest
 
-from a_package.domain.optimizer import Problem, AugmentedLagrangian, ProjectedLbfgs
-from a_package.domain import Grid, CentroidQuadrature, FirstOrderElement
+from a_package.domain import CentroidQuadrature, FirstOrderElement, Grid
+from a_package.domain.optimizer import Problem, ProjectedLbfgs
 
 
 def test_problem(decompose_stitch, comm_world):
-    """A testing problem where the objective is to minimize the gradient, while keeping the sum quantity constant,
-    with a sinusoidal field as the initial guess."""
+    """A testing problem where the objective is to minimize the gradient, while keeping the
+    sum quantity constant, with a sinusoidal field as the initial guess."""
     nb_pts = (8, 8)
     grid = Grid(nb_pts)
 
-    decompose, stitch = decompose_stitch
+    decompose, _stitch = decompose_stitch
     decomposition = decompose(grid)
 
     mean_field = np.ones(nb_pts)
@@ -62,142 +61,20 @@ def test_problem(decompose_stitch, comm_world):
         fem.propag_sens_value(field_quadr_3, field_quadr_3_back_sens)
         return field_quadr_3_back_sens.s[0, 0, ...]
 
-    problem = Problem(set_x=set_field, get_x=get_field, get_f=objective, get_f_Dx=objective_gradient,
-                      A=constraint_jacobian().ravel(), b=grid.element_area * np.sum(mean_field),
-                      communicator=comm_world)
+    problem = Problem(
+        set_x=set_field,
+        get_x=get_field,
+        get_f=objective,
+        get_f_Dx=objective_gradient,
+        A=constraint_jacobian().ravel(),
+        b=grid.element_area * np.sum(mean_field),
+        communicator=comm_world,
+    )
     optimizer = ProjectedLbfgs(max_inner_iter=10)
 
     result = optimizer.solve_minimisation(problem, x0=grid.get_local(sinusoidal_field))
-    solved_field = result['x'].reshape(decomposition.nb_subdomain_grid_pts)
+    solved_field = result["x"].reshape(decomposition.nb_subdomain_grid_pts)
     print(result)
-    assert result['success']
-    assert result['nit'] < optimizer.max_inner_iter
+    assert result["success"]
+    assert result["nit"] < optimizer.max_inner_iter
     np.testing.assert_allclose(solved_field, grid.get_local(mean_field))
-
-
-@pytest.mark.skip(reason="Not main issue.")
-def test_unconstrained_numopt():
-
-    saved_x = np.zeros(0)
-
-    def get_x():
-        return saved_x
-
-    def set_x(x):
-        nonlocal saved_x
-        saved_x = x
-
-    def get_f():
-        return np.sum(saved_x**2)
-
-    def get_f_Dx():
-        return 2 * saved_x
-
-    num_opt = Problem(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx)
-
-    optimizer = AugmentedLagrangian(max_outer_loop=1)
-    result = optimizer.solve_minimisation(num_opt, x0=[5, 5])
-    print(result)
-
-    assert np.all(np.isclose(result['primal'], 0.))
-    assert result['is_converged']
-
-
-@pytest.mark.skip(reason="Not main issue.")
-def test_eq_constrained_numopt():
-
-    saved_x = np.zeros(0)
-
-    def get_x():
-        return saved_x
-
-    def set_x(x):
-        nonlocal saved_x
-        saved_x = x
-
-    def get_f():
-        return np.sum(saved_x**2)
-
-    def get_f_Dx():
-        return 2 * saved_x
-
-    def get_g():
-        x1, x2 = saved_x
-        return (x1 - 2)**2 + x2**2 - 1
-
-    def get_g_Dx():
-        x1, x2 = saved_x
-        return np.array([2 * (x1 - 2), 2 * x2])
-
-    num_opt = Problem(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, get_g=get_g, get_g_Dx=get_g_Dx)
-
-    optimizer = AugmentedLagrangian(max_outer_loop=30)
-    result = optimizer.solve_minimisation(num_opt, x0=[5., 5.])
-    print(result)
-
-    assert np.all(np.isclose(result['primal'], [1., 0.]))
-    assert result['is_converged']
-
-
-@pytest.mark.skip(reason="Not main issue.")
-def test_bound_constrained_numopt():
-
-    saved_x = np.zeros(0)
-
-    def get_x():
-        return saved_x
-
-    def set_x(x):
-        nonlocal saved_x
-        saved_x = x
-
-    def get_f():
-        return np.sum(saved_x**2)
-
-    def get_f_Dx():
-        return 2 * saved_x
-
-    num_opt = Problem(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, x_lb=np.array([2., -0.5]), x_ub=5.)
-
-    optimizer = AugmentedLagrangian(max_outer_loop=10)
-    result = optimizer.solve_minimisation(num_opt, x0=[5., 5.])
-    print(result)
-
-    assert np.all(np.isclose(result['primal'], [2., 0.], atol=1e-4))
-    assert result['is_converged']
-
-
-@pytest.mark.skip(reason="Not main issue.")
-def test_eq_and_bound_constrained_numopt():
-
-    saved_x = np.zeros(0)
-
-    def get_x():
-        return saved_x
-
-    def set_x(x):
-        nonlocal saved_x
-        saved_x = x
-
-    def get_f():
-        return np.sum(saved_x**2)
-
-    def get_f_Dx():
-        return 2 * saved_x
-
-    def get_g():
-        x1, x2 = saved_x
-        return (x1 - 2)**2 + x2**2 - 1
-
-    def get_g_Dx():
-        x1, x2 = saved_x
-        return np.array([2 * (x1 - 2), 2 * x2])
-
-    num_opt = Problem(get_x=get_x, set_x=set_x, get_f=get_f, get_f_Dx=get_f_Dx, get_g=get_g, get_g_Dx=get_g_Dx, x_lb=np.array([2., -0.5]), x_ub=5.)
-
-    optimizer = AugmentedLagrangian(max_outer_loop=50)
-    result = optimizer.solve_minimisation(num_opt, x0=np.array([5., 5.]), beta0=1e1)
-    print(result)
-
-    assert np.all(np.isclose(result['primal'], [2., 1.], atol=1e-4))
-    assert result['is_converged']

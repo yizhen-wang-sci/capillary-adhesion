@@ -1,8 +1,7 @@
-import pytest
 import numpy as np
+import pytest
 
 from a_package.domain import Grid, factorize_closest
-
 
 # @pytest.fixture(params=[[6, 6], [4, 9]], ids=["square_grid", "rectangle_grid"])
 # def _nb_elements(request):
@@ -22,14 +21,13 @@ from a_package.domain import Grid, factorize_closest
 
 @pytest.fixture
 def mock_grid():
-    return Grid([4, 4], [.1, .1])
-
+    return Grid([4, 4], [0.1, 0.1])
 
 
 @pytest.fixture
 def parallel_in_x(comm_world):
     def _decompose_x(grid):
-        return grid.decompose((comm_world.Get_size(), 1), [1,1], communicator=comm_world)
+        return grid.decompose((comm_world.Get_size(), 1), [1, 1], communicator=comm_world)
 
     def _stitch_x(local_field, grid):
         return np.vstack(comm_world.allgather(local_field))
@@ -40,7 +38,7 @@ def parallel_in_x(comm_world):
 @pytest.fixture
 def parallel_in_y(comm_world):
     def _decompose_y(grid):
-        return grid.decompose((1, comm_world.Get_size()), [1,1], communicator=comm_world)
+        return grid.decompose((1, comm_world.Get_size()), [1, 1], communicator=comm_world)
 
     def _stitch_y(local_field, grid):
         return np.hstack(comm_world.allgather(local_field))
@@ -51,7 +49,7 @@ def parallel_in_y(comm_world):
 @pytest.fixture
 def parallel_in_xy(comm_world):
     def _decompose_xy(grid):
-        return grid.decompose(factorize_closest(comm_world.Get_size(), 2), [1,1], communicator=comm_world)
+        return grid.decompose(factorize_closest(comm_world.Get_size(), 2), [1, 1], communicator=comm_world)
 
     def _stitch_xy(local_field, grid):
         values = comm_world.allgather(local_field)
@@ -60,7 +58,7 @@ def parallel_in_xy(comm_world):
 
         stitched = np.empty(grid.nb_domain_grid_pts)
         for value, (ix, iy), (nx, ny) in zip(values, i_starts, nb_pts):
-            stitched[ix:ix+nx, iy:iy+ny] = value
+            stitched[ix : ix + nx, iy : iy + ny] = value
         return stitched
 
     return _decompose_xy, _stitch_xy

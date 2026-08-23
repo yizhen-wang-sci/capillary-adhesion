@@ -4,12 +4,24 @@ import sys
 import numpy as np
 from NuMPI import MPI
 
-from a_package.simulation import SourceDir, RunDir, SimulationIO, load_config, unroll_sweep, save_config, \
-    setup_logging, get_git_hash
 from a_package.domain import Grid, factorize_closest
-from a_package.model import CapillaryBridge, RigidContact, Term, formulate_constant_volume_phase_problem, \
-    extract_pressure_in_constant_volume_solution
-
+from a_package.model import (
+    CapillaryBridge,
+    RigidContact,
+    Term,
+    extract_pressure_in_constant_volume_solution,
+    formulate_constant_volume_phase_problem,
+)
+from a_package.simulation import (
+    RunDir,
+    SimulationIO,
+    SourceDir,
+    get_git_hash,
+    load_config,
+    save_config,
+    setup_logging,
+    unroll_sweep,
+)
 from config_helper import *
 
 comm_world = MPI.COMM_WORLD
@@ -18,7 +30,7 @@ comm_world = MPI.COMM_WORLD
 def main():
     # CLI arguments
     if len(sys.argv) != 2:
-        raise ValueError(f"Provide one config file.")
+        raise ValueError("Provide one config file.")
     config_file = sys.argv[1]
     config_origin = load_config(config_file)
 
@@ -48,13 +60,13 @@ def main():
         contact.set_mean_separation(z_min)
         gap_at_min = contact.get_gap()
         capillary.set_gap(gap_at_min)
-        volume_percent = config['constraint']['liquid_volume_percent']
+        volume_percent = config["constraint"]["liquid_volume_percent"]
         liquid_volume = capillary.get_max_volume() * (volume_percent / 100.0)
 
         # records
         record = None
         if comm_world.rank == 0:
-            params = {'grid': grid.nb_domain_grid_pts[0], 'theta': mixture._theta}
+            params = {"grid": grid.nb_domain_grid_pts[0], "theta": mixture._theta}
             record = run.new_record(**params)
             save_config(config, record.input)
         record = comm_world.bcast(record)
@@ -76,11 +88,14 @@ def main():
             print(f"rank={comm_world.rank}, problem solved, it took {solution['nit']} iterations.")
 
             # subtract quantities and save them
-            phase = solution['x'].reshape(decomposition.nb_subdomain_grid_pts)
+            phase = solution["x"].reshape(decomposition.nb_subdomain_grid_pts)
             pressure = extract_pressure_in_constant_volume_solution(solution)
             print(f"rank={comm_world.rank}, before io save step")
-            io.save_step(i_step, single_values={Term.separation: separation, Term.pressure: pressure},
-                         fields={Term.gap: gap, Term.phase: phase})
+            io.save_step(
+                i_step,
+                single_values={Term.separation: separation, Term.pressure: pressure},
+                fields={Term.gap: gap, Term.phase: phase},
+            )
             print(f"rank={comm_world.rank}, after io save step")
 
 
@@ -89,9 +104,10 @@ def square_init_guess(grid: Grid, volume, mean_separation):
     Nx, Ny = grid.nb_domain_grid_pts
     phase = np.zeros(grid.nb_domain_grid_pts)
     phase[
-        Nx // 2 - half_nb_elements:Nx // 2 + half_nb_elements, Ny // 2 - half_nb_elements:Ny // 2 + half_nb_elements] = 1.0
+        Nx // 2 - half_nb_elements : Nx // 2 + half_nb_elements, Ny // 2 - half_nb_elements : Ny // 2 + half_nb_elements
+    ] = 1.0
     return phase
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

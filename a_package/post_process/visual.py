@@ -1,29 +1,22 @@
+"""Utilities extracted from visual scripts."""
+
 import logging
 
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import Colormap, LinearSegmentedColormap, to_rgb, is_color_like
-
+import numpy as np
+from matplotlib.colors import Colormap, LinearSegmentedColormap, is_color_like, to_rgb
 
 logger = logging.getLogger(__name__)
 
 
 def split_continuous_indices(i_arr):
-    """
-    Splits a 1-dimensional array of indices into sub-arrays with contiguous indices.
-    Useful for axis.fill_between.
+    """Split a 1-D array of indices into sub-arrays of contiguous indices.
 
-    Parameters
-    ----------
-    i_arr : numpy.ndarray
-        1-dimensional array containing integer indices. Assumes input is sorted
-        in ascending order.
+    Args:
+        i_arr: 1-D array of integer indices, sorted in ascending order.
 
-    Returns
-    -------
-    list of numpy.ndarray
-        A list of 1-dimensional sub-arrays, each containing contiguous indices
-        from the input array.
+    Returns:
+        The sub-arrays, each holding one run of consecutive indices.
     """
     # Because numpy.diff will reduce the size of an array by 1, plus 1 to
     # compensate. The indexing is then correct for the original array.
@@ -32,33 +25,22 @@ def split_continuous_indices(i_arr):
 
 
 def slice_colormap(cmap, low: float, high: float, bitwidth=8, name=None):
-    """
-    Extracts a portion of a given colormap from the given low to high values, and
-    set the discrete colors based on the (optional) bitwidth value.
+    """Extract a portion of a colormap, sampled into discrete colors.
 
-    Parameters
-    ----------
-    cmap : Union[str, Colormap]
-        The input colormap, which can either be a string that specifies the name of a
-        matplotlib colormap or a Colormap instance.
-    low : float
-        The lower bound of the colormap range to extract, specified as a fraction of the
-        colormap domain. Must be between 0 and 1.
-    high : float
-        The upper bound of the colormap range to extract, specified as a fraction of the
-        colormap domain. Must be between 0 and 1 and greater than or equal to `low`.
-    bitwidth : int, optional
-        The bitwidth used to determine the number of discrete samples in the colormap. The
-        number of samples will be 2 raised to the power of `bitwidth`. Defaults to 8.
-    name : str, optional
-        The name for the resulting colormap. If not provided, a name will be automatically
-        generated based on the input colormap and the specified `low` and `high` bounds.
+    Args:
+        cmap: Name of a matplotlib colormap, or a `Colormap` instance.
+        low: Lower bound of the range to extract, as a fraction of the colormap domain.
+        high: Upper bound of the range to extract, as a fraction of the colormap domain.
+        bitwidth: Exponent setting the number of samples, 2**bitwidth. Defaults to 8.
+        name: Name of the resulting colormap. Defaults to the input name followed by the two
+            bounds.
 
-    Returns
-    -------
-    Colormap
-        A LinearSegmentedColormap instance corresponding to the extracted segment of the
-        input colormap.
+    Returns:
+        A `LinearSegmentedColormap` holding the extracted segment.
+
+    Raises:
+        TypeError: If `cmap` is neither a colormap name nor a `Colormap`.
+        ValueError: If the bounds are not ordered as 0 <= low < high <= 1.
     """
     base = plt.get_cmap(cmap) if isinstance(cmap, str) else cmap
     if not isinstance(base, Colormap):
@@ -72,40 +54,26 @@ def slice_colormap(cmap, low: float, high: float, bitwidth=8, name=None):
     return LinearSegmentedColormap.from_list(name, base(np.linspace(low, high, nb_samples)), N=nb_samples)
 
 
-def create_segment_colors(source, nb_steps, *,
-                          low=0.0, high=1.0,
-                          alpha_begin=1.0, alpha_end=1.0, gamma=1.0):
-    """Return an (nb_steps, 4) RGBA array for LineCollection(colors=...).
+def create_segment_colors(source, nb_steps, *, low=0.0, high=1.0, alpha_begin=1.0, alpha_end=1.0, gamma=1.0):
+    """Build a sequence of RGBA colors, one per segment.
 
-    `source` decides the coloring mode:
-      - a single color (name, hex, RGB/RGBA tuple)  -> constant hue,
-        alpha ramps from `alpha_begin` to `alpha_end` (fading effect).
-      - a colormap (name or Colormap object)         -> hue sweeps across
-        the map from `low` to `high` (spectrum effect); alpha still ramps
-        from `alpha_begin` to `alpha_end` on top of it (defaults to fully
-        opaque, i.e. no fade, unless you set them).
+    Args:
+        source: A matplotlib color, a registered colormap name, or a `Colormap`. A color
+            holds the hue constant; a colormap sweeps the hue from `low` to `high`.
+        nb_steps: Number of colors to generate. Must be >= 1.
+        low: Lower bound of the colormap range to sample. Unused for a plain color.
+        high: Upper bound of the colormap range to sample. Unused for a plain color.
+        alpha_begin: Alpha of the first color. Defaults to 1.0.
+        alpha_end: Alpha of the last color, and of a single one. Defaults to 1.0.
+        gamma: Exponent shaping the alpha ramp, t**gamma. Defaults to 1.0, a linear ramp.
 
-    Parameters
-    ----------
-    source : color or str or Colormap
-        A matplotlib color spec, or a registered colormap name / Colormap
-        instance. See above for how each is interpreted.
-    nb_steps : int
-        Number of colors to generate (one per segment). Must be >= 1.
-    low, high : float in [0, 1], keyword-only
-        Sub-range of the colormap to sample. Ignored if `source` is a
-        plain color.
-    alpha_begin, alpha_end : float in [0, 1], keyword-only
-        Alpha of the first and last entry. Equal (default 1.0, 1.0) means
-        no fade -- fully opaque throughout. Use 0.0 -> 1.0 for fade-in,
-        1.0 -> 0.0 for fade-out, or any pair in between.
-    gamma : float, keyword-only
-        Shapes the alpha ramp via t**gamma: 1.0 linear, >1 stays close to
-        alpha_begin longer, <1 approaches alpha_end sooner.
+    Returns:
+        Shape (nb_steps, 4), one RGBA row per step.
 
-    Returns
-    -------
-    numpy.ndarray, shape (nb_steps, 4)
+    Raises:
+        ValueError: If `nb_steps` is below 1, the bounds are not ordered as
+            0 <= low < high <= 1, an alpha lies outside [0, 1], or `source` is neither a
+            color nor a colormap.
     """
     if nb_steps < 1:
         raise ValueError(f"nb_steps must be >= 1, got {nb_steps}")
@@ -125,17 +93,13 @@ def create_segment_colors(source, nb_steps, *,
             try:
                 cmap = plt.get_cmap(source)
             except ValueError:
-                raise ValueError(
-                    f"{source!r} is not a valid color or a registered "
-                    f"colormap name")
+                raise ValueError(f"{source!r} is not a valid color or a registered colormap name")
         elif isinstance(source, Colormap):
             cmap = source
         else:
-            raise ValueError(
-                f"source must be a color, colormap name, or Colormap "
-                f"instance; got {source!r}")
+            raise ValueError(f"source must be a color, colormap name, or Colormap instance; got {source!r}")
         # Create a color gradient from a slice of the colormap
-        colors = cmap(np.linspace(low, high, nb_steps))   # (nb_steps, 4)
+        colors = cmap(np.linspace(low, high, nb_steps))  # (nb_steps, 4)
 
     if nb_steps == 1:
         colors[:, 3] = alpha_end
@@ -146,34 +110,28 @@ def create_segment_colors(source, nb_steps, *,
 
 
 def divide_into_segments(x, y, *, nb_segments=None):
-    """Group a series of data points into `nb_segments` groups.
+    """Group a series of data points into segments, consecutive ones sharing a boundary point.
 
-    Use case, pass as arguments of LineCollection.
+    Args:
+        x: 1-D sequence of coordinates, holding at least 2 points.
+        y: 1-D sequence of coordinates, of the same length as `x`.
+        nb_segments: Number of segments. Defaults to nb_points - 1, and is capped at that
+            value with a warning.
 
-    Parameters
-    ----------
-    x, y : array-like
-        1-D sequences of equal length (>= 2 points).
-    nb_segments : int, optional, keyword-only
-        Desired number of segments. Must be >= 1 if given. Values are capped
-        at nb_points - 1 in which every point forms the start and end of
-        each segment.
+    Returns:
+        `nb_segments` arrays of shape (nb_points_in_segment, 2). The point counts differ by
+        one where the points do not divide evenly.
 
-    Returns
-    -------
-    list of numpy.ndarray
-        the list contains `nb_segments` arrays, with shape
-        (nb_points_in_segment, 2). `nb_points_in_segment` can vary by one
-        between segments when the points can't be divided evenly.
+    Raises:
+        ValueError: If `x` and `y` differ in length, fewer than 2 points are given, or
+            `nb_segments` is below 1.
     """
     x = np.asarray(x, dtype=float).ravel()
     y = np.asarray(y, dtype=float).ravel()
     if x.size != y.size:
-        raise ValueError(
-            f"x and y must have the same length; got {x.size} and {y.size}")
+        raise ValueError(f"x and y must have the same length; got {x.size} and {y.size}")
     if x.size < 2:
-        raise ValueError(
-            f"need at least 2 points to form a segment; got {x.size}")
+        raise ValueError(f"need at least 2 points to form a segment; got {x.size}")
 
     max_segments = x.size - 1
     if nb_segments is None:
@@ -189,7 +147,14 @@ def divide_into_segments(x, y, *, nb_segments=None):
     # Round up so boundary indices are integers
     boundary_idxs = np.round(np.linspace(0, x.size - 1, nb_segments + 1)).astype(int)
 
-    # Plus 1 at stop indices so it includes the ending point, which results in continuous line segments
-    return [np.column_stack([x[boundary_idxs[i_segm]:boundary_idxs[i_segm + 1] + 1],
-                             y[boundary_idxs[i_segm]:boundary_idxs[i_segm + 1] + 1]])
-            for i_segm in range(nb_segments)]
+    # Plus 1 at stop indices so it includes the ending point,
+    # which results in continuous line segments
+    return [
+        np.column_stack(
+            [
+                x[boundary_idxs[i_segm] : boundary_idxs[i_segm + 1] + 1],
+                y[boundary_idxs[i_segm] : boundary_idxs[i_segm + 1] + 1],
+            ]
+        )
+        for i_segm in range(nb_segments)
+    ]

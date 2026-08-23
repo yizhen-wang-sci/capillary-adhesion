@@ -1,7 +1,9 @@
-from .io import SimulationIO
-from .dirs import SourceDir, RunDir, RecordDir, TaggedIndex, ParameterCombo, NamingConvention
-from .logging import setup_logging
+"""Running a simulation and storing its results."""
+
 from .config import load_config, save_config
+from .dirs import NamingConvention, ParameterCombo, RecordDir, RunDir, SourceDir, TaggedIndex
+from .io import SimulationIO
+from .logging import setup_logging
+from .metadata import compute_config_hash, compute_script_hash, get_git_hash, get_iso_time, get_timestamp
 from .sweep import size_of_sweep, unroll_sweep
-from .metadata import compute_script_hash, compute_config_hash, get_iso_time, get_timestamp, get_git_hash
 from .unit_conversion import UnitConversion

@@ -1,18 +1,8 @@
-"""
-Domain module: spatial foundation, discretization, and optimization.
+"""The discrete space, and the numerical problem posed on it."""
 
-Provides:
-- Grid: spatial discretization (will support domain decomposition)
-- Field: data living on the grid
-- NpyIO: parallel-aware persistence (future)
-- FEM: finite element interpolation
-- Quadrature: integration rules
-- Optimizer: numerical optimization (will support parallelization)
-"""
-
-from .grid import Grid, factorize_closest
-from .field import Field, adapt_shape, field_component_ax, field_sub_pt_ax, field_element_axs
-from .io import NpyIO
 from .fem import FirstOrderElement
-from .quadrature import Quadrature, NodalQuadrature, CentroidQuadrature, ThreePtQuadrature
-from .optimizer import Optimizer, Problem, OptimizerResult, AugmentedLagrangian, ProjectedLbfgs, BoundedLbfgs
+from .field import Field, adapt_shape, field_component_ax, field_element_axs, field_sub_pt_ax
+from .grid import Grid, factorize_closest
+from .io import NpyIO
+from .optimizer import BoundedLbfgs, Optimizer, OptimizerResult, Problem, ProjectedLbfgs
+from .quadrature import CentroidQuadrature, NodalQuadrature, Quadrature, ThreePtQuadrature

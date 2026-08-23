@@ -1,1 +1,3 @@
-from .visual import split_continuous_indices, slice_colormap, create_segment_colors
+"""Utility functions for post-processing."""
+
+from .visual import create_segment_colors, slice_colormap, split_continuous_indices

@@ -1,22 +1,21 @@
 import os
 
-import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
+import numpy as np
+from matplotlib import animation
 
 from a_package.model import Term
-from a_package.simulation import RunDir, RecordDir, ParameterCombo, SimulationIO, load_config, UnitConversion
-
+from a_package.simulation import ParameterCombo, RecordDir, RunDir, SimulationIO, UnitConversion, load_config
 from config_helper import *
 
 
 def main():
     # Find runs and parse the directory name
-    naming = ParameterCombo(types={'grid': int, 'theta': float})
+    naming = ParameterCombo(types={"grid": int, "theta": float})
     run = RunDir(os.path.dirname(__file__), record_naming=naming)
     records = run.find_records()
     for record in records:
-        theta = naming.parse(record.name)['theta']
+        theta = naming.parse(record.name)["theta"]
         anime = animate_phase(record)
         anime.save(run / f"phase--theta={theta}.mp4", fps=5, dpi=150)
     plt.show()
@@ -33,7 +32,7 @@ def animate_phase(record: RecordDir):
     traj_data = io.load_trajectory(single_value_names=[Term.separation], field_names=[Term.phase])
     normalized_data = {
         Term.separation: length_unit.to_dimensionless(traj_data[Term.separation]),
-        Term.phase: traj_data[Term.phase]
+        Term.phase: traj_data[Term.phase],
     }
 
     # Create the canvas (figure & axes)
@@ -41,8 +40,9 @@ def animate_phase(record: RecordDir):
 
     # Dummy objects for the animation
     xm, ym = grid.form_index_mesh(endpoint=True)
-    phase_colormap = ax.pcolormesh(xm, ym, np.full(grid.nb_domain_grid_pts, np.nan),
-                                   cmap="Blues", vmin=0, vmax=1.5, shading="auto")
+    phase_colormap = ax.pcolormesh(
+        xm, ym, np.full(grid.nb_domain_grid_pts, np.nan), cmap="Blues", vmin=0, vmax=1.5, shading="auto"
+    )
     separation_text = ax.text(0.05, 0.90, "", transform=ax.transAxes)
 
     # formatting
@@ -66,5 +66,5 @@ def animate_phase(record: RecordDir):
     return anime
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

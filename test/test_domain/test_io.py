@@ -1,9 +1,9 @@
 """
 Tests of the `storing.py` file.
 """
+
 import numpy as np
 import pytest
-
 from NuMPI.Testing.Assertions import assert_all_array_equal
 
 from a_package.domain.io import NpyIO
@@ -66,3 +66,48 @@ def test_load_replicated_missing_file(mpi_tmp_path, decomposed_grid, comm_world)
     io = NpyIO(mpi_tmp_path, decomposed_grid.decomposition, communicator=comm_world)
     with pytest.raises(FileNotFoundError):
         io.load_replicated("non_existent")
+
+
+def test_undecomposed_store_round_trips(mpi_tmp_path, mock_array, comm_world):
+    io = NpyIO(mpi_tmp_path)
+    if comm_world.rank == 0:
+        io.save_distributed("undecomposed", mock_array)
+        np.testing.assert_equal(io.load_distributed("undecomposed"), mock_array)
+
+
+@pytest.mark.parametrize(
+    ("load_name", "broken_on_root"),
+    [
+        ("load_distributed", True),
+        ("load_distributed", False),
+        ("load_singular", True),
+        ("load_replicated", True),
+        ("load_replicated", False),
+    ],
+)
+def test_load_raises_on_every_rank(
+    load_name, broken_on_root, mpi_tmp_path, decomposed_grid, mock_field, mock_array, comm_world
+):
+    """A file missing for the rank that reads it."""
+    decomposition = decomposed_grid.decomposition
+    store = NpyIO(mpi_tmp_path, decomposition, communicator=comm_world)
+    store.save_distributed("field", decomposed_grid.get_local(mock_field))
+    store.save_singular("array", mock_array)
+    comm_world.Barrier()
+
+    empty = mpi_tmp_path / "empty"
+    if comm_world.rank == 0:
+        empty.mkdir(exist_ok=True)
+    comm_world.Barrier()
+
+    is_broken = (comm_world.rank == 0) == broken_on_root
+    root_path = empty if is_broken else mpi_tmp_path
+    io = NpyIO(root_path, decomposition, communicator=comm_world)
+    load = getattr(io, load_name)
+    name = "field" if load_name == "load_distributed" else "array"
+
+    if broken_on_root or comm_world.Get_size() > 1:
+        with pytest.raises(FileNotFoundError):
+            load(name)
+    else:
+        load(name)

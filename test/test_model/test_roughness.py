@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 
 from a_package.domain.grid import Grid
-from a_package.model.roughness import SelfAffineRoughness, psd_to_height, generate_phasor_2D_random
+from a_package.model.roughness import SelfAffineRoughness, generate_phasor_2D_random, psd_to_height
 
 
 def test_psd_at_zero_is_zero():
     """The PSD evaluated at wavenumber 0 must be 0 (below qT)."""
-    q = np.linspace(0., 9., 10)
+    q = np.linspace(0.0, 9.0, 10)
     roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) * 8, qS=(2 * np.pi) * 32)
     psd = roughness.mapto_isotropic_psd(q)
     assert psd[np.isclose(q, 0)] == 0.0
@@ -27,8 +27,9 @@ def test_psd_to_height_has_zero_mean():
     assert np.isclose(np.mean(height), 0.0, atol=1e-9)
 
 
-@pytest.mark.parametrize("shape", [(8, 8), (9, 9), (8, 9), (9, 8)],
-                         ids=["even-even", "odd-odd", "even-odd", "odd-even"])
+@pytest.mark.parametrize(
+    "shape", [(8, 8), (9, 9), (8, 9), (9, 8)], ids=["even-even", "odd-odd", "even-odd", "odd-even"]
+)
 def test_generate_phasor_2D_random_hermitian(shape):
     """A real signal requires phase(-k) = -phase(k) (indices modulo the grid shape)."""
     phasor = generate_phasor_2D_random(shape, seed=0)
@@ -45,48 +46,52 @@ def test_generate_phasor_2D_random_hermitian(shape):
     broken = np.argwhere(~np.isclose(residual, 0.0, atol=1e-9))
 
     assert broken.size == 0, (
-        f"Hermitian symmetry phase[-i, -j] == -phase[i, j] broken at (row, col) "
-        f"indices: {broken.tolist()}"
+        f"Hermitian symmetry phase[-i, -j] == -phase[i, j] broken at (row, col) indices: {broken.tolist()}"
     )
 
 
 def test_roughness_correct_prefactor_by_rms_height():
-    h_rms_specified = 1.
-    roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) * 8 , qS=(2 * np.pi) * 32)
+    h_rms_specified = 1.0
+    roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) * 8, qS=(2 * np.pi) * 32)
     roughness.correct_prefactor_by_rms_height(h_rms_specified)
 
-    wavenumber = np.concatenate([
-        # Constant part: C q is still linear, only requires 2 points
-        np.linspace(roughness.qT, roughness.qR, 2),
-        np.linspace(roughness.qR, roughness.qS, 200)])
+    wavenumber = np.concatenate(
+        [
+            # Constant part: C q is still linear, only requires 2 points
+            np.linspace(roughness.qT, roughness.qR, 2),
+            np.linspace(roughness.qR, roughness.qS, 200),
+        ]
+    )
     h_rms_numeric = np.sqrt(
-        np.trapezoid(wavenumber * roughness.mapto_isotropic_psd(wavenumber), wavenumber) / (2 * np.pi))
+        np.trapezoid(wavenumber * roughness.mapto_isotropic_psd(wavenumber), wavenumber) / (2 * np.pi)
+    )
 
     assert np.isclose(h_rms_numeric, h_rms_specified, atol=1e-4)
 
 
 def test_roughness_correct_prefactor_by_rms_slope():
-    slope_rms_specified = 1.
+    slope_rms_specified = 1.0
 
-    roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) * 8 , qS=(2 * np.pi) * 32)
+    roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) * 8, qS=(2 * np.pi) * 32)
     roughness.correct_prefactor_by_rms_slope(slope_rms_specified)
 
-    wavenumber = np.concatenate([
-        np.linspace(roughness.qT, roughness.qR, 200),
-        np.linspace(roughness.qR, roughness.qS, 200)])
+    wavenumber = np.concatenate(
+        [np.linspace(roughness.qT, roughness.qR, 200), np.linspace(roughness.qR, roughness.qS, 200)]
+    )
     slope_rms_numeric = np.sqrt(
-        np.trapezoid(wavenumber ** 3 * roughness.mapto_isotropic_psd(wavenumber), wavenumber) / (2 * np.pi))
+        np.trapezoid(wavenumber**3 * roughness.mapto_isotropic_psd(wavenumber), wavenumber) / (2 * np.pi)
+    )
     assert np.isclose(slope_rms_numeric, slope_rms_specified, atol=1e-3)
 
 
 @pytest.fixture
 def large_grid():
     nb_grid_points = 1024
-    return Grid([nb_grid_points, nb_grid_points], [1., 1.])
+    return Grid([nb_grid_points, nb_grid_points], [1.0, 1.0])
 
 
 def test_psd_to_height_normalization_with_rms_height(large_grid):
-    h_rms_specified = 1.
+    h_rms_specified = 1.0
 
     l = large_grid.element_sizes[0]
     roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) / (32 * l), qS=(2 * np.pi) / (4 * l))
@@ -98,7 +103,7 @@ def test_psd_to_height_normalization_with_rms_height(large_grid):
 
 
 def test_psd_to_height_normalization_with_rms_slope(large_grid):
-    rms_slope_specified = 1.
+    rms_slope_specified = 1.0
 
     l = large_grid.element_sizes[0]
     roughness = SelfAffineRoughness(C0=1.0, H=0.8, qR=(2 * np.pi) / (256 * l), qS=(2 * np.pi) / (32 * l))

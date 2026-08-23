@@ -1,3 +1,5 @@
+"""Box-counting dimension of liquid patches, commented out in whole."""
+
 # import numpy as np
 # import numpy.linalg as la
 # import matplotlib.pyplot as plt
@@ -101,7 +103,8 @@
 # #     n_patch, patch = ga.assign_patch_numbers_area(patch, True)
 # #     dims = np.empty((n_patch, 2))
 # #     for i_patch in np.arange(n_patch):
-# #         mark = patch == i_patch + 1  # the non-patch area is marked with 0; first index for patches is 1
+# #         # the non-patch area is marked with 0; first index for patches is 1
+# #         mark = patch == i_patch + 1
 # #         dims[i_patch] = gridwise_area_dimension(mark)
 # #     return dims
 
@@ -110,6 +113,7 @@
 # #     n_patch, patch = ga.assign_patch_numbers_area(patch, True)
 # #     dims = np.empty((n_patch, 2))
 # #     for i_patch in np.arange(n_patch):
-# #         mark = patch == i_patch + 1  # the non-patch area is marked with 0; first index for patches is 1
+# #         # the non-patch area is marked with 0; first index for patches is 1
+# #         mark = patch == i_patch + 1
 # #         dims[i_patch] = gridwise_perimeter_dimension(mark)
 # #     return dims

@@ -2,11 +2,12 @@
 Tests for SimulationIO.
 """
 
-import pytest
 import numpy as np
+import pytest
 
 from a_package.domain import Grid, factorize_closest
 from a_package.simulation.io import SimulationIO
+from test.test_domain.utils import generate_global_random_field
 
 
 @pytest.fixture
@@ -33,7 +34,7 @@ def io(decomposition, mpi_tmp_path, comm_world):
 
 def test_save_load_constant_field(grid, decomposition, io, comm_world):
     """Save and load constant field."""
-    field = comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts)))
+    field = generate_global_random_field((1, 1, *grid.nb_domain_grid_pts), comm_world)
     expected = grid.get_local(field)
 
     io.save_constant(fields={"my_field": expected})
@@ -52,7 +53,7 @@ def test_save_load_constant_single_value(io):
 
 def test_save_load_constant_mixed(grid, decomposition, io, comm_world):
     """Save and load both fields and single values."""
-    field = comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts)))
+    field = generate_global_random_field((1, 1, *grid.nb_domain_grid_pts), comm_world)
     expected = grid.get_local(field)
 
     io.save_constant(fields={"field_a": expected}, single_values={"value_a": 2.0})
@@ -69,7 +70,7 @@ def test_save_load_constant_mixed(grid, decomposition, io, comm_world):
 
 def test_save_load_step_field(grid, decomposition, io, comm_world):
     """Save and load step field."""
-    field = comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts)))
+    field = generate_global_random_field((1, 1, *grid.nb_domain_grid_pts), comm_world)
     expected = grid.get_local(field)
 
     io.save_step(0, fields={"field": expected})
@@ -92,7 +93,7 @@ def test_save_load_step_single_value(io):
 
 def test_save_load_multiple_steps(grid, decomposition, io, comm_world):
     """Save and load multiple steps."""
-    fields = [comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts))) for _ in range(3)]
+    fields = [generate_global_random_field((1, 1, *grid.nb_domain_grid_pts), comm_world) for _ in range(3)]
     values = [0.1, 0.2, 0.3]
 
     for i, (field, val) in enumerate(zip(fields, values)):
@@ -123,7 +124,7 @@ def test_save_load_trajectory_single_values(io, comm_world):
 
 def test_load_trajectory_fields_lazy(grid, decomposition, io, comm_world):
     """load_trajectory returns lazy-loading FieldArray for fields."""
-    fields = [comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts))) for _ in range(3)]
+    fields = [generate_global_random_field((1, 1, *grid.nb_domain_grid_pts), comm_world) for _ in range(3)]
 
     for i, field in enumerate(fields):
         io.save_step(i, fields={"field": grid.get_local(field)})
@@ -137,7 +138,7 @@ def test_load_trajectory_fields_lazy(grid, decomposition, io, comm_world):
 
 def test_save_trajectory_fields(grid, decomposition, io, comm_world):
     """save_trajectory saves fields by index."""
-    fields = [comm_world.bcast(np.random.random((1, 1, *grid.nb_domain_grid_pts))) for _ in range(3)]
+    fields = [generate_global_random_field((1, 1, *grid.nb_domain_grid_pts), comm_world) for _ in range(3)]
     localized_fields = [grid.get_local(f) for f in fields]
 
     io.save_trajectory(fields={"field": localized_fields})
@@ -145,3 +146,17 @@ def test_save_trajectory_fields(grid, decomposition, io, comm_world):
 
     for i, expected in enumerate(localized_fields):
         np.testing.assert_array_almost_equal(result["field"][i], expected)
+
+
+def test_save_step_refuses_a_negative_index(io):
+    with pytest.raises(ValueError, match="Negative indexing"):
+        io.save_step(-1, single_values={"x": 0.1})
+
+
+def test_field_array_length_counts_the_stored_steps(grid, decomposition, io, comm_world):
+    for i in range(3):
+        field = generate_global_random_field((1, 1, *grid.nb_domain_grid_pts), comm_world)
+        io.save_step(i, fields={"field": grid.get_local(field)})
+
+    field_array = io.load_trajectory(field_names=["field"])["field"]
+    assert len(field_array) == 3

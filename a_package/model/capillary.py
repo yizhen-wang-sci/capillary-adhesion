@@ -1,35 +1,28 @@
-"""
-Capillary bridge model and formulation.
-"""
+"""Capillary bridge model and formulation."""
 
 import logging
 
-import numpy as np
 import muGrid
+import numpy as np
 from NuMPI import MPI
 
-from a_package.domain import Grid, FirstOrderElement, CentroidQuadrature, Field, field_component_ax, field_sub_pt_ax
-
+from a_package.domain import CentroidQuadrature, Field, FirstOrderElement, Grid, field_component_ax, field_sub_pt_ax
 
 logger = logging.getLogger(__name__)
 
 
 class PhaseMixture:
-    """Physics of the liquid-vapour interface.
+    """Liquid-vapour mixture forming an interface, contained in a gap between solids."""
 
-    Minimal numerics info: it only touches the component axis and keeps the axis not squeezed after reduction.
-    """
+    def __init__(self, eta: float, theta: float, epsilon: float = 1.0, component_axis: int = field_component_ax):
+        """Derive the curvature and wetting prefactors from the contact angle.
 
-    def __init__(self, eta: float, theta: float, epsilon: float=1.0, component_axis: int=field_component_ax):
-        """
-        Parameters
-        ----------
-        eta : float
-            Interface thickness of the diffuse interface model.
-        theta : float
-            Contact angle at the liquid-solid interface, in radians.
-        epsilon: float
-            An extra prefactor on the perimeter term.
+        Args:
+            eta: Interface thickness of the liquid-vapour interface.
+            theta: Contact angle at the liquid-solid interface, in radians.
+            epsilon: An extra prefactor on the perimeter term, 1.0 by default.
+            component_axis: Index of the axis the penalties reduce over, `field_component_ax`
+                by default.
         """
         self._eta = eta
         self._theta = theta
@@ -41,54 +34,105 @@ class PhaseMixture:
     @property
     def phase_vapour(self):
         """Phase-field value representing vapour phase."""
-        return 0.
+        return 0.0
 
     @property
     def phase_liquid(self):
         """Phase-field value representing liquid phase."""
-        return 1.
+        return 1.0
 
     @property
     def perimeter_prefactor(self):
-        """Prefactor for perimeter computation.
+        """Prefactor taking the liquid-vapour interface energy to the perimeter.
 
-        According to Modica-Mortola's theorem, the perimeter of liquid-vapour
-        interface is proportional to its energy. That proportion equals to the
-        integral of the square root of the double-well penalty, on the interval
-        connected by two phases. Therefore, we set a prefactor equal to the
-        inverse of that proportion, then that value would exactly be the perimeter.
+        Note:
+            By Modica-Mortola's theorem, the perimeter is proportional to the interface
+            energy, the proportion being the integral of the square root of the double-well
+            penalty over the interval between the two phases. This is its inverse, hence the
+            weighted integral is the perimeter itself.
         """
         return 3
 
     def compute_local_perimeter(self, phase: Field, phase_grad: Field):
-        """Compute local perimeter density of liquid-vapour interface."""
-        return self.perimeter_prefactor * ((1 / self._eta) * self.double_well_penalty(
-            phase, self._component_axis) + self._eta * self.square_penalty(phase_grad, self._component_axis))
+        """Compute local perimeter density of liquid-vapour interface.
+
+        Args:
+            phase: Phase-field values.
+            phase_grad: Gradient of the phase field.
+
+        Returns:
+            Perimeter density, with the component axis kept.
+        """
+        return self.perimeter_prefactor * (
+            (1 / self._eta) * self.double_well_penalty(phase, self._component_axis)
+            + self._eta * self.square_penalty(phase_grad, self._component_axis)
+        )
 
     def compute_local_energy(self, gap: Field, phase: Field, phase_grad: Field):
-        """Compute local energy density (liquid-vapour + liquid-solid contributions)."""
+        """Compute local energy density, of the liquid-vapour and liquid-solid interfaces.
+
+        Args:
+            gap: Gap between the two solid surfaces.
+            phase: Phase-field values.
+            phase_grad: Gradient of the phase field.
+
+        Returns:
+            Energy density, with the component axis kept.
+        """
         liquid_vapour = self.compute_local_perimeter(phase, phase_grad) * gap * self._curv * self._epsilon
         # FIXME: switch on whether to use small-slope-approx.?
-        # upper and lower surface, hence the 2. (height gradient square is one order higher and omitted)
+        # upper and lower surface, hence the 2.
+        # (height gradient square is one order higher and omitted)
         liquid_solid = 2.0 * phase
         return liquid_vapour + self._gamma * liquid_solid
 
     @staticmethod
     def double_well_penalty(x, axis):
-        """Double-well potential W(x) = x^2(1-x)^2, summed over components."""
+        """Double-well potential W(x) = x^2(1-x)^2, summed over components.
+
+        Args:
+            x: Values to evaluate the potential at.
+            axis: Component axis to sum over. Kept, not squeezed.
+        """
         return np.sum(x**2 * (1 - x) ** 2, axis=axis, keepdims=True)
 
     @staticmethod
     def square_penalty(x, axis):
-        """Square norm |x|^2, summed over components."""
+        """Square norm |x|^2, summed over components.
+
+        Args:
+            x: Values to take the norm of.
+            axis: Component axis to sum over. Kept, not squeezed.
+        """
         return np.sum(x**2, axis=axis, keepdims=True)
 
     def compute_local_energy_jacobian(self, gap: Field, phase: Field, phase_grad: Field):
-        """Compute derivatives of local energy w.r.t. phase and phase gradient."""
-        liquid_vapour_D_phase = (self.perimeter_prefactor * (1 / self._eta)
-                                 * self.double_well_penalty_derivative(phase) * gap * self._curv * self._epsilon)
-        liquid_vapour_D_phase_grad = (self.perimeter_prefactor * self._eta
-                                      * self.square_penalty_derivative(phase_grad) * gap * self._curv * self._epsilon)
+        """Compute derivatives of local energy w.r.t. phase and phase gradient.
+
+        Args:
+            gap: Gap between the two solid surfaces.
+            phase: Phase-field values.
+            phase_grad: Gradient of the phase field.
+
+        Returns:
+            Derivative with respect to the phase, then to its gradient.
+        """
+        liquid_vapour_D_phase = (
+            self.perimeter_prefactor
+            * (1 / self._eta)
+            * self.double_well_penalty_derivative(phase)
+            * gap
+            * self._curv
+            * self._epsilon
+        )
+        liquid_vapour_D_phase_grad = (
+            self.perimeter_prefactor
+            * self._eta
+            * self.square_penalty_derivative(phase_grad)
+            * gap
+            * self._curv
+            * self._epsilon
+        )
 
         liquid_solid_D_phase = 2.0
 
@@ -105,22 +149,39 @@ class PhaseMixture:
         return 2 * x
 
     def compute_local_volume(self, gap: Field, phase: Field):
-        """Compute local liquid volume density."""
+        """Compute local liquid volume density, phase times gap.
+
+        Args:
+            gap: Gap between the two solid surfaces.
+            phase: Phase-field values.
+        """
         return phase * gap
 
     def compute_local_volume_jacobian(self, gap: Field, phase: Field):
-        """Compute derivative of local volume w.r.t. phase."""
+        """Compute derivative of local volume w.r.t. phase, which is the gap alone.
+
+        Args:
+            gap: Gap between the two solid surfaces.
+            phase: Phase-field values.
+
+        Returns:
+            The derivative, a view of the gap field rather than a copy.
+        """
         return (gap,)
 
 
 class CapillaryBridge:
-    """Nodal-value interface for capillary bridge evaluation.
-
-    This class combines physics and numerics, and functions as the interface to use in simulation.
-    All its methods accept and return nodal values, and it handles the interpolation and integral.
-    """
+    """Nodal-value interface for capillary bridge evaluation."""
 
     def __init__(self, grid: Grid, phase_mixture, communicator=MPI.COMM_SELF):
+        """Set up the numerics and the fields over a grid.
+
+        Args:
+            grid: The discrete space, providing the decomposition and the element sizes.
+            phase_mixture: The physics of the liquid-vapour phase mixture.
+            communicator: Communicator spanning the ranks the fields are spread across,
+                `MPI.COMM_SELF` by default.
+        """
         self._grid = grid
         self._mixture = phase_mixture
         self.communicator = communicator
@@ -148,14 +209,20 @@ class CapillaryBridge:
         self._quadr_value_2 = muGrid.Field(self._collection.real_field("quadr_value_2", 1, "quadr"))
         self._quadr_value_2_back_sens = muGrid.Field(self._collection.real_field("quadr_value_2_back_sens", 1, "nodal"))
         self._quadr_gradient = muGrid.Field(self._collection.real_field("quadr_gradient", 2, "quadr"))
-        self._quadr_gradient_back_sens = muGrid.Field(self._collection.real_field("quadr_gradient_back_sens", 1, "nodal"))
+        self._quadr_gradient_back_sens = muGrid.Field(
+            self._collection.real_field("quadr_gradient_back_sens", 1, "nodal")
+        )
 
     def get_gap(self):
         """Return nodal gap field."""
         return self._nodal_gap.s
 
     def set_gap(self, value: np.ndarray):
-        """Set nodal gap and update quadrature-point values."""
+        """Set nodal gap and update quadrature-point values.
+
+        Args:
+            value: Nodal gap values, reshaped to this rank's subdomain.
+        """
         self._nodal_gap.s[...] = np.reshape(value, (1, 1, *self._decomposition.nb_subdomain_grid_pts))
         self._decomposition.communicate_ghosts(self._nodal_gap)
         self._fem.interpolate_value(self._nodal_gap, self._quadr_gap)
@@ -170,9 +237,14 @@ class CapillaryBridge:
         return self._nodal_phase.s
 
     def set_phase(self, value: np.ndarray):
-        """Set nodal phase and update quadrature-point values and gradients."""
+        """Set nodal phase and update quadrature-point values and gradients.
+
+        Args:
+            value: Nodal phase values, reshaped to this rank's subdomain. Zeroed wherever the
+                gap is closed.
+        """
         self._nodal_phase.s[...] = np.reshape(value, (1, 1, *self._decomposition.nb_subdomain_grid_pts))
-        self._nodal_phase.s[self.gap_is_closed] = 0.
+        self._nodal_phase.s[self.gap_is_closed] = 0.0
         self._decomposition.communicate_ghosts(self._nodal_phase)
         self._fem.interpolate_value(self._nodal_phase, self._quadr_phase)
         self._fem.interpolate_gradient(self._nodal_phase, self._quadr_phase_gradient)
@@ -202,20 +274,24 @@ class CapillaryBridge:
 
     def get_energy(self):
         """Compute total capillary energy."""
-        integrand = self._mixture.compute_local_energy(self._quadr_gap.s, self._quadr_phase.s,
-                                                       self._quadr_phase_gradient.s)
+        integrand = self._mixture.compute_local_energy(
+            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
+        )
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_energy_jacobian(self):
         """Compute gradient of energy w.r.t. nodal phase."""
         [energy_D_phase, energy_D_phase_gradient] = self._mixture.compute_local_energy_jacobian(
-            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s)
+            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
+        )
 
         self._quadr_value_1.s[...] = self._quadrature.propag_integral_weight(energy_D_phase, self._grid.element_area)
         self._decomposition.communicate_ghosts(self._quadr_value_1)
         self._fem.propag_sens_value(self._quadr_value_1, self._quadr_value_1_back_sens)
 
-        self._quadr_gradient.s[...] = self._quadrature.propag_integral_weight(energy_D_phase_gradient, self._grid.element_area)
+        self._quadr_gradient.s[...] = self._quadrature.propag_integral_weight(
+            energy_D_phase_gradient, self._grid.element_area
+        )
         self._decomposition.communicate_ghosts(self._quadr_gradient)
         self._fem.propag_sens_gradient(self._quadr_gradient, self._quadr_gradient_back_sens)
 
