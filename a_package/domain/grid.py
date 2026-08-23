@@ -107,7 +107,20 @@ class Grid:
         )
         return self.decomposition
 
-    def get_local(self, field):
+    def owned_layout(self):
+        """How this rank's part of the domain sits inside it, ghost layers excluded.
+
+        Returns:
+            The shape of the whole domain, the shape of the part this rank is the authority
+            for, and where that part begins in the index space of the domain, keyed by name.
+        """
+        return {
+            "domain_shape": tuple(self.decomposition.nb_domain_grid_pts),
+            "owned_shape": tuple(self.decomposition.nb_subdomain_grid_pts),
+            "owned_offset": tuple(self.decomposition.subdomain_locations),
+        }
+
+    def get_local(self, field: np.ndarray):
         """Return the local part of a field.
 
         Args:
@@ -125,7 +138,6 @@ class Grid:
 
     # =========================================================================
     # Index: 0, 1, 2, ..., N-1
-    # =========================================================================
 
     def form_index_axis(self, ax_index: int, endpoint: bool = False):
         """Indices along the specified axis: 0, 1, 2, ..., N-1.
@@ -155,7 +167,6 @@ class Grid:
 
     # =========================================================================
     # Spatial: 0, d, 2d, ..., (N-1)d
-    # =========================================================================
 
     def form_spatial_axis(self, ax_index: int, endpoint: bool = False):
         """Spatial coordinates along the specified axis: 0, d, 2d, ..., (N-1)d.
@@ -186,7 +197,6 @@ class Grid:
 
     # =========================================================================
     # Spectral: 2π / (N * pixel_size * ref_scale) * fftfreq indices
-    # =========================================================================
 
     def form_spectral_axis(self, ax_index: int):
         """Spectral wavenumbers along the specified axis, in FFT order.

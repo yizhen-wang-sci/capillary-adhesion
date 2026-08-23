@@ -1,146 +1,121 @@
+"""Fill the gap by level set alone, as a reference for the minimisation-based runs.
+
+Two records per run: `fill-above` treats the liquid as sitting above the cut-off height
+(hydrophobic) and `fill-below` below it (hydrophilic).
+
+Typical usage example:
+    python level_set_approach.py params.toml [overlay.toml ...]
+"""
+
+import logging
 import os
 import sys
 
 import numpy as np
+from a_package.dataset import NpyBack, NpyIO, QuantityFront, RecordDir, RunDir, log_into, write_input
+from a_package.domain import factorize_closest
+from a_package.model import CapillaryBridge, RigidContact
+from NuMPI import MPI
 
-from a_package.model import CapillaryBridge, RigidContact, Term
-from a_package.simulation import RecordDir, RunDir, SimulationIO, load_config, save_config, setup_logging
-from config_helper import *
+from case import *
+
+logger = logging.getLogger(__name__)
+comm_world = MPI.COMM_WORLD
 
 
-def main():
-    # CLI
-    if len(sys.argv) < 2:
-        print("At least one config file is required via CLI.")
-        sys.exit(1)
-    if len(sys.argv) > 2:
-        print("Only the first config file is loaded")
-    config_file = sys.argv[1]
-    config = load_config(config_file)
+def main(*config_files: str):
+    # CLI: later config files override earlier ones, so a small overlay such as
+    # params--test.toml can shrink the problem without editing params.toml
+    if not config_files:
+        sys.exit("No config file given.")
+    config = load_config(*config_files)
 
+    setup_console()
+
+    run = RunDir(os.path.dirname(os.path.abspath(__file__)))
     for fill in ["fill-above", "fill-below"]:
-        # setup
-        run = RunDir(os.path.dirname(__file__))
-        record = RecordDir(run / fill)
-        setup_logging(file=record.log)
-        save_config(config, record.input)
-        io = SimulationIO(record.data)
-
-        # Build everything
-        grid = build_grid(config)
-        # Need ghost layers
-        grid.decompose([1, 1], nb_ghost_layers=[1, 1])
-        upper_surface = np.load(run / f"{Term.upper_solid}.npy")
-        lower_surface = np.load(run / f"{Term.lower_solid}.npy")
-        contact = RigidContact(upper_surface, lower_surface)
-        phase_mixture = build_phase_mixture(config)
-        capillary = CapillaryBridge(grid, phase_mixture)
-        trajectory = np.round(build_trajectory(config), 6)
-
-        # concrete liquid volume
-        z_min = np.amin(trajectory)
-        contact.set_mean_separation(z_min)
-        gap_at_min = contact.get_gap()
-        capillary.set_gap(gap_at_min)
-        volume_percent = config["constraint"]["liquid_volume_percent"]
-        liquid_volume = capillary.get_max_volume() * (volume_percent / 100.0)
-
-        for idx, separation in enumerate(trajectory):
-            contact.set_mean_separation(separation)
-            gap = contact.get_gap()
-            phase = solve_phase_by_level_set(capillary, gap, liquid_volume, fill_below=fill == "fill-below")
-            io.save_step(idx, single_values={Term.separation: separation}, fields={Term.gap: gap, Term.phase: phase})
+        record = None
+        if comm_world.rank == 0:
+            record = RecordDir(run / fill)
+            write_input(record.input, config)
+        record = comm_world.bcast(record)
+        with log_into(record.log, loggers=CONSOLE_LOGGERS):
+            fill_record(record, config, fill)
 
 
-def solve_phase_by_level_set(capillary: CapillaryBridge, gap: np.ndarray, volume: float, fill_below: bool = True):
+def fill_record(record, config, fill: str) -> None:
+    """Fill the gap at every separation of the trajectory, at a fixed liquid volume.
+
+    Args:
+        record: The record to write into.
+        config: The recipe this run was expanded from.
+        fill: ``"fill-above"`` or ``"fill-below"``, which side of the cut-off height the
+            liquid sits on.
     """
-    Solve for the liquid phase distribution using a level-set approach.
+    grid = build_grid(config)
 
-    Parameters
-    ----------
-    capillary : CapillaryBridge
-        The capillary bridge model.
-    gap : np.ndarray
-        The local gap between surfaces.
-    volume : float
-        Target liquid volume.
-    fill_below : bool, optional
-        True if filling below the given height (hydrophilic),
-        otherwise hydrophobic. Default is True.
+    # Decomposed grid and have a parallel IO
+    grid.decompose(
+        factorize_closest(comm_world.size, 2),
+        nb_ghost_layers=[1, 1],
+        communicator=comm_world,
+    )
+    quantities = QuantityFront(
+        NpyBack(
+            record.data,
+            NpyIO(**grid.owned_layout(), communicator=comm_world),
+            decomposed=SPATIAL_BASES,
+        )
+    )
+    ref_length = quantities.define("L")
+    quantities.save_value("L", grid.domain_lengths[0])
+    for basis_name in SPATIAL_BASES:
+        quantities.define(basis_name, unit=ref_length, is_basis=True)
+    save_grid(quantities, SPATIAL_BASES, grid)
 
-    Returns
-    -------
-    np.ndarray
-        The computed liquid phase distribution.
-    """
-    capillary.set_gap(gap)
-    phase = np.zeros_like(gap)
+    trajectory = np.round(build_trajectory(config), 6)
 
-    def fill_phase_at(height):
-        if fill_below:
-            to_fill = gap < height
-        else:
-            to_fill = gap > height
-        phase[to_fill] = 1.0
-        phase[~to_fill] = 0.0
-        capillary.set_phase(phase)
+    # Surface generation is in serial. The frame goes down with it, on the same
+    # SPATIAL_BASES declaration the parallel back below uses -- whichever back opens the
+    # record first settles that convention, and a later one cannot change it.
+    quantities.define(Term.upper_solid, unit=ref_length, frame=SPATIAL_BASES)
+    quantities.define(Term.lower_solid, unit=ref_length, frame=SPATIAL_BASES)
+    if comm_world.rank == 0:
+        serial_front = QuantityFront(NpyBack(record.data, NpyIO()))
+        upper, lower = build_surface(config)
+        serial_front.save_value(Term.upper_solid, upper)
+        serial_front.save_value(Term.lower_solid, lower)
+        print(f"Saved surface data in {record.name}")
+        del upper, lower, serial_front
+    comm_world.barrier()
 
-    def compute_volume_deviation(height):
-        fill_phase_at(height)
-        return capillary.get_volume() - volume
+    # Build everything
+    upper_surface = quantities.load_value(Term.upper_solid)
+    lower_surface = quantities.load_value(Term.lower_solid)
+    contact = RigidContact(upper_surface, lower_surface)
+    phase_mixture = build_phase_mixture(config)
+    capillary = CapillaryBridge(grid, phase_mixture, communicator=comm_world)
 
-    height = bisection(compute_volume_deviation, gap.min(), gap.max())
-    fill_phase_at(height)
-    return capillary.get_phase()
+    # Separation is swept; the liquid volume is fixed, set from the smallest gap
+    contact.set_mean_separation(np.amin(trajectory))
+    capillary.set_gap(contact.get_gap())
+    liquid_volume = build_liquid_volume(capillary, config)
 
+    quantities.define("step", unit="", is_basis=True)
+    quantities.save_value("step", np.arange(len(trajectory)))
+    quantities.define(Term.separation, unit=quantities["L"], frame=("step",))
+    quantities.define(Term.gap, unit=quantities["L"], frame=("step", *SPATIAL_BASES))
+    quantities.define(Term.phase, unit="", frame=("step", *SPATIAL_BASES))
 
-def bisection(f, xa, xb, xtol=1e-6, ftol=1e-6, max_iter=100):
-    """
-    Find a root of f(x) = 0 using the bisection method.
-
-    Parameters
-    ----------
-    f : callable
-        Function to find root of.
-    xa : float
-        Left endpoint of interval.
-    xb : float
-        Right endpoint of interval.
-    xtol : float, optional
-        Absolute tolerance for interval width (xb-xa)/2. Default is 1e-6.
-    ftol : float, optional
-        Tolerance for function value abs(f(xc)). Default is 1e-6.
-    max_iter : int, optional
-        Maximum number of iterations. Default is 100.
-
-    Returns
-    -------
-    float
-        Approximate root location.
-
-    Raises
-    ------
-    ValueError
-        If f(xa) and f(xb) have the same sign.
-    """
-    if f(xa) * f(xb) >= 0:
-        raise ValueError("f(xa) and f(xb) must have opposite signs")
-
-    for _ in range(max_iter):
-        xc = (xa + xb) / 2
-        if abs(f(xc)) < ftol:
-            print(f"ftol achieved. Root={xc}")
-            return xc
-        if (xb - xa) / 2 < xtol:
-            print(f"xtol achieved. Root={xc}")
-            return xc
-        if f(xc) * f(xa) < 0:
-            xb = xc
-        else:
-            xa = xc
-
-    return (xa + xb) / 2
+    quantities.save_value(Term.separation, trajectory)
+    for i_step, separation in enumerate(trajectory):
+        contact.set_mean_separation(separation)
+        gap = contact.get_gap()
+        phase = solve_phase_by_level_set(capillary, gap, liquid_volume, fill_below=fill == "fill-below")
+        at = {"step": i_step}
+        quantities.save_value(Term.gap, element_values(gap), at=at)
+        quantities.save_value(Term.phase, element_values(phase), at=at)
 
 
 if __name__ == "__main__":
-    main()
+    cli_config(main, __doc__)

@@ -3,7 +3,7 @@ import pytest
 
 from a_package.domain.fem import FirstOrderElement, LinearFiniteElementPixel
 from test.test_domain.reference import RefFirstOrderElement
-from test.test_domain.utils import generate_global_random_field
+from test.utils import generate_global_random_field
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 import numpy as np
 
-from test.test_domain.utils import generate_global_random_field, generate_global_range_field
+from test.utils import generate_global_random_field, generate_global_range_field
 
 
 def test_real_field_decomposition(mock_grid, decompose_stitch, comm_world):

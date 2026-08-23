@@ -1,0 +1,20 @@
+# Small-scale overlay for iterating without waiting for a production run.
+# Layer it on top of the real config; only the keys stated here are overridden:
+#     python simulate.py params.toml params--test.toml
+
+[grid]
+nb_pixels = 64
+
+[optimizer]
+max_nb_iters = 30
+
+[trajectory]
+nb_decrements = 2
+round_trip = false
+nb_cycles = 1
+
+# one contact angle instead of the full batch
+
+[[batch]]
+path = "capillary.contact_angle_degree"
+values = [5]

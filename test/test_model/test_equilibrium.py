@@ -24,7 +24,6 @@ def capillary(comm_world):
 
 # =============================================================================
 # Constant volume
-# =============================================================================
 
 
 def test_constant_volume_problem_carries_the_linear_constraint(capillary):
@@ -42,7 +41,6 @@ def test_constant_volume_problem_objective_is_the_energy(capillary):
 
 # =============================================================================
 # Constant pressure
-# =============================================================================
 
 
 def test_constant_pressure_problem_objective_is_the_helmholtz_potential(capillary):
