@@ -325,6 +325,12 @@ class CapillaryBridge:
         """Compute maximum available volume."""
         return self._quadrature.integrate(self._quadr_gap.s, self._grid.element_area).item()
 
-    def get_liquid_area(self):
+    def get_liquid_solid_area(self):
         """Compute area of liquid-solid interface."""
         return self._quadrature.integrate(self._quadr_phase.s, self._grid.element_area).item()
+
+    def get_liquid_vapour_area(self):
+        """Compute area of liquid-vapour interface."""
+        local_perimeter = self._mixture.compute_local_perimeter(self._quadr_phase.s, self._quadr_phase_gradient.s)
+        integrand = local_perimeter * self._quadr_gap.s
+        return self._quadrature.integrate(integrand, self._grid.element_area).item()
