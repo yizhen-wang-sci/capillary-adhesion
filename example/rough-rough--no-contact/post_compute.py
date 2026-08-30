@@ -58,7 +58,8 @@ def run_post_compute(records, comm_world) -> None:
         # `unit` names a reference scalar and carries no exponent, so only the quantities
         # normalising by one power of L state one.
         quantities.define(Term.perimeter, unit=ref_length, frame=("cycle", "step"))
-        quantities.define("area", frame=("cycle", "step"))
+        quantities.define("area_ls", frame=("cycle", "step"))
+        quantities.define("area_lv", frame=("cycle", "step"))
         quantities.define(Term.volume, frame=("cycle", "step"))
         quantities.define(Term.max_volume, frame=("step",))
         quantities.define("force", unit=ref_length, frame=("cycle", "step"))
@@ -72,23 +73,26 @@ def run_post_compute(records, comm_world) -> None:
         # The rest follow the phase, hence the cycle.
         force_traj = np.empty((nb_cycles, nb_steps))
         volume_traj = np.empty((nb_cycles, nb_steps))
-        area_traj = np.empty((nb_cycles, nb_steps))
+        area_ls_traj = np.empty((nb_cycles, nb_steps))
+        area_lv_traj = np.empty((nb_cycles, nb_steps))
         perimeter_traj = np.empty((nb_cycles, nb_steps))
         for i_cycle in range(nb_cycles):
             for i_step in range(nb_steps):
                 capillary.set_gap(quantities.load_value(Term.gap, at={"step": i_step}))
                 capillary.set_phase(quantities.load_value(Term.phase, at={"cycle": i_cycle, "step": i_step}))
                 volume_traj[i_cycle, i_step] = capillary.get_volume()
-                area_traj[i_cycle, i_step] = capillary.get_liquid_area()
+                area_ls_traj[i_cycle, i_step] = capillary.get_liquid_solid_area()
+                area_lv_traj[i_cycle, i_step] = capillary.get_liquid_vapor_area()
                 perimeter_traj[i_cycle, i_step] = capillary.get_perimeter()
                 force_traj[i_cycle, i_step] = (
-                    pressure_traj[i_cycle, i_step] * area_traj[i_cycle, i_step]
+                    pressure_traj[i_cycle, i_step] * area_ls_traj[i_cycle, i_step]
                     - eps * curv * perimeter_traj[i_cycle, i_step]
                 )
         quantities.save_value(Term.max_volume, max_volume_traj)
         quantities.save_value(Term.volume, volume_traj)
         quantities.save_value("force", force_traj)
-        quantities.save_value("area", area_traj)
+        quantities.save_value("area_ls", area_ls_traj)
+        quantities.save_value("area_lv", area_lv_traj)
         quantities.save_value(Term.perimeter, perimeter_traj)
 
         save_cycle_work(quantities, separation_traj, force_traj, perimeter_traj, phase_mixture)
