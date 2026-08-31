@@ -116,17 +116,24 @@ class NpyIO:
             raise self._comm.bcast(error, root=domain_state.item())
 
     def make_dir(self, path: pathlib.Path):
-        """Make a directory, and the parents it needs, on the root rank.
+        """Make a directory on the root rank, and see that every rank reaches it.
 
         Args:
             path: Directory to make.
 
         Raises:
             OSError: Whatever making it raised on the root rank, re-raised on every rank.
+            FileNotFoundError: If the directory is not there for any rank once it is made,
+                raised on every rank.
         """
         with self.agreeing_on_error():
             if self._comm.rank == self._ROOT:
                 path.mkdir(parents=True, exist_ok=True)
+
+        # Double-check that the filesystem synchronises the change
+        with self.agreeing_on_error():
+            if not path.is_dir():
+                raise FileNotFoundError(f"No directory {path}")
 
     def read_data(self, path: pathlib.Path, decomposed: bool = False) -> np.ndarray:
         """Read an array from one file.
