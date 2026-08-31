@@ -231,10 +231,6 @@ class NpyIO:
         """Whether this rank owns less than the domain."""
         return self._owned_shape != self._domain_shape
 
-    def barrier(self):
-        """Wait until every process taking part has arrived."""
-        self._comm.Barrier()
-
 
 class NpyBackError(QuantityError):
     """Error due to the limitation of NpyBack implementation, rather than the Quantity."""
@@ -260,7 +256,7 @@ class NpyBack(QuantityBack):
 
         Args:
             base_dir: Directory where the files are kept.
-            io: The parallel-aware Npy-encoding part.
+            io: The parallel-aware file IO, default to no decomposition and `MPI.COMM_SELF`.
             decomposed: Names of the basis quantities spread across ranks, so they cannot be
                 indexed. Their names are also written down as the trailing convention of the
                 whole directory, which every later session reads back.
@@ -271,21 +267,20 @@ class NpyBack(QuantityBack):
             NpyBackError: If the decomposed bases are not in ascending order, if an io that
                 hands out shares is given none of them, or if they would expand the trailing
                 convention with a quantity already written down.
+            OSError: If any rank cannot make `base_dir`.
         """
         self._base_dir = pathlib.Path(base_dir)
         self._io = io if io is not None else NpyIO()
         self._decomposed = sorted(decomposed)
-        if self._decomposed != list(decomposed):
-            raise NpyBackError(f"Decomposed bases must be given in ascending order: {decomposed}.")
+        with self._io.agreeing_on_error():
+            if self._decomposed != list(decomposed):
+                raise NpyBackError(f"Decomposed bases must be given in ascending order: {decomposed}.")
 
-        # An io that hands out shares must be told which bases it spreads them along
-        if self._io.is_decomposed() and not self._decomposed:
-            raise NpyBackError("The bases this io decomposes along must be named in `decomposed`; none were.")
+            # An io that hands out shares must be told which bases it spreads them along
+            if self._io.is_decomposed() and not self._decomposed:
+                raise NpyBackError("The bases this io decomposes along must be named in `decomposed`; none were.")
 
-        # Ensure the directory
-        if self._io.is_writer():
-            self._base_dir.mkdir(parents=True, exist_ok=True)
-        self._io.barrier()
+        self._io.make_dir(self._base_dir)
 
         # Load from startup
         startup = self._read_startup()
@@ -299,7 +294,7 @@ class NpyBack(QuantityBack):
             if new & set(self._quantities.keys()):
                 raise NpyBackError(f"Cannot expand trailing bases with existing quantities: {new}.")
             self._trailing_names = sorted(set(self._trailing_names) | new)
-            self._write_startup()
+            self._write_startup(self._quantities)
 
     # =========================================================================
     # Startup file
@@ -314,22 +309,20 @@ class NpyBack(QuantityBack):
         return {"frame_convention": {"trailing": list(trailing)}, "quantities": dict(quantities)}
 
     def _read_startup(self):
-        """Read the startup file."""
+        """Read the startup file, blank where the directory holds none yet."""
         try:
-            with open(self._startup_path(), "r", encoding="utf-8") as fp:
-                return json.load(fp)
+            return json.loads(self._io.read_text(self._startup_path()))
         except FileNotFoundError:
             return self._to_written_startup([], {})
 
-    def _write_startup(self):
-        """Write the startup file."""
-        if self._io.is_writer():
-            startup = self._to_written_startup(self._trailing_names, self._quantities)
-            beside = self._startup_path().with_name(self._startup_path().name + "~")
-            with open(beside, "w", encoding="utf-8") as fp:
-                json.dump(startup, fp, indent=2, sort_keys=True)
-            os.replace(beside, self._startup_path())
-        self._io.barrier()
+    def _write_startup(self, quantities):
+        """Write the startup file.
+
+        Args:
+            quantities: The written down form of every quantity, keyed by name.
+        """
+        startup = self._to_written_startup(self._trailing_names, quantities)
+        self._io.write_text(self._startup_path(), json.dumps(startup, indent=2, sort_keys=True))
 
     # =========================================================================
     # Quantity
@@ -352,7 +345,7 @@ class NpyBack(QuantityBack):
             )
 
     @staticmethod
-    def _to_written_unit(unit: "str | Scale | None"):
+    def _to_written_unit(unit: str | Scale | None):
         """Written down form of a unit, keeping a literal and a scale apart.
 
         Args:
@@ -380,11 +373,13 @@ class NpyBack(QuantityBack):
     def new_quantity(self, new: Quantity):
         """Write down a new quantity."""
         self._check_frame_convention(new)
-        self._quantities[new.name] = {
+        record = {
             "unit": self._to_written_unit(new.unit),
             "frame": [basis.name for basis in new.frame],
         }
-        self._write_startup()
+        # Write down before added in dict to prevent divergence
+        self._write_startup(self._quantities | {new.name: record})
+        self._quantities[new.name] = record
 
     def get_all_quantities(self) -> dict[str, Quantity]:
         """Rebuild every quantity written down.
@@ -484,7 +479,7 @@ class NpyBack(QuantityBack):
             stem += "--" + "_".join(str(index) for _, index in file_part)
         return self._base_dir / f"{stem}.npy"
 
-    def _is_decomposed(self, index_part: list):
+    def _has_decomposed(self, index_part: list):
         """Whether the array in the file is spanned by decomposed bases."""
         return any(basis.name in self._decomposed for basis, _ in index_part)
 
@@ -502,17 +497,6 @@ class NpyBack(QuantityBack):
         if np.issubdtype(dtype, np.inexact):
             return np.full(shape, np.nan, dtype=dtype)
         return np.zeros(shape, dtype=dtype)
-
-    def _read_npy(self, path: pathlib.Path, decomposed: bool):
-        """Read a whole file, as one share per rank where it is decomposed."""
-        return self._io.load_distributed(path) if decomposed else self._io.load_replicated(path)
-
-    def _write_npy(self, path: pathlib.Path, data: np.ndarray, decomposed: bool):
-        """Write a whole file, each rank contributing its share where it is decomposed."""
-        if decomposed:
-            self._io.save_distributed(path, data)
-        else:
-            self._io.save_singular(path, data)
 
     def _check_ndim(self, quantity: Quantity, address: tuple, value: np.ndarray):
         """Refuse a value whose number of dimensions cannot be covered by the address.
@@ -550,20 +534,20 @@ class NpyBack(QuantityBack):
         file_part, index_part = self._split_address(quantity, address)
 
         path = self._locate_file(quantity, file_part)
-        decomposed = self._is_decomposed(index_part)
+        decomposed = self._has_decomposed(index_part)
         subscript = tuple(index for _, index in index_part)
 
         if all(index == slice(None) for index in subscript):
-            self._write_npy(path, value, decomposed)
+            self._io.write_data(path, value, decomposed)
             return
 
-        # a whole file is written at a time, so the rest of it has to be carried along
+        # NpyIO always writes the whole file, so it has to read the whole array and change.
         try:
-            whole = self._read_npy(path, decomposed)
+            whole = self._io.read_data(path, decomposed)
         except FileNotFoundError:
             whole = self._blank([self._length(basis) for basis, _ in index_part], value.dtype)
         whole[subscript] = value
-        self._write_npy(path, whole, decomposed)
+        self._io.write_data(path, whole, decomposed)
 
     def load_value(self, quantity: Quantity, address: tuple):
         """Read a quantity's value at one place in its frame.
@@ -584,7 +568,7 @@ class NpyBack(QuantityBack):
         file_part, index_part = self._split_address(quantity, address)
 
         try:
-            whole = self._read_npy(self._locate_file(quantity, file_part), self._is_decomposed(index_part))
+            whole = self._io.read_data(self._locate_file(quantity, file_part), self._has_decomposed(index_part))
         except FileNotFoundError as err:
             raise QuantityError(f"{quantity.name} holds no value at {address} yet") from err
 
@@ -593,6 +577,6 @@ class NpyBack(QuantityBack):
     def _length(self, basis: Quantity):
         """How many points a basis holds."""
         try:
-            return len(self._io.load_replicated(self._locate_file(basis, [])))
+            return len(self._io.read_data(self._locate_file(basis, [])))
         except FileNotFoundError as err:
             raise QuantityError(f"{basis.name} must have its value saved before it can span anything.") from err
