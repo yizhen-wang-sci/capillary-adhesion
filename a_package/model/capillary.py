@@ -192,7 +192,7 @@ class CapillaryBridge:
 
         # decomposition and field collection setup
         self._decomposition = grid.decomposition
-        self._collection = self._decomposition.collection
+        self._collection = grid.collection_real
         self._collection.set_nb_sub_pts("nodal", 1)
         self._collection.set_nb_sub_pts("quadr", self._quadrature.nb_quad_pts)
 
