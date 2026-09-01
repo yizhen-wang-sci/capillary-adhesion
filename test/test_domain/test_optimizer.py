@@ -21,19 +21,19 @@ def test_problem(decompose_stitch, comm_world):
     quadr = CentroidQuadrature(communicator=comm_world)
     fem = FirstOrderElement(quadr.quad_pt_coords, grid.element_sizes)
 
-    collection = decomposition.collection
+    collection = grid.collection_real
     collection.set_nb_sub_pts("nodal", 1)
     collection.set_nb_sub_pts("quadr", quadr.nb_quad_pts)
 
-    field_nodal = decomposition.collection.real_field("nodal", 1, "nodal")
-    field_quadr_1 = decomposition.collection.real_field("quadr_1", 1, "quadr")
-    field_quadr_1_gradient = decomposition.collection.real_field("quadr_1_gradient", 2, "quadr")
+    field_nodal = grid.collection_real.real_field("nodal", 1, "nodal")
+    field_quadr_1 = grid.collection_real.real_field("quadr_1", 1, "quadr")
+    field_quadr_1_gradient = grid.collection_real.real_field("quadr_1_gradient", 2, "quadr")
 
-    field_quadr_2_gradient = decomposition.collection.real_field("quadr_2_gradient", 2, "quadr")
-    field_quadr_2_gradient_back_sens = decomposition.collection.real_field("quadr_2_gradient_back_sens", 1, "nodal")
+    field_quadr_2_gradient = grid.collection_real.real_field("quadr_2_gradient", 2, "quadr")
+    field_quadr_2_gradient_back_sens = grid.collection_real.real_field("quadr_2_gradient_back_sens", 1, "nodal")
 
-    field_quadr_3 = decomposition.collection.real_field("quadr_3", 1, "quadr")
-    field_quadr_3_back_sens = decomposition.collection.real_field("quadr_3_back_sens", 1, "nodal")
+    field_quadr_3 = grid.collection_real.real_field("quadr_3", 1, "quadr")
+    field_quadr_3_back_sens = grid.collection_real.real_field("quadr_3_back_sens", 1, "nodal")
 
     def set_field(x: np.ndarray):
         field_nodal.s[0, 0, ...] = np.reshape(x, decomposition.nb_subdomain_grid_pts)
