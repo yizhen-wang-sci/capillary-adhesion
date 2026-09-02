@@ -225,6 +225,7 @@ class QuantityFront:
         """Load the quantities saved in the back."""
         self._back = back
         self._saved = back.get_all_quantities()
+        self._cached_bases = {}
 
     # =========================================================================
     # Make it work like a read-only dict.
@@ -339,12 +340,15 @@ class QuantityFront:
             raise QuantityError(f"No quantity defined with name {name}. Define it first.")
         quantity = self._saved[name]
         # Specific rules for basis quantities
-        if quantity.frame == (BASIS,):
+        is_basis = quantity.frame == (BASIS,)
+        if is_basis:
             if not _is_increasing(value):
                 raise QuantityError(f"{name} is a basis quantity, so value must increase monotonically.")
             if at is not None:
                 raise QuantityError(f"{name} is a basis quantity, so its own values take no point.")
         self._back.save_value(quantity, self._address(quantity, at), value)
+        if is_basis:
+            self._cached_bases[quantity.name] = tuple(value)
 
     def load_value(self, name: str, at: Mapping[str, int | float] | None = None):
         """Load the value of a quantity at specified point(s) in frame."""
@@ -373,9 +377,13 @@ class QuantityFront:
             if point is None:
                 address.append(None)
                 continue
+            if basis.name in self._cached_bases:
+                sampled = self._cached_bases[basis.name]
+            else:
+                sampled = tuple(self._back.load_value(basis, (None,)))
+                self._cached_bases[basis.name] = sampled
             # It is guaranteed at `define` that frame entries are basis quantities, and at
             # `save_value` that their values increase, so a point sits at one place or none
-            sampled = tuple(self._back.load_value(basis, (None,)))
             try:
                 address.append(sampled.index(point))
             except ValueError:
