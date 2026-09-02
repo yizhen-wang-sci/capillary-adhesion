@@ -4,7 +4,7 @@ import contextlib
 import json
 import os
 import pathlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import NuMPI.IO
 import numpy as np
@@ -291,17 +291,16 @@ class NpyBack(QuantityBack):
 
         # Load from startup
         startup = self._read_startup()
-        self._quantities = startup["quantities"]
         self._trailing_names = startup["frame_convention"]["trailing"]
 
         # If a new name is specified in decomposed bases, allow expanding the trailing names if
         # it is a new quantity. Always sorted to prevent ambiguous cases.
         new = set(decomposed) - set(self._trailing_names)
         if len(new):
-            if new & set(self._quantities.keys()):
+            if new & set(startup["quantities"]):
                 raise NpyBackError(f"Cannot expand trailing bases with existing quantities: {new}.")
             self._trailing_names = sorted(set(self._trailing_names) | new)
-            self._write_startup(self._quantities)
+            self._write_startup(startup["quantities"])
 
     # =========================================================================
     # Startup file
@@ -377,16 +376,33 @@ class NpyBack(QuantityBack):
             exponents[name] = exponent
         return {"scale": exponents}
 
-    def new_quantity(self, new: Quantity):
-        """Write down a new quantity."""
-        self._check_frame_convention(new)
-        record = {
-            "unit": self._to_written_unit(new.unit),
-            "frame": [basis.name for basis in new.frame],
-        }
-        # Write down before added in dict to prevent divergence
-        self._write_startup(self._quantities | {new.name: record})
-        self._quantities[new.name] = record
+    def _to_written_quantity(self, quantity: Quantity):
+        """Written down form of a quantity.
+
+        Args:
+            quantity: The quantity.
+
+        Returns:
+            Its unit and the names spanning it, as JSON holds them.
+
+        Raises:
+            NpyBackError: If an exponent of its unit is neither an integer nor a float.
+        """
+        return {"unit": self._to_written_unit(quantity.unit), "frame": [basis.name for basis in quantity.frame]}
+
+    def save_all_quantities(self, quantities: Mapping[str, Quantity]):
+        """Write down every quantity, replacing whatever the startup file held.
+
+        Args:
+            quantities: Every quantity there is, keyed by name.
+
+        Raises:
+            NpyBackError: If a frame does not put the trailing bases last, or if an exponent of
+                a unit is neither an integer nor a float.
+        """
+        for quantity in quantities.values():
+            self._check_frame_convention(quantity)
+        self._write_startup({name: self._to_written_quantity(quantity) for name, quantity in quantities.items()})
 
     def get_all_quantities(self) -> dict[str, Quantity]:
         """Rebuild every quantity written down.
@@ -397,6 +413,7 @@ class NpyBack(QuantityBack):
         Raises:
             QuantityError: Cyclic reference or referring to undefined quantity.
         """
+        written = self._read_startup()["quantities"]
         built: dict[str, Quantity] = {}
         building: set[str] = set()
 
@@ -410,7 +427,7 @@ class NpyBack(QuantityBack):
                 raise QuantityError(f"{name} refers eventually to itself.")
             # Get the unit and frame description
             try:
-                record = self._quantities[name]
+                record = written[name]
             except KeyError:
                 raise QuantityError(f"{name} is referred but not defined.") from None
 
@@ -428,7 +445,7 @@ class NpyBack(QuantityBack):
 
             return built[name]
 
-        for name in self._quantities:
+        for name in written:
             build(name)
             # Check again because hand-edited file may not comply
             self._check_frame_convention(built[name])

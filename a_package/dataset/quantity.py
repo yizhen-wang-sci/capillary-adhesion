@@ -174,11 +174,11 @@ class QuantityBack(Protocol):
         """
         raise NotImplementedError
 
-    def new_quantity(self, new: Quantity):
-        """Save the new quantity.
+    def save_all_quantities(self, quantities: Mapping[str, Quantity]):
+        """Save every quantity, replacing whatever was stored before.
 
         Args:
-            new: The quantity.
+            quantities: Every quantity there is, keyed by name.
 
         Raises:
             QuantityError
@@ -304,7 +304,7 @@ class QuantityFront:
             raise QuantityError(f"{name} is a duplicated name. It already has {duplicated}")
 
         # Create the new quantity
-        self._back.new_quantity(new)
+        self._back.save_all_quantities(self._saved | {name: new})
         self._saved[name] = new
         return new
 
