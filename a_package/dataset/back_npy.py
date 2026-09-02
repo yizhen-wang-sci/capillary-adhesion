@@ -198,7 +198,7 @@ class NpyIO:
         with self.agreeing_on_error():
             if self._comm.rank == self._ROOT:
                 # np.save can raise FileNotFoundError
-                np.save(path, data)
+                np.save(path, data, allow_pickle=False)
 
     def read_text(self, path: pathlib.Path) -> str:
         """Read a text file, the same content on every rank.
