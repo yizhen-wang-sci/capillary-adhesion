@@ -64,25 +64,21 @@ def run_post_compute(records, comm_world) -> None:
         quantities.define(Term.max_volume, frame=("step",))
         quantities.define("force", unit=ref_length, frame=("cycle", "step"))
 
-        # The max volume depends on the gap alone, which is the same for each cycle.
         max_volume_traj = np.empty(nb_steps)
-        for i_step in range(nb_steps):
-            capillary.set_gap(quantities.load_value(Term.gap, at={"step": i_step}))
-            max_volume_traj[i_step] = capillary.get_max_volume()
-
-        # The rest follow the phase, hence the cycle.
         force_traj = np.empty((nb_cycles, nb_steps))
         volume_traj = np.empty((nb_cycles, nb_steps))
         area_ls_traj = np.empty((nb_cycles, nb_steps))
         area_lv_traj = np.empty((nb_cycles, nb_steps))
         perimeter_traj = np.empty((nb_cycles, nb_steps))
-        for i_cycle in range(nb_cycles):
-            for i_step in range(nb_steps):
-                capillary.set_gap(quantities.load_value(Term.gap, at={"step": i_step}))
+        # The gap is the same for each cycle, so the step is the outer loop and reads it once.
+        for i_step in range(nb_steps):
+            capillary.set_gap(quantities.load_value(Term.gap, at={"step": i_step}))
+            max_volume_traj[i_step] = capillary.get_max_volume()
+            for i_cycle in range(nb_cycles):
                 capillary.set_phase(quantities.load_value(Term.phase, at={"cycle": i_cycle, "step": i_step}))
                 volume_traj[i_cycle, i_step] = capillary.get_volume()
                 area_ls_traj[i_cycle, i_step] = capillary.get_liquid_solid_area()
-                area_lv_traj[i_cycle, i_step] = capillary.get_liquid_vapor_area()
+                area_lv_traj[i_cycle, i_step] = capillary.get_liquid_vapour_area()
                 perimeter_traj[i_cycle, i_step] = capillary.get_perimeter()
                 force_traj[i_cycle, i_step] = (
                     pressure_traj[i_cycle, i_step] * area_ls_traj[i_cycle, i_step]
