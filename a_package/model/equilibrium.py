@@ -1,8 +1,11 @@
 """Equilibrium formulations for capillary contact problems."""
 
+import numpy as np
+
 from a_package.domain import OptimizerResult, Problem
 
 from .capillary import CapillaryBridge
+from .contact import ElasticContact
 
 
 def formulate_constant_volume_phase_problem(
@@ -88,3 +91,49 @@ def formulate_constant_pressure_phase_problem(
     if explicit_phase_bounds:
         args.update({"x_lb": capillary.phase_lb, "x_ub": capillary.phase_ub})
     return Problem(**args)
+
+
+def formulate_constant_separation_gap_problem(elastic: ElasticContact):
+    """Minimise energy(gap) subject to displaced_volume(gap) == 0.
+
+    Args:
+        elastic: The physics model providing the energy and its Jacobian w.r.t. gap,
+            with its mean separation already set.
+
+    Returns:
+        An adapted problem the optimizer can handle, whose dual variable is the mean pressure.
+    """
+    # Exploit the linearity in the displaced volume Jacobian
+    return Problem(
+        get_x=elastic.get_gap,
+        set_x=elastic.set_gap,
+        get_f=elastic.get_energy,
+        get_f_Dx=elastic.get_energy_jacobian,
+        x_lb=elastic.gap_lb,
+        x_ub=elastic.gap_ub,
+        communicator=elastic.communicator,
+    )
+
+
+def formulate_constant_volume_gap_problem(elastic: ElasticContact):
+    """Minimise energy(gap) subject to displaced_volume(gap) == 0.
+
+    Args:
+        elastic: The physics model providing the energy and its Jacobian w.r.t. gap,
+            with its mean separation already set.
+
+    Returns:
+        An adapted problem the optimizer can handle, whose dual variable is the mean pressure.
+    """
+    # Exploit the linearity in the displaced volume Jacobian
+    return Problem(
+        get_x=elastic.get_gap,
+        set_x=elastic.set_gap,
+        get_f=elastic.get_energy,
+        get_f_Dx=elastic.get_energy_jacobian,
+        A=elastic.get_gap_volume_jacobian().ravel(),
+        b=elastic.get_gap_origin_volume(),
+        x_lb=elastic.gap_lb,
+        x_ub=elastic.gap_ub,
+        communicator=elastic.communicator,
+    )
