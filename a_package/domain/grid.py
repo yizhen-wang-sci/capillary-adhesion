@@ -131,7 +131,7 @@ class Grid:
                 list(nb_ghost_layers),
                 list(nb_ghost_layers),
             )
-            if self._decomposition.nb_subdivisions != nb_subdomains:
+            if list(self._decomposition.nb_subdivisions) != list(nb_subdomains):
                 raise RuntimeWarning()
         # Otherwise, use CartesianDecomposition as backend
         except RuntimeWarning:
