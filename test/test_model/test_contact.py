@@ -4,8 +4,9 @@ import numpy as np
 import pytest
 from NuMPI import MPI
 
-from a_package.domain import Grid, field_component_ax, field_sub_pt_ax
+from a_package.domain import Grid, ProjectedLbfgs, field_component_ax, field_sub_pt_ax
 from a_package.model.contact import ElasticContact, RigidContact
+from a_package.model.equilibrium import formulate_constant_volume_gap_problem
 
 
 @pytest.fixture
@@ -106,3 +107,35 @@ def test_jacobian_is_the_gradient_of_its_quantity(elastic_contact, small_steps, 
         for step in small_steps
     ]
     assert np.amin(differences) < 1e-6
+
+
+def test_pressure_under_a_sphere_is_hertzian():
+    nb_grid_pts = 64
+    radius = 8.0
+    grid = Grid([nb_grid_pts, nb_grid_pts], [DOMAIN_LENGTH, DOMAIN_LENGTH])
+    grid.decompose([1, MPI.COMM_WORLD.Get_size()], (1, 1), communicator=MPI.COMM_WORLD)
+    x, y = grid.form_spatial_mesh()
+    r_squared = grid.get_local((x - 0.5 * DOMAIN_LENGTH) ** 2 + (y - 0.5 * DOMAIN_LENGTH) ** 2)
+    sphere = r_squared / (2 * radius)
+    flat = np.zeros_like(sphere)
+    contact = ElasticContact(grid, ELASTIC_PARAMS, sphere, flat, communicator=MPI.COMM_WORLD)
+    contact.set_mean_separation(-0.08)
+
+    domain_area = DOMAIN_LENGTH**2
+    problem = formulate_constant_volume_gap_problem(contact)
+    x0 = np.full(sphere.shape, contact.get_gap_origin_volume() / domain_area)
+    result = ProjectedLbfgs(max_inner_iter=1000, tol_gradient=1e-10).solve_minimisation(problem, x0)
+    assert result["success"]
+    contact.set_gap(result["x"])
+
+    # compressive positive
+    pressure = contact.get_energy_jacobian() / grid.element_area - result["dual"]
+    load = -result["dual"] * domain_area
+
+    contact_modulus = ELASTIC_PARAMS["youngs_modulus"] / (1 - ELASTIC_PARAMS["poisson_ratio"] ** 2)
+    contact_radius = np.cbrt(3 * load * radius / (4 * contact_modulus))
+    peak_pressure = 3 * load / (2 * np.pi * contact_radius**2)
+    hertz_pressure = peak_pressure * np.sqrt(np.clip(1 - r_squared / contact_radius**2, 0, None))
+
+    inside = r_squared < (0.8 * contact_radius) ** 2
+    np.testing.assert_allclose(pressure[inside], hertz_pressure[inside], atol=0.02 * peak_pressure)
