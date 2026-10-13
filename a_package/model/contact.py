@@ -160,8 +160,11 @@ class ElasticContact:
         self._grid.decomposition.communicate_ghosts(self._gap_origin_nodal)
         self._fem.interpolate_value(self._gap_origin_nodal, self._gap_origin_quadr)
 
+    def get_gap_origin(self):
+        return self._gap_origin_nodal.s.squeeze(axis=(field_component_ax, field_sub_pt_ax))
+
     def get_gap(self):
-        return self._gap_nodal.s
+        return self._gap_nodal.s.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def set_gap(self, value: np.ndarray):
         """Set nodal displacement and update the traction holding it.
