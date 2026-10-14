@@ -4,9 +4,8 @@ import numpy as np
 from NuMPI import MPI
 
 from a_package.domain import (
-    CentroidQuadrature,
-    FirstOrderElement,
     Grid,
+    NodalQuadrature,
     adapt_shape,
     field_component_ax,
     field_element_axs,
@@ -121,34 +120,21 @@ class ElasticContact:
                 )
 
         # numeric setup
-        self._quadrature = CentroidQuadrature(communicator)
-        self._fem = FirstOrderElement(self._quadrature.quad_pt_coords, grid.element_sizes)
+        self._quadrature = NodalQuadrature(communicator)
 
         grid.collection_real.set_nb_sub_pts("nodal", 1)
-        grid.collection_real.set_nb_sub_pts("quadr", self._quadrature.nb_quad_pts)
-        grid.collection_spectral.set_nb_sub_pts("quadr", self._quadrature.nb_quad_pts)
+        grid.collection_spectral.set_nb_sub_pts("nodal", 1)
 
         self.communicator = communicator
 
         # fields
         self._gap_origin_nodal = muGrid.Field(grid.collection_real.real_field("nodal_gap_origin", 1, "nodal"))
-        self._gap_origin_quadr = muGrid.Field(grid.collection_real.real_field("quadr_gap_origin", 1, "quadr"))
-
         self._gap_nodal = muGrid.Field(grid.collection_real.real_field("nodal_gap", 1, "nodal"))
-        self._gap_quadr = muGrid.Field(grid.collection_real.real_field("quadr_gap", 1, "quadr"))
 
-        self._displacement_quadr = muGrid.Field(grid.collection_real.real_field("quadr_displacement", 1, "quadr"))
-        self._displacement_quadr_spectrum = muGrid.Field(grid.collection_spectral.complex_field("quadr_displacement_spectrum", 1, "quadr"))
-        self._stress_quadr_spectrum = muGrid.Field(grid.collection_spectral.complex_field("quadr_stress_spectrum", 1, "quadr"))
-        self._stress_quadr = muGrid.Field(grid.collection_real.real_field("quadr_stress", 1, "quadr"))
-        self._stress_derivative_quadr_spectrum = muGrid.Field(grid.collection_spectral.complex_field("quadr_stress_derivative_spectrum", 1, "quadr"))
-        self._stress_derivative_quadr = muGrid.Field(grid.collection_real.real_field("quadr_stress_derivative", 1, "quadr"))
-
-        self._energy_D_gap_quadr = muGrid.Field(grid.collection_real.real_field("energy_D_gap_quadr", 1, "quadr"))
-        self._energy_D_gap_nodal = muGrid.Field(grid.collection_real.real_field("energy_D_gap_nodal", 1, "nodal"))
-
-        self._volume_D_gap_quadr = muGrid.Field(grid.collection_real.real_field("volume_D_gap_quadr", 1, "quadr"))
-        self._volume_D_gap_nodal = muGrid.Field(grid.collection_real.real_field("volume_D_gap_nodal", 1, "nodal"))
+        self._displacement_nodal = muGrid.Field(grid.collection_real.real_field("nodal_displacement", 1, "nodal"))
+        self._displacement_nodal_spectrum = muGrid.Field(grid.collection_spectral.complex_field("nodal_displacement_spectrum", 1, "nodal"))
+        self._stress_nodal_spectrum = muGrid.Field(grid.collection_spectral.complex_field("nodal_stress_spectrum", 1, "nodal"))
+        self._stress_nodal = muGrid.Field(grid.collection_real.real_field("nodal_stress", 1, "nodal"))
 
     def set_mean_separation(self, separation: float):
         """Set the mean separation the gap is measured at.
@@ -157,8 +143,6 @@ class ElasticContact:
             separation: The mean separation.
         """
         self._gap_origin_nodal.s[...] = self._upper + separation - self._lower
-        self._grid.decomposition.communicate_ghosts(self._gap_origin_nodal)
-        self._fem.interpolate_value(self._gap_origin_nodal, self._gap_origin_quadr)
 
     def get_gap_origin(self):
         return self._gap_origin_nodal.s.squeeze(axis=(field_component_ax, field_sub_pt_ax))
@@ -173,15 +157,13 @@ class ElasticContact:
             value: Nodal displacement values, reshaped to this rank's subdomain.
         """
         self._gap_nodal.s[...] = value.reshape(self._grid.decomposition.nb_subdomain_grid_pts)
-        self._grid.decomposition.communicate_ghosts(self._gap_nodal)
-        self._fem.interpolate_value(self._gap_nodal, self._gap_quadr)
-        self._displacement_quadr.s[...] = self._gap_origin_quadr.s - self._gap_quadr.s
-        self._grid.decomposition.fft(self._displacement_quadr, self._displacement_quadr_spectrum)
+        self._displacement_nodal.s[...] = self._gap_origin_nodal.s - self._gap_nodal.s
+        self._grid.decomposition.fft(self._displacement_nodal, self._displacement_nodal_spectrum)
         # precompute the stress because setting the gap also sets the displacement
-        self._stress_quadr_spectrum.s[...] = self._solid.to_stress_spectrum(
-            self._displacement_quadr_spectrum.s)
-        self._grid.decomposition.ifft(self._stress_quadr_spectrum, self._stress_quadr)
-        self._stress_quadr.s[...] *= self._grid.decomposition.normalisation
+        self._stress_nodal_spectrum.s[...] = self._solid.to_stress_spectrum(
+            self._displacement_nodal_spectrum.s)
+        self._grid.decomposition.ifft(self._stress_nodal_spectrum, self._stress_nodal)
+        self._stress_nodal.s[...] *= self._grid.decomposition.normalisation
 
     @property
     def gap_lb(self):
@@ -200,28 +182,23 @@ class ElasticContact:
 
     def get_energy(self):
         """Compute total elastic energy."""
-        integrand = 0.5 * self._stress_quadr.s * self._displacement_quadr.s
+        integrand = 0.5 * self._stress_nodal.s * self._displacement_nodal.s
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_energy_jacobian(self):
         """Compute gradient of energy w.r.t. nodal gap."""
-        self._energy_D_gap_quadr.s[...] = self._quadrature.propag_integral_weight(
-            -self._stress_quadr.s, self._grid.element_area)
-        self._grid.decomposition.communicate_ghosts(self._energy_D_gap_quadr)
-        self._fem.propag_sens_value(self._energy_D_gap_quadr, self._energy_D_gap_nodal)
-        return self._energy_D_gap_nodal.s.squeeze(axis=(field_component_ax, field_sub_pt_ax))
+        energy_D_gap = self._quadrature.propag_integral_weight(-self._stress_nodal.s, self._grid.element_area)
+        return energy_D_gap.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_gap_volume(self):
         """Compute total volume swept by the displacement."""
-        return self._quadrature.integrate(self._gap_quadr.s, self._grid.element_area).item()
+        return self._quadrature.integrate(self._gap_nodal.s, self._grid.element_area).item()
 
     def get_gap_volume_jacobian(self):
         """Compute gradient of displaced volume w.r.t. nodal displacement."""
-        self._volume_D_gap_quadr.s[...] = self._quadrature.propag_integral_weight(
-            np.ones_like(self._gap_quadr.s), self._grid.element_area)
-        self._grid.decomposition.communicate_ghosts(self._volume_D_gap_quadr)
-        self._fem.propag_sens_value(self._volume_D_gap_quadr, self._volume_D_gap_nodal)
-        return self._volume_D_gap_nodal.s.squeeze(axis=(field_component_ax, field_sub_pt_ax))
+        volume_D_gap = self._quadrature.propag_integral_weight(
+            np.ones_like(self._gap_nodal.s), self._grid.element_area)
+        return volume_D_gap.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_gap_origin_volume(self):
-        return self._quadrature.integrate(self._gap_origin_quadr.s, self._grid.element_area).item()
+        return self._quadrature.integrate(self._gap_origin_nodal.s, self._grid.element_area).item()
