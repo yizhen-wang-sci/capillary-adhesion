@@ -165,6 +165,10 @@ class ElasticContact:
         self._grid.decomposition.ifft(self._stress_nodal_spectrum, self._stress_nodal)
         self._stress_nodal.s[...] *= self._grid.decomposition.normalisation
 
+    def get_normal_stress(self):
+        """Get the load distribution."""
+        return self._stress_nodal.s.squeeze(axis=(field_component_ax, field_sub_pt_ax))
+
     @property
     def gap_lb(self):
         """Lower bound for the displacement, which the elastic solid does not have."""
