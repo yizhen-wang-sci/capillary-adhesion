@@ -29,7 +29,6 @@ def formulate_constant_volume_phase_problem(
         "get_f_Dx": capillary.get_energy_jacobian,
         "A": capillary.get_volume_jacobian().ravel(),
         "b": volume,
-        "is_zeroed": capillary.gap_is_closed,
         "communicator": capillary.communicator,
     }
 
@@ -83,7 +82,6 @@ def formulate_constant_pressure_phase_problem(
         "set_x": capillary.set_phase,
         "get_f": helmholtz_potential,
         "get_f_Dx": helmholtz_potential_jacobian,
-        "is_zeroed": capillary.gap_is_closed,
         "communicator": capillary.communicator,
     }
 
