@@ -83,7 +83,9 @@ class PhaseMixture:
         # FIXME: switch on whether to use small-slope-approx.?
         # upper and lower surface, hence the 2.
         # (height gradient square is one order higher and omitted)
-        liquid_solid = 2.0 * phase
+        # FIXME: (gap > 0) jumps from 0 to 1 as a gap opens, which the gap Jacobian misses;
+        # not usable for the coupled phase-gap problem.
+        liquid_solid = 2.0 * (gap > 0) * phase
         return liquid_vapour + self._gamma * liquid_solid
 
     @staticmethod
@@ -134,9 +136,21 @@ class PhaseMixture:
             * self._epsilon
         )
 
-        liquid_solid_D_phase = 2.0
+        liquid_solid_D_phase = 2.0 * (gap > 0)
 
         return liquid_vapour_D_phase + self._gamma * liquid_solid_D_phase, liquid_vapour_D_phase_grad
+
+    def compute_local_energy_gap_jacobian(self, phase: Field, phase_grad: Field):
+        """Compute derivative of local energy w.r.t. the gap, the liquid-vapour term alone.
+
+        Args:
+            phase: Phase-field values.
+            phase_grad: Gradient of the phase field.
+
+        Returns:
+            The derivative, with the component axis kept.
+        """
+        return self.compute_local_perimeter(phase, phase_grad) * self._curv * self._epsilon
 
     @staticmethod
     def double_well_penalty_derivative(x):
@@ -169,6 +183,18 @@ class PhaseMixture:
         """
         return (gap,)
 
+    @staticmethod
+    def compute_local_volume_gap_jacobian(phase: Field):
+        """Compute derivative of local volume w.r.t. the gap, which is the phase alone.
+
+        Args:
+            phase: Phase-field values.
+
+        Returns:
+            The derivative, a view of the phase field rather than a copy.
+        """
+        return (phase,)
+
 
 class CapillaryBridge:
     """Nodal-value interface for capillary bridge evaluation."""
@@ -192,7 +218,7 @@ class CapillaryBridge:
 
         # decomposition and field collection setup
         self._decomposition = grid.decomposition
-        self._collection = self._decomposition.collection
+        self._collection = grid.collection_real
         self._collection.set_nb_sub_pts("nodal", 1)
         self._collection.set_nb_sub_pts("quadr", self._quadrature.nb_quad_pts)
 
@@ -208,6 +234,10 @@ class CapillaryBridge:
         self._quadr_value_1_back_sens = muGrid.Field(self._collection.real_field("quadr_value_1_back_sens", 1, "nodal"))
         self._quadr_value_2 = muGrid.Field(self._collection.real_field("quadr_value_2", 1, "quadr"))
         self._quadr_value_2_back_sens = muGrid.Field(self._collection.real_field("quadr_value_2_back_sens", 1, "nodal"))
+        self._quadr_value_3 = muGrid.Field(self._collection.real_field("quadr_value_3", 1, "quadr"))
+        self._quadr_value_3_back_sens = muGrid.Field(self._collection.real_field("quadr_value_3_back_sens", 1, "nodal"))
+        self._quadr_value_4 = muGrid.Field(self._collection.real_field("quadr_value_4", 1, "quadr"))
+        self._quadr_value_4_back_sens = muGrid.Field(self._collection.real_field("quadr_value_4_back_sens", 1, "nodal"))
         self._quadr_gradient = muGrid.Field(self._collection.real_field("quadr_gradient", 2, "quadr"))
         self._quadr_gradient_back_sens = muGrid.Field(
             self._collection.real_field("quadr_gradient_back_sens", 1, "nodal")
@@ -240,11 +270,9 @@ class CapillaryBridge:
         """Set nodal phase and update quadrature-point values and gradients.
 
         Args:
-            value: Nodal phase values, reshaped to this rank's subdomain. Zeroed wherever the
-                gap is closed.
+            value: Nodal phase values, reshaped to this rank's subdomain.
         """
         self._nodal_phase.s[...] = np.reshape(value, (1, 1, *self._decomposition.nb_subdomain_grid_pts))
-        self._nodal_phase.s[self.gap_is_closed] = 0.0
         self._decomposition.communicate_ghosts(self._nodal_phase)
         self._fem.interpolate_value(self._nodal_phase, self._quadr_phase)
         self._fem.interpolate_gradient(self._nodal_phase, self._quadr_phase_gradient)
@@ -279,7 +307,7 @@ class CapillaryBridge:
         )
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
-    def get_energy_jacobian(self):
+    def get_energy_phase_jacobian(self):
         """Compute gradient of energy w.r.t. nodal phase."""
         [energy_D_phase, energy_D_phase_gradient] = self._mixture.compute_local_energy_jacobian(
             self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
@@ -296,7 +324,21 @@ class CapillaryBridge:
         self._fem.propag_sens_gradient(self._quadr_gradient, self._quadr_gradient_back_sens)
 
         jacobian = self._quadr_value_1_back_sens.s + self._quadr_gradient_back_sens.s
-        jacobian[self.gap_is_closed] = 0
+        return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
+
+    get_energy_jacobian = get_energy_phase_jacobian
+
+    def get_energy_gap_jacobian(self):
+        """Compute gradient of energy w.r.t. nodal gap."""
+        energy_D_gap = self._mixture.compute_local_energy_gap_jacobian(
+            self._quadr_phase.s, self._quadr_phase_gradient.s
+        )
+
+        self._quadr_value_3.s[...] = self._quadrature.propag_integral_weight(energy_D_gap, self._grid.element_area)
+        self._decomposition.communicate_ghosts(self._quadr_value_3)
+        self._fem.propag_sens_value(self._quadr_value_3, self._quadr_value_3_back_sens)
+
+        jacobian = self._quadr_value_3_back_sens.s.copy()
         return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_volume(self):
@@ -304,7 +346,7 @@ class CapillaryBridge:
         integrand = self._mixture.compute_local_volume(self._quadr_gap.s, self._quadr_phase.s)
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
-    def get_volume_jacobian(self):
+    def get_volume_phase_jacobian(self):
         """Compute gradient of volume w.r.t. nodal phase."""
         [volume_D_phase] = self._mixture.compute_local_volume_jacobian(self._quadr_gap.s, self._quadr_phase.s)
 
@@ -313,12 +355,26 @@ class CapillaryBridge:
         self._fem.propag_sens_value(self._quadr_value_2, self._quadr_value_2_back_sens)
 
         jacobian = self._quadr_value_2_back_sens.s.copy()
-        jacobian[self.gap_is_closed] = 0
+        return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
+
+    get_volume_jacobian = get_volume_phase_jacobian
+
+    def get_volume_gap_jacobian(self):
+        """Compute gradient of liquid volume w.r.t. nodal gap."""
+        [volume_D_gap] = self._mixture.compute_local_volume_gap_jacobian(self._quadr_phase.s)
+
+        self._quadr_value_4.s[...] = self._quadrature.propag_integral_weight(volume_D_gap, self._grid.element_area)
+        self._decomposition.communicate_ghosts(self._quadr_value_4)
+        self._fem.propag_sens_value(self._quadr_value_4, self._quadr_value_4_back_sens)
+
+        jacobian = self._quadr_value_4_back_sens.s.copy()
         return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_perimeter(self):
         """Compute total perimeter of liquid-vapour interface."""
-        integrand = self._mixture.compute_local_perimeter(self._quadr_phase.s, self._quadr_phase_gradient.s)
+        integrand = (self._quadr_gap.s > 0) * self._mixture.compute_local_perimeter(
+            self._quadr_phase.s, self._quadr_phase_gradient.s
+        )
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_max_volume(self):
@@ -327,7 +383,8 @@ class CapillaryBridge:
 
     def get_liquid_solid_area(self):
         """Compute area of liquid-solid interface."""
-        return self._quadrature.integrate(self._quadr_phase.s, self._grid.element_area).item()
+        integrand = (self._quadr_gap.s > 0) * self._quadr_phase.s
+        return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_liquid_vapour_area(self):
         """Compute area of liquid-vapour interface."""

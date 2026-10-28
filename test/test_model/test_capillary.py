@@ -176,8 +176,28 @@ def test_energy_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, tes
     )
 
 
+def test_energy_gap_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, test_field, comm_world, small_steps):
+    """Test CapillaryBridge.get_energy_gap_jacobian against finite differences."""
+    capillary = CapillaryBridge(mock_decomposed_grid, mock_phase_mixture, communicator=comm_world)
+    capillary.set_gap(mock_decomposed_grid.get_local(mock_gap))
+    capillary.set_phase(mock_decomposed_grid.get_local(test_field))
+
+    def energy_func(gap):
+        capillary.set_gap(mock_decomposed_grid.get_local(gap))
+        return capillary.get_energy()
+
+    numeric_jacobian = compute_numerical_jacobian(mock_gap, energy_func, small_steps)
+
+    capillary.set_gap(mock_decomposed_grid.get_local(mock_gap))
+    impl_jacobian = capillary.get_energy_gap_jacobian()
+
+    assert_jacobian_correct(
+        impl_jacobian, mock_decomposed_grid.get_local(numeric_jacobian), small_steps, show_plot=show_me_plot
+    )
+
+
 def test_volume_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, test_field, comm_world, small_steps):
-    """Test NodalFormCapillary.get_energy_jacobian against finite differences."""
+    """Test CapillaryBridge.get_volume_jacobian against finite differences."""
     capillary = CapillaryBridge(mock_decomposed_grid, mock_phase_mixture, communicator=comm_world)
     capillary.set_gap(mock_decomposed_grid.get_local(mock_gap))
 
@@ -190,6 +210,26 @@ def test_volume_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, tes
 
     capillary.set_phase(mock_decomposed_grid.get_local(test_field))
     impl_jacobian = capillary.get_volume_jacobian()
+
+    assert_jacobian_correct(
+        impl_jacobian, mock_decomposed_grid.get_local(numeric_jacobian), small_steps, show_plot=show_me_plot
+    )
+
+
+def test_volume_gap_jacobian(mock_decomposed_grid, mock_phase_mixture, mock_gap, test_field, comm_world, small_steps):
+    """Test CapillaryBridge.get_volume_gap_jacobian against finite differences."""
+    capillary = CapillaryBridge(mock_decomposed_grid, mock_phase_mixture, communicator=comm_world)
+    capillary.set_gap(mock_decomposed_grid.get_local(mock_gap))
+    capillary.set_phase(mock_decomposed_grid.get_local(test_field))
+
+    def volume_func(gap):
+        capillary.set_gap(mock_decomposed_grid.get_local(gap))
+        return capillary.get_volume()
+
+    numeric_jacobian = compute_numerical_jacobian(mock_gap, volume_func, small_steps)
+
+    capillary.set_gap(mock_decomposed_grid.get_local(mock_gap))
+    impl_jacobian = capillary.get_volume_gap_jacobian()
 
     assert_jacobian_correct(
         impl_jacobian, mock_decomposed_grid.get_local(numeric_jacobian), small_steps, show_plot=show_me_plot

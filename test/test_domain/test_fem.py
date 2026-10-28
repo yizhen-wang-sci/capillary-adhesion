@@ -68,7 +68,7 @@ def test_first_order_element(decomposed_grid, mock_sub_pts, comm_world):
 
     # Set up the fields
     decomposition = decomposed_grid.decomposition
-    collection = decomposition.collection
+    collection = decomposed_grid.collection_real
     nb_sub_pts, nb_spatial_dims = np.shape(mock_sub_pts)
     collection.set_nb_sub_pts("sub_pt", nb_sub_pts)
     field_origin = collection.real_field("origin", 1)

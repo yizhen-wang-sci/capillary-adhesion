@@ -31,8 +31,8 @@ class Problem:
         b: float | None = None,
         get_g: Callable[[], float] | None = None,
         get_g_Dx: Callable[[], np.ndarray] | None = None,
-        x_lb: float | None = None,
-        x_ub: float | None = None,
+        x_lb: float | np.ndarray | None = None,
+        x_ub: float | np.ndarray | None = None,
         is_zeroed: np.ndarray | None = None,
         communicator=MPI.COMM_SELF,
     ):
@@ -47,8 +47,8 @@ class Problem:
             b: Right-hand side of the linear equality constraint.
             get_g: The general equality constraint at the current x.
             get_g_Dx: That constraint's gradient at the current x.
-            x_lb: Lower bound, applied to every entry of x.
-            x_ub: Upper bound, applied to every entry of x.
+            x_lb: Lower bound, either one for every entry of x or one per entry.
+            x_ub: Upper bound, either one for every entry of x or one per entry.
             is_zeroed: Mask of entries held at zero.
             communicator: Communicator spanning the ranks the unknowns are spread across.
         """
