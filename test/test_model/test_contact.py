@@ -141,6 +141,7 @@ def test_pressure_under_a_sphere_is_hertzian():
 
     if show_me_plot:
         import matplotlib.pyplot as plt
+        # ruff: noqa: RUF059
         disp = contact.get_gap_origin() - contact.get_gap()
         fig, ax = plt.subplots()
         ax.plot(disp[nb_grid_pts // 2])

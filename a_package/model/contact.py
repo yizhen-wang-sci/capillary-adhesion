@@ -46,7 +46,7 @@ class RigidContact:
 
 
 class SpectralElasticPlane:
-    """Response of a semi-infinite elastic solid to a surface stress over its surface, per wavevector."""
+    """Response of a semi-infinite elastic solid to a surface stress, per wavevector."""
 
     def __init__(self, grid: Grid, youngs_modulus: float, poisson_ratio: float = 0.0):
         """Derive the contact modulus from the elastic constants, and the wavevectors from the grid.
@@ -150,9 +150,11 @@ class ElasticContact:
         self._gap_origin_nodal.s[...] = self._upper + separation - self._lower
 
     def get_gap_origin(self):
+        """Gap of the undeformed surfaces at the mean separation."""
         return self._gap_origin_nodal.s.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_gap(self):
+        """Gap of the deformed surfaces."""
         return self._gap_nodal.s.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def set_gap(self, value: np.ndarray):
@@ -208,4 +210,5 @@ class ElasticContact:
         return volume_D_gap.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_gap_origin_volume(self):
+        """Compute total volume of the gap of the undeformed surfaces."""
         return self._quadrature.integrate(self._gap_origin_nodal.s, self._grid.element_area).item()
