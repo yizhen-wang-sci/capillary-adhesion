@@ -15,7 +15,7 @@ class Grid:
         self,
         nb_grid_pts: Sequence[int],
         lengths: Sequence[float] | None = None,
-        decomposition = None,
+        decomposition=None,
     ):
         """Set up the grid, deriving the element sizes from the domain lengths.
 

@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 from NuMPI import MPI
 
-from a_package.domain import Grid, ProjectedLbfgs, field_component_ax, field_sub_pt_ax, BoundedLbfgs
+from a_package.domain import Grid, ProjectedLbfgs, field_component_ax, field_sub_pt_ax
 from a_package.model.contact import ElasticContact, RigidContact
-from a_package.model.equilibrium import formulate_constant_volume_gap_problem, formulate_constant_separation_gap_problem
+from a_package.model.equilibrium import formulate_constant_volume_gap_problem
 
 show_me_plot = False
 
@@ -81,7 +81,7 @@ def compute_numerical_jacobian(x, func, step):
 
 def test_uniform_gap_stores_no_energy(elastic_contact):
     grid, contact = elastic_contact
-    contact.set_gap(grid.get_local(np.full(grid.nb_domain_grid_pts, 1.)))
+    contact.set_gap(grid.get_local(np.full(grid.nb_domain_grid_pts, 1.0)))
     assert contact.get_energy() == pytest.approx(0.0, abs=1e-12)
 
 
@@ -143,14 +143,14 @@ def test_pressure_under_a_sphere_is_hertzian():
         import matplotlib.pyplot as plt
         disp = contact.get_gap_origin() - contact.get_gap()
         fig, ax = plt.subplots()
-        ax.plot(disp[nb_grid_pts//2])
+        ax.plot(disp[nb_grid_pts // 2])
         ax.set_title("Displacement")
         fig, ax = plt.subplots()
         ax.imshow(disp.T, cmap=plt.cm.Blues)
         ax.set_title("Displacement 2D")
         fig, ax = plt.subplots()
-        ax.plot(pressure[nb_grid_pts//2], linestyle="-")
-        ax.plot(hertz_pressure[nb_grid_pts//2], linestyle="--")
+        ax.plot(pressure[nb_grid_pts // 2], linestyle="-")
+        ax.plot(hertz_pressure[nb_grid_pts // 2], linestyle="--")
         ax.set_title("Pressure")
         plt.show()
 

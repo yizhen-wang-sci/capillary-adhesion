@@ -1,4 +1,5 @@
 """Contact between surfaces."""
+
 import muGrid
 import numpy as np
 from NuMPI import MPI
@@ -60,7 +61,7 @@ class SpectralElasticPlane:
         wavevector = grid.form_local_spectral_mesh()
         self._q_norm = np.linalg.norm(wavevector, ord=2, axis=0, keepdims=True)
         # Effective contact modulus
-        self._E_star = youngs_modulus / (1 - poisson_ratio ** 2)
+        self._E_star = youngs_modulus / (1 - poisson_ratio**2)
 
     def to_stress_spectrum(self, spectral_displacement):
         """Surface stress holding a given surface displacement.
@@ -132,8 +133,12 @@ class ElasticContact:
         self._gap_nodal = muGrid.Field(grid.collection_real.real_field("nodal_gap", 1, "nodal"))
 
         self._displacement_nodal = muGrid.Field(grid.collection_real.real_field("nodal_displacement", 1, "nodal"))
-        self._displacement_nodal_spectrum = muGrid.Field(grid.collection_spectral.complex_field("nodal_displacement_spectrum", 1, "nodal"))
-        self._stress_nodal_spectrum = muGrid.Field(grid.collection_spectral.complex_field("nodal_stress_spectrum", 1, "nodal"))
+        self._displacement_nodal_spectrum = muGrid.Field(
+            grid.collection_spectral.complex_field("nodal_displacement_spectrum", 1, "nodal")
+        )
+        self._stress_nodal_spectrum = muGrid.Field(
+            grid.collection_spectral.complex_field("nodal_stress_spectrum", 1, "nodal")
+        )
         self._stress_nodal = muGrid.Field(grid.collection_real.real_field("nodal_stress", 1, "nodal"))
 
     def set_mean_separation(self, separation: float):
@@ -160,8 +165,7 @@ class ElasticContact:
         self._displacement_nodal.s[...] = self._gap_origin_nodal.s - self._gap_nodal.s
         self._grid.decomposition.fft(self._displacement_nodal, self._displacement_nodal_spectrum)
         # precompute the stress because setting the gap also sets the displacement
-        self._stress_nodal_spectrum.s[...] = self._solid.to_stress_spectrum(
-            self._displacement_nodal_spectrum.s)
+        self._stress_nodal_spectrum.s[...] = self._solid.to_stress_spectrum(self._displacement_nodal_spectrum.s)
         self._grid.decomposition.ifft(self._stress_nodal_spectrum, self._stress_nodal)
         self._stress_nodal.s[...] *= self._grid.decomposition.normalisation
 
@@ -200,8 +204,7 @@ class ElasticContact:
 
     def get_gap_volume_jacobian(self):
         """Compute gradient of displaced volume w.r.t. nodal displacement."""
-        volume_D_gap = self._quadrature.propag_integral_weight(
-            np.ones_like(self._gap_nodal.s), self._grid.element_area)
+        volume_D_gap = self._quadrature.propag_integral_weight(np.ones_like(self._gap_nodal.s), self._grid.element_area)
         return volume_D_gap.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_gap_origin_volume(self):
