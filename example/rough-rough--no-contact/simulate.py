@@ -1,162 +1,261 @@
-"""
-Run constant-volume simulation from config file.
+"""Cycle rough surfaces through approach and retraction, at one contact angle per record.
 
-Usage:
-    python simulate.py config.toml
+Typical usage example:
+    mpiexec -n <N> python simulate.py
+    mpiexec -n <N> python simulate.py --theta 90.0
 """
 
 import os
-import sys
 
 import numpy as np
-from mpi4py import MPI
-
-from a_package.domain import Grid, factorize_closest
+from a_package.dataset import NpyBack, NpyIO, QuantityFront, RunDir, get_iso_time, log_into, read_input
+from a_package.domain import factorize_closest
 from a_package.model import (
     CapillaryBridge,
     RigidContact,
-    Term,
     extract_pressure_in_constant_volume_solution,
     formulate_constant_volume_phase_problem,
 )
-from a_package.simulation import (
-    RunDir,
-    SimulationIO,
-    SourceDir,
-    get_git_hash,
-    get_iso_time,
-    load_config,
-    save_config,
-    setup_logging,
-    unroll_sweep,
-)
-from config_helper import *
+from mpi4py import MPI
 
-visual_check = False
+from case import *
+from post_compute import run_post_compute
+
 comm_world = MPI.COMM_WORLD
 
+POINT_SCALARS = [Term.pressure]
 
-def main():
-    # CLI
-    try:
-        config_file = sys.argv[1]
-    except IndexError:
-        print("One config file is required via CLI.")
-        sys.exit(1)
-    config_origin = load_config(config_file)
 
-    # setup
-    run = None
+def main(**query):
+    run = RunDir(os.path.dirname(os.path.abspath(__file__)))
+    setup_console()
+
+    records = None
     if comm_world.rank == 0:
-        # make a snapshot of scripts & configs
-        cwd = SourceDir(os.path.dirname(__file__))
-        cwd._suffixes = (*cwd._suffixes, ".npy")  # include surface data in snapshot
-        run = RunDir(cwd.snapshot(tag="affinity-variation"))
-        run.add_metadata({"created": get_iso_time(), "git-hash": get_git_hash()})
-    run = comm_world.bcast(run)
+        records = sorted(run.find_records(**query), key=lambda record: record.name)
+        records = [record for record in records if not is_complete(record)]
+    records = comm_world.bcast(records)
+    if comm_world.rank == 0:
+        print(f"{len(records)} record(s) to solve: {', '.join(record.name for record in records)}")
 
-    # parameter sweep loop
-    for config in unroll_sweep(config_origin):
-        # build instances
-        grid = build_grid(config)
-        decomposition = grid.decompose(factorize_closest(comm_world.size, 2), (1, 1), communicator=comm_world)
+    for record in records:
+        with log_into(record.log, loggers=CONSOLE_LOGGERS):
+            solve_record(record)
 
-        surface_io = SimulationIO(run, decomposition, communicator=comm_world)
-        surface_data = surface_io.load_constant(field_names=[Term.upper_solid, Term.lower_solid])
-        upper_surface_local = surface_data[Term.upper_solid]
-        lower_surface_local = surface_data[Term.lower_solid]
-        del surface_io, surface_data
+    run_post_compute(records, comm_world)
 
-        contact = RigidContact(upper_surface_local, lower_surface_local)
-        mixture = build_phase_mixture(config)
-        capillary = CapillaryBridge(grid, mixture, communicator=comm_world)
-        optimizer = build_optimizer(config)
-        trajectory = build_trajectory(config)
+    if comm_world.rank == 0:
+        run.add_metadata({"modified": get_iso_time()})
 
-        # concrete liquid volume
-        z_min = np.amin(trajectory)
-        contact.set_mean_separation(z_min)
-        gap_at_min = contact.get_gap()
-        capillary.set_gap(gap_at_min)
-        volume_percent = config["constraint"]["liquid_volume_percent"]
-        liquid_volume = capillary.get_max_volume() * (volume_percent / 100.0)
 
-        print(
-            f"Problem size: {'x'.join(str(dim) for dim in grid.nb_domain_grid_pts)}. "
-            f"Simulating for {len(trajectory)} separation values at volume={liquid_volume}({volume_percent}%)..."
+def trajectory_shape(config) -> tuple[int, int]:
+    """The number of cycles and steps one record holds.
+
+    Args:
+        config: The record's own request.
+
+    Returns:
+        tuple: Cycles, then steps per cycle.
+    """
+    return config["trajectory"]["nb_cycles"], len(build_trajectory(config))
+
+
+def is_complete(record) -> bool:
+    """Whether every point of a record's cycles is written.
+
+    Args:
+        record: The record to read.
+
+    Returns:
+        bool: True where the frontier has reached the last point.
+    """
+    nb_cycles, nb_steps = trajectory_shape(read_input(record.input))
+    return count_complete_points(record, POINT_SCALARS) >= nb_cycles * nb_steps
+
+
+def write_bases_and_surfaces(record, config) -> None:
+    """Write a record's bases and its two surfaces.
+
+    Args:
+        record: The record to write into.
+        config: The record's own request.
+    """
+    grid = build_grid(config)
+    nb_cycles, nb_steps = trajectory_shape(config)
+    upper, lower = build_surface(config)
+
+    quantities = QuantityFront(NpyBack(record.data, decomposed=SPATIAL_BASES))
+    ref_length = quantities.define("L")
+    quantities.save_value("L", grid.domain_lengths[0])
+    for basis_name in SPATIAL_BASES:
+        quantities.define(basis_name, unit=ref_length, is_basis=True)
+    save_grid(quantities, SPATIAL_BASES, grid)
+    quantities.define("cycle", is_basis=True)
+    quantities.save_value("cycle", np.arange(nb_cycles))
+    quantities.define("step", is_basis=True)
+    quantities.save_value("step", np.arange(nb_steps))
+    quantities.define(Term.upper_solid, unit=ref_length, frame=SPATIAL_BASES)
+    quantities.save_value(Term.upper_solid, upper)
+    quantities.define(Term.lower_solid, unit=ref_length, frame=SPATIAL_BASES)
+    quantities.save_value(Term.lower_solid, lower)
+
+
+def solve_record(record) -> None:
+    """Solve one record, from wherever it got to.
+
+    Args:
+        record: The record to solve, holding the request in its `input`.
+    """
+    config = read_input(record.input)
+    trajectory = build_trajectory(config)
+    nb_cycles, nb_steps = trajectory_shape(config)
+
+    nb_done = None
+    if comm_world.rank == 0:
+        nb_done = count_complete_points(record, POINT_SCALARS)
+        if nb_done == 0:
+            write_bases_and_surfaces(record, config)
+    nb_done = comm_world.bcast(nb_done)
+    if comm_world.rank == 0:
+        print(f"{record.name}: {nb_done} of {nb_cycles * nb_steps} point(s) already done")
+    comm_world.barrier()
+
+    grid = build_grid(config)
+    decomposition = grid.decompose(factorize_closest(comm_world.size, 2), (1, 1), communicator=comm_world)
+    quantities = QuantityFront(
+        NpyBack(
+            record.data,
+            NpyIO(**grid.owned_layout(), communicator=comm_world),
+            decomposed=SPATIAL_BASES,
         )
+    )
+    ref_length = quantities["L"]
 
-        # records
-        record = None
-        if comm_world.rank == 0:
-            theta = config["capillary"]["contact_angle_degree"]
-            record = run.new_record(theta=theta)
-            save_config(config, record.input)
-        record = comm_world.bcast(record)
-        setup_logging(file=record.log)
+    upper_surface_local = quantities.load_value(Term.upper_solid)
+    lower_surface_local = quantities.load_value(Term.lower_solid)
 
-        # initial guess
-        phase_init = square_init_guess(grid, liquid_volume, np.amin(trajectory))
-        phase_init_local = grid.get_local(phase_init)
+    contact = RigidContact(upper_surface_local, lower_surface_local)
+    mixture = build_phase_mixture(config)
+    capillary = CapillaryBridge(grid, mixture, communicator=comm_world)
+    optimizer = build_optimizer(config)
 
-        # IO and save setup
-        io = SimulationIO(record.data, decomposition, communicator=comm_world)
-        io.save_constant(
-            fields={
-                Term.upper_solid: upper_surface_local,
-                Term.lower_solid: lower_surface_local,
-                Term.phase_init: phase_init_local,
-            }
-        )
+    # concrete liquid volume
+    z_min = np.amin(trajectory)
+    contact.set_mean_separation(z_min)
+    gap_at_min = contact.get_gap()
+    capillary.set_gap(gap_at_min)
+    liquid_volume = build_liquid_volume(capillary, config)
 
-        # Simulation and save results
-        for i_step, separation, gap_local, phase_local, pressure in solve_constant_volume(
-            decomposition.nb_subdomain_grid_pts,
-            contact,
-            capillary,
-            optimizer,
-            trajectory,
-            liquid_volume,
-            phase_init_local,
-        ):
-            io.save_step(
-                i_step,
-                single_values={Term.separation: separation, Term.pressure: pressure},
-                fields={Term.phase: phase_local, Term.gap: gap_local},
-            )
+    # inform
+    print(
+        f"[rank{comm_world.rank}] at ({','.join(str(loc) for loc in decomposition.subdomain_locations_with_ghosts)}),"
+        f" local domain: {'x'.join(str(dim) for dim in decomposition.nb_subdomain_grid_pts_with_ghosts)}."
+    )
+    if comm_world.rank == 0:
+        print(f"Global domain: {'x'.join(str(dim) for dim in grid.nb_domain_grid_pts)}.")
+        print(f"volume={liquid_volume}({config['constraint']['liquid_volume_percent']}%)")
+        print(f"mean separation: min={trajectory.min()}, max={trajectory.max()}")
+
+    # The gap is solved only for one cycle, as it is the same for all cycles
+    quantities.define(Term.separation, unit=ref_length, frame=("step",))
+    quantities.define(Term.gap, unit=ref_length, frame=("step", *SPATIAL_BASES))
+    if nb_done == 0:
+        solve_gap(quantities, contact, trajectory)
+
+    # Get initial guess of phases
+    phase_init = square_init_guess(grid, liquid_volume, np.amin(trajectory))
+    phase_init_local = grid.get_local(phase_init)
+
+    # Save constant (the surfaces are already stored in this record)
+    quantities.define(Term.phase_init, unit="", frame=SPATIAL_BASES)
+    if nb_done == 0:
+        quantities.save_value(Term.phase_init, phase_init_local)
+
+    # Solve the phases per step per cycle
+    quantities.define(Term.phase, unit="", frame=("cycle", "step", *SPATIAL_BASES))
+    # FIXME: pressure unit needs some power and multiplication
+    quantities.define(Term.pressure, frame=("cycle", "step"))
+    if nb_done == 0:
+        seed_point_scalars(quantities, POINT_SCALARS, (nb_cycles, nb_steps))
+
+    solve_constant_volume(
+        quantities,
+        decomposition.nb_subdomain_grid_pts,
+        capillary,
+        optimizer,
+        trajectory,
+        nb_cycles,
+        liquid_volume,
+        phase_init_local,
+        nb_done,
+    )
 
 
-def square_init_guess(grid: Grid, volume, mean_separation):
-    half_nb_domain_grid_pts = round(0.5 * np.sqrt(volume / mean_separation / grid.element_area))
-    Nx, Ny = grid.nb_domain_grid_pts
-    phase = np.zeros(grid.nb_domain_grid_pts)
-    phase[
-        Nx // 2 - half_nb_domain_grid_pts : Nx // 2 + half_nb_domain_grid_pts,
-        Ny // 2 - half_nb_domain_grid_pts : Ny // 2 + half_nb_domain_grid_pts,
-    ] = 1.0
-    return phase
+def solve_gap(quantities, contact, trajectory) -> None:
+    """Write the separation and the gap of every step of one cycle.
 
-
-def solve_constant_volume(original_shape, contact, capillary, optimizer, trajectory, liquid_volume, phase_init_local):
-    phase_local = phase_init_local.copy()
+    Args:
+        quantities: The record's front.
+        contact: The two surfaces, whose separation is set here.
+        trajectory: The separations to walk.
+    """
+    quantities.save_value(Term.separation, trajectory)
     for i_step, separation in enumerate(trajectory):
-        print(f"[rank{comm_world.rank}] step {i_step}: separation={separation}")
-
-        # Gap
         contact.set_mean_separation(separation)
-        gap_local = contact.get_gap()
+        at = {"step": i_step}
+        quantities.save_value(Term.gap, contact.get_gap().squeeze(), at=at)
 
-        # phase
-        capillary.set_gap(gap_local)
-        problem = formulate_constant_volume_phase_problem(capillary, liquid_volume)
+
+def solve_constant_volume(
+    quantities,
+    original_shape,
+    capillary,
+    optimizer,
+    trajectory,
+    nb_cycles,
+    liquid_volume,
+    phase_init_local,
+    nb_done,
+):
+    """Walk the trajectory `nb_cycles` times, writing one solved point at a time.
+
+    Args:
+        quantities: The record's front. The gap is read back from it.
+        original_shape: The local field shape a solution is reshaped to.
+        capillary: The bridge to solve.
+        optimizer: The minimiser.
+        trajectory: The separations of one cycle.
+        nb_cycles: How many times to walk it.
+        liquid_volume: The volume held fixed.
+        phase_init_local: The phase the first point starts from.
+        nb_done: How many leading points are already written.
+    """
+    nb_steps = len(trajectory)
+    if nb_done == 0:
+        phase_local = phase_init_local.copy()
+    else:
+        i_cycle, i_step = divmod(nb_done - 1, nb_steps)
+        phase_local = quantities.load_value(Term.phase, at={"cycle": i_cycle, "step": i_step})
+
+    for i_point in range(nb_done, nb_cycles * nb_steps):
+        i_cycle, i_step = divmod(i_point, nb_steps)
+        separation = trajectory[i_step]
+        if comm_world.rank == 0:
+            print(f"cycle {i_cycle}, step {i_step}: separation={separation}")
+
+        capillary.set_gap(quantities.load_value(Term.gap, at={"step": i_step}))
+        problem = formulate_constant_volume_phase_problem(capillary, liquid_volume, explicit_phase_bounds=False)
         solution = optimizer.solve_minimisation(problem, x0=phase_local)
-        print(f"[rank{comm_world.rank}] It took {solution['nit']} iterations.")
+        if comm_world.rank == 0:
+            print(f"After {solution['nit']} iterations, {solution['message']}")
 
         phase_local = solution["x"].reshape(original_shape)
         pressure = extract_pressure_in_constant_volume_solution(solution)
 
-        yield i_step, separation, gap_local, phase_local, pressure
+        at = {"cycle": i_cycle, "step": i_step}
+        quantities.save_value(Term.phase, phase_local, at=at)
+        quantities.save_value(Term.pressure, pressure, at=at)
 
 
 if __name__ == "__main__":
-    main()
+    cli_records(main, __doc__, RECORD_NAMING_TYPES)

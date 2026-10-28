@@ -33,32 +33,34 @@ def io(decomposed_grid, comm_world):
 # NpyIO
 
 
-def test_a_decomposed_array_round_trips_through_one_file(mpi_tmp_path, decomposed_grid, mock_field, io, comm_world):
+def test_a_decomposed_field_round_trips_through_one_file(mpi_tmp_path, decomposed_grid, mock_field, io, comm_world):
     local = decomposed_grid.get_local(mock_field)
-    io.save_distributed(mpi_tmp_path / "field.npy", local)
-    assert_all_array_equal(comm_world, io.load_distributed(mpi_tmp_path / "field.npy"), local)
+    io.write_data(mpi_tmp_path / "field.npy", local, decomposed=True)
+    assert_all_array_equal(comm_world, io.read_data(mpi_tmp_path / "field.npy", decomposed=True), local)
 
 
-def test_a_singular_array_round_trips_on_rank_zero_alone(mpi_tmp_path, mock_array, io, comm_world):
-    io.save_singular(mpi_tmp_path / "array.npy", mock_array)
-    loaded = io.load_singular(mpi_tmp_path / "array.npy")
-    if comm_world.rank == 0:
-        np.testing.assert_equal(loaded, mock_array)
-    else:
-        assert loaded is None
+def test_a_field_written_decomposed_reads_back_whole(mpi_tmp_path, decomposed_grid, mock_field, io):
+    io.write_data(mpi_tmp_path / "field.npy", decomposed_grid.get_local(mock_field), decomposed=True)
+    np.testing.assert_equal(NpyIO().read_data(mpi_tmp_path / "field.npy"), mock_field)
 
 
-def test_what_one_rank_wrote_is_replicated_to_every_rank(mpi_tmp_path, mock_array, io):
-    io.save_singular(mpi_tmp_path / "array.npy", mock_array)
-    np.testing.assert_equal(io.load_replicated(mpi_tmp_path / "array.npy"), mock_array)
+def test_an_undecomposed_array_round_trips_to_every_rank(mpi_tmp_path, mock_array, io, comm_world):
+    io.write_data(mpi_tmp_path / "array.npy", mock_array)
+    assert_all_array_equal(comm_world, io.read_data(mpi_tmp_path / "array.npy"), mock_array)
 
 
-def test_an_unset_layout_reads_as_undecomposed_and_round_trips(mpi_tmp_path, mock_array, comm_world):
+def test_a_text_file_round_trips_to_every_rank(mpi_tmp_path, io):
+    io.write_text(mpi_tmp_path / "note.txt", "the whole content")
+    assert io.read_text(mpi_tmp_path / "note.txt") == "the whole content"
+
+
+def test_an_unset_layout_gives_each_rank_a_file_of_its_own(mpi_tmp_path, comm_world):
     io = NpyIO()
     assert not io.is_decomposed()
-    path = mpi_tmp_path / f"whole-{comm_world.rank}.npy"
-    io.save_distributed(path, mock_array)
-    np.testing.assert_equal(io.load_distributed(path), mock_array)
+    own = np.full(4, comm_world.rank, dtype=float)
+    path = mpi_tmp_path / f"own-{comm_world.rank}.npy"
+    io.write_data(path, own)
+    np.testing.assert_equal(io.read_data(path), own)
 
 
 @pytest.mark.parametrize(
@@ -77,44 +79,38 @@ def test_a_layout_that_is_no_decomposition_is_refused(layout, comm_world):
         NpyIO(**layout, communicator=comm_world)
 
 
-@pytest.mark.parametrize("verb", ["load_singular", "load_replicated", "load_distributed"])
-def test_a_missing_file_is_refused(mpi_tmp_path, verb, io):
+def test_an_error_seen_in_one_rank_is_raised_everywhere(io, comm_world):
+    if comm_world.size == 1:
+        pytest.skip("nothing diverges on one rank")
+
+    with pytest.raises(AssertionError, match="1"), io.agreeing_on_error():
+        if comm_world.rank == 1:
+            raise AssertionError("1")
+
+
+@pytest.mark.parametrize("decomposed", [True, False])
+def test_a_missing_file_is_refused(mpi_tmp_path, decomposed, io):
     with pytest.raises(FileNotFoundError):
-        getattr(io, verb)(mpi_tmp_path / "absent.npy")
+        io.read_data(mpi_tmp_path / "absent.npy", decomposed=decomposed)
 
 
-@pytest.mark.parametrize(
-    ("verb", "broken_on_root"),
-    [
-        ("load_distributed", True),
-        ("load_distributed", False),
-        ("save_distributed", True),
-        ("save_distributed", False),
-        ("load_singular", True),
-        ("load_replicated", True),
-        ("load_replicated", False),
-    ],
-)
-def test_a_path_one_rank_cannot_reach_raises_on_every_rank(
-    verb, broken_on_root, mpi_tmp_path, decomposed_grid, mock_field, mock_array, io, comm_world
+@pytest.mark.parametrize("verb", ["read_data", "write_data"])
+def test_a_path_one_rank_cannot_reach_is_refused_on_every_rank(
+    verb, mpi_tmp_path, decomposed_grid, mock_field, io, comm_world
 ):
-    local = decomposed_grid.get_local(mock_field)
-    io.save_distributed(mpi_tmp_path / "field.npy", local)
-    io.save_singular(mpi_tmp_path / "array.npy", mock_array)
-    io.barrier()
+    if comm_world.size == 1:
+        pytest.skip("nothing diverges on one rank")
 
-    absent = mpi_tmp_path / "absent"
-    reachable = mpi_tmp_path / ("field.npy" if "distributed" in verb else "array.npy")
-    is_broken = (comm_world.rank == 0) == broken_on_root
-    path = (absent / reachable.name) if is_broken else reachable
+    reachable = mpi_tmp_path / "reachable"
+    io.make_dir(reachable)
+    data = decomposed_grid.get_local(mock_field)
+    io.write_data(reachable / "field.py", data, decomposed=True)
 
-    call = getattr(io, verb)
-    args = (path, local) if verb == "save_distributed" else (path,)
-    if broken_on_root or comm_world.Get_size() > 1:
-        with pytest.raises(FileNotFoundError):
-            call(*args)
-    else:
-        call(*args)
+    method = getattr(io, verb)
+    path = mpi_tmp_path / "absent" / "field.py" if comm_world.rank == 1 else reachable / "field.py"
+    args = (path, data) if verb == "write_data" else (path,)
+    with pytest.raises(FileNotFoundError):
+        method(*args, decomposed=True)
 
 
 # =============================================================================
@@ -177,7 +173,7 @@ def test_an_exponent_the_back_cannot_hold_is_refused(quantities):
 
 
 def test_a_decomposed_basis_takes_no_point(quantities, decomposed_grid, mock_field, comm_world):
-    if comm_world.Get_size() == 1:
+    if comm_world.size == 1:
         pytest.skip("nothing is decomposed on one rank")
     quantities.define("gap", frame=("step", "x", "y"))
     quantities.save_value("gap", decomposed_grid.get_local(mock_field), at={"step": 0})
@@ -204,7 +200,7 @@ def test_a_value_never_saved_is_refused(quantities):
 
 @pytest.mark.parametrize("decomposed", [("y", "x"), ()])
 def test_a_back_over_a_decomposing_io_needs_its_bases_named_in_order(mpi_tmp_path, io, decomposed, comm_world):
-    if not decomposed and comm_world.Get_size() == 1:
+    if not decomposed and comm_world.size == 1:
         pytest.skip("nothing is decomposed on one rank")
     with pytest.raises(NpyBackError):
         NpyBack(mpi_tmp_path / "other", io, decomposed=decomposed)

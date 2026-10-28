@@ -1,0 +1,14 @@
+# Overlay rough surfaces with a much larger self-affine region
+
+[surface.upper]
+shape = "rough"
+
+[surface.upper.rough]
+rolloff_wavelength = 512
+
+[surface.lower]
+shape = "rough"
+
+[surface.lower.rough]
+rolloff_wavelength = 512
+

@@ -15,8 +15,8 @@ class DictBack(QuantityBack):
     def get_all_quantities(self):
         return dict(self.quantities)
 
-    def new_quantity(self, new):
-        self.quantities[new.name] = new
+    def save_all_quantities(self, quantities):
+        self.quantities = dict(quantities)
 
     def save_value(self, quantity, address, value):
         self.values[(quantity.name, address)] = value

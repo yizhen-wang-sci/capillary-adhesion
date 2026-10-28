@@ -1,9 +1,10 @@
 """Quantities kept as a directory of `.npy` files."""
 
+import contextlib
 import json
 import os
 import pathlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import NuMPI.IO
 import numpy as np
@@ -13,7 +14,15 @@ from .quantity import BASIS, Quantity, QuantityBack, QuantityError, Scale
 
 
 class NpyIO:
-    """Save / load a numpy array to / from a npy file, parallel aware."""
+    """Filesystem access for a group of processes, coordinated to agree on errors."""
+
+    _ROOT = 0
+    """The rank that touches the filesystem where an operation is non-collective.
+
+    Note:
+        Don't write any decision within `if self._comm.rank == self._ROOT`, it can lead to 
+        processes diverging and eventually hanging.
+    """
 
     def __init__(
         self,
@@ -43,25 +52,30 @@ class NpyIO:
         self._owned_shape = None if owned_shape is None else tuple(owned_shape)
         self._owned_offset = None if owned_offset is None else tuple(owned_offset)
         self._comm = communicator
-        self._sync_any_error(self._justify_layout())
+        with self.agreeing_on_error():
+            self._check_layout()
 
-    def _justify_layout(self) -> ValueError | None:
-        """The error in the three parts of the layout, if there is one."""
+    def _check_layout(self):
+        """Refuse three parts that are no decomposition.
+
+        Raises:
+            ValueError: If the three do not describe one decomposition.
+        """
         layout = (self._domain_shape, self._owned_shape, self._owned_offset)
         if all(part is None for part in layout):
-            return None
+            return
         if any(part is None for part in layout):
-            return ValueError(
+            raise ValueError(
                 f"domain_shape, owned_shape and owned_offset describe one decomposition together, "
                 f"so they are given together or not at all; got {layout}."
             )
 
         if (len(self._domain_shape) != len(self._owned_shape)) or (len(self._domain_shape) != len(self._owned_offset)):
-            return ValueError(f"The layout must agree in number of dimensions; got {layout}.")
+            raise ValueError(f"The layout must agree in number of dimensions; got {layout}.")
         if any(extent < 1 for extent in self._owned_shape):
-            return ValueError(f"Every rank owns at least one point along each dimension; got {self._owned_shape}.")
+            raise ValueError(f"Every rank owns at least one point along each dimension; got {self._owned_shape}.")
         if any(start < 0 for start in self._owned_offset):
-            return ValueError(f"An owned part begins inside the domain; got offset {self._owned_offset}.")
+            raise ValueError(f"An owned part begins inside the domain; got offset {self._owned_offset}.")
 
         over = [
             (start, extent, whole)
@@ -69,130 +83,160 @@ class NpyIO:
             if start + extent > whole
         ]
         if len(over):
-            return ValueError(
+            raise ValueError(
                 f"An owned part ends inside the domain, but offset + owned shape passes the domain "
                 f"shape along {over} (as offset, owned, domain)."
             )
-        return None
 
-    def _sync_error(self, error: Exception | None):
-        """Broadcast rank 0's error, if any, and raise it on every rank."""
-        error = self._comm.bcast(error, root=0)
-        if error is not None:
-            raise error
+    @contextlib.contextmanager
+    def agreeing_on_error(self):
+        """Raise on every rank whatever the body raised on any.
 
-    def _sync_any_error(self, error: Exception | None):
-        """Collect the errors of all ranks, and raise the first one on every rank."""
-        for gathered in self._comm.allgather(error):
-            if gathered is not None:
-                raise gathered
-
-    def load_distributed(self, path: pathlib.Path):
-        """Read the subdomain of a decomposed array belonging to this rank.
-
-        Args:
-            path: File to read.
-
-        Returns:
-            This rank's subdomain, shaped as the decomposition prescribes.
+        Yields:
+            Nothing.
 
         Raises:
-            FileNotFoundError: If the file is missing for any rank, raised on every rank
-                before the collective read begins.
-        """
-        self._sync_any_error(None if path.is_file() else FileNotFoundError(f"No file {path}"))
-        return NuMPI.IO.load_npy(path, self._owned_offset, self._owned_shape, comm=self._comm)
-
-    def save_distributed(self, path: pathlib.Path, data: np.ndarray):
-        """Write a decomposed array, each rank contributing its subdomain.
-
-        Args:
-            path: File to write.
-            data: This rank's subdomain. Made contiguous before writing.
-
-        Raises:
-            FileNotFoundError: If the directory to write into is missing for any rank, raised
-                on every rank before the collective write begins.
-        """
-        self._sync_any_error(None if path.parent.is_dir() else FileNotFoundError(f"No directory {path.parent}"))
-        NuMPI.IO.save_npy(
-            path,
-            np.ascontiguousarray(data),
-            self._owned_offset,
-            self._domain_shape,
-            comm=self._comm,
-        )
-
-    def load_singular(self, path: pathlib.Path) -> np.ndarray | None:
-        """Read an array on rank 0 only.
-
-        Args:
-            path: File to read.
-
-        Returns:
-            The array on rank 0, None on every other rank.
-
-        Raises:
-            Exception: Whatever `numpy.load` raised on rank 0, re-raised on every rank.
-        """
-        data, error = None, None
-        if self._comm.rank == 0:
-            try:
-                data = np.load(path, allow_pickle=False)
-            except Exception as e:  # noqa: BLE001
-                error = e
-        self._sync_error(error)
-        return data
-
-    def save_singular(self, path: pathlib.Path, data: np.ndarray):
-        """Write an array from rank 0 only.
-
-        Args:
-            path: File to write.
-            data: The array to write. Read on rank 0 alone.
-
-        Raises:
-            Exception: Whatever `numpy.save` raised on rank 0, re-raised on every rank.
+            Exception: Whatever the body raised on the lowest rank that raised.
         """
         error = None
-        if self._comm.rank == 0:
-            try:
-                np.save(path, data)
-            except Exception as e:  # noqa: BLE001
-                error = e
-        self._sync_error(error)
+        try:
+            yield
+        # "except" because all processes must proceed to the next part;
+        # while "finally" is only executed when the body exits normally.
+        except Exception as e:  # noqa: BLE001
+            error = e
 
-    def load_replicated(self, path: pathlib.Path) -> np.ndarray:
-        """Read the same whole array on every rank.
+        local_state = np.array(self._comm.size, dtype=np.uint32)
+        if error is not None:
+            local_state[...] = self._comm.rank
+
+        domain_state = np.array(self._comm.size, dtype=np.uint32)
+        self._comm.Allreduce(local_state, domain_state, op=MPI.MIN)
+        if domain_state < self._comm.size:
+            raise self._comm.bcast(error, root=domain_state.item())
+
+    def make_dir(self, path: pathlib.Path):
+        """Make a directory on the root rank, and see that every rank reaches it.
+
+        Args:
+            path: Directory to make.
+
+        Raises:
+            OSError: Whatever making it raised on the root rank, re-raised on every rank.
+            FileNotFoundError: If the directory is not there for any rank once it is made,
+                raised on every rank.
+        """
+        with self.agreeing_on_error():
+            if self._comm.rank == self._ROOT:
+                path.mkdir(parents=True, exist_ok=True)
+
+        # Double-check that the filesystem synchronises the change
+        with self.agreeing_on_error():
+            if not path.is_dir():
+                raise FileNotFoundError(f"No directory {path}")
+
+    def read_data(self, path: pathlib.Path, decomposed: bool = False) -> np.ndarray:
+        """Read an array from one file.
+
+        Args:
+            path: File to read.
+            decomposed: Whether the array is spread over the ranks.
+
+        Returns:
+            This rank's subdomain where the array is decomposed, shaped as the decomposition
+            prescribes; the whole array, the same on every rank, where it is not.
+
+        Raises:
+            FileNotFoundError: Where the array is decomposed, if the file is missing for any
+                rank, raised on every rank before the collective read begins.
+            Exception: Where it is not, whatever `numpy.load` raised on the root rank,
+                re-raised on every rank.
+        """
+        if decomposed:
+            with self.agreeing_on_error():
+                if not path.is_file():
+                    raise FileNotFoundError(f"No file {path}")
+            return NuMPI.IO.load_npy(path, self._owned_offset, self._owned_shape, comm=self._comm)
+
+        # else
+        data = None
+        with self.agreeing_on_error():
+            if self._comm.rank == self._ROOT:
+                # np.load can raise FileNotFoundError
+                data = np.load(path, allow_pickle=False)
+        return self._comm.bcast(data, root=self._ROOT)
+
+    def write_data(self, path: pathlib.Path, data: np.ndarray, decomposed: bool = False):
+        """Write an array to one file.
+
+        Args:
+            path: File to write.
+            data: This rank's subdomain where the array is decomposed, made contiguous before
+                writing; the whole array, taken from the root rank alone, where it is not.
+            decomposed: Whether the array is spread over the ranks.
+
+        Raises:
+            FileNotFoundError: Where the array is decomposed, if the directory to write into is
+                missing for any rank, raised on every rank before the collective write begins.
+            Exception: Where it is not, whatever `numpy.save` raised on the root rank,
+                re-raised on every rank.
+        """
+        if decomposed:
+            with self.agreeing_on_error():
+                if not path.parent.is_dir():
+                    raise FileNotFoundError(f"No directory at parent: {path.parent}")
+            NuMPI.IO.save_npy(
+                path,
+                np.ascontiguousarray(data),
+                self._owned_offset,
+                self._domain_shape,
+                comm=self._comm,
+            )
+            return
+
+        # else
+        with self.agreeing_on_error():
+            if self._comm.rank == self._ROOT:
+                # np.save can raise FileNotFoundError
+                np.save(path, data, allow_pickle=False)
+
+    def read_text(self, path: pathlib.Path) -> str:
+        """Read a text file, the same content on every rank.
 
         Args:
             path: File to read.
 
         Returns:
-            The array, identical on every rank.
+            What the file holds.
 
         Raises:
-            Exception: Whatever `numpy.load` raised on any rank, re-raised on every rank.
+            Exception: Whatever reading it raised on the root rank, re-raised on every rank.
         """
-        data, error = None, None
-        try:
-            data = np.load(path, allow_pickle=False)
-        except Exception as e:  # noqa: BLE001
-            error = e
-        self._sync_any_error(error)
-        return data
+        text = None
+        with self.agreeing_on_error():
+            if self._comm.rank == self._ROOT:
+                text = path.read_text(encoding="utf-8")
+        return self._comm.bcast(text, root=self._ROOT)
 
-    def is_writer(self) -> bool:
-        """Whether this is the process that writes when only one process may write."""
-        return self._comm.rank == 0
+    def write_text(self, path: pathlib.Path, text: str):
+        """Write a text file, in one step, on the root rank alone.
+
+        Args:
+            path: File to write.
+            text: What the file is to hold.
+
+        Raises:
+            Exception: Whatever writing it raised on the root rank, re-raised on every rank.
+        """
+        with self.agreeing_on_error():
+            if self._comm.rank == self._ROOT:
+                beside = path.with_name(path.name + "~")
+                beside.write_text(text, encoding="utf-8")
+                os.replace(beside, path)
 
     def is_decomposed(self) -> bool:
         """Whether this rank owns less than the domain."""
         return self._owned_shape != self._domain_shape
-
-    def barrier(self):
-        """Wait until every process taking part has arrived."""
-        self._comm.Barrier()
 
 
 class NpyBackError(QuantityError):
@@ -219,7 +263,7 @@ class NpyBack(QuantityBack):
 
         Args:
             base_dir: Directory where the files are kept.
-            io: The parallel-aware Npy-encoding part.
+            io: The parallel-aware file IO, default to no decomposition and `MPI.COMM_SELF`.
             decomposed: Names of the basis quantities spread across ranks, so they cannot be
                 indexed. Their names are also written down as the trailing convention of the
                 whole directory, which every later session reads back.
@@ -230,35 +274,33 @@ class NpyBack(QuantityBack):
             NpyBackError: If the decomposed bases are not in ascending order, if an io that
                 hands out shares is given none of them, or if they would expand the trailing
                 convention with a quantity already written down.
+            OSError: If any rank cannot make `base_dir`.
         """
         self._base_dir = pathlib.Path(base_dir)
         self._io = io if io is not None else NpyIO()
         self._decomposed = sorted(decomposed)
-        if self._decomposed != list(decomposed):
-            raise NpyBackError(f"Decomposed bases must be given in ascending order: {decomposed}.")
+        with self._io.agreeing_on_error():
+            if self._decomposed != list(decomposed):
+                raise NpyBackError(f"Decomposed bases must be given in ascending order: {decomposed}.")
 
-        # An io that hands out shares must be told which bases it spreads them along
-        if self._io.is_decomposed() and not self._decomposed:
-            raise NpyBackError("The bases this io decomposes along must be named in `decomposed`; none were.")
+            # An io that hands out shares must be told which bases it spreads them along
+            if self._io.is_decomposed() and not self._decomposed:
+                raise NpyBackError("The bases this io decomposes along must be named in `decomposed`; none were.")
 
-        # Ensure the directory
-        if self._io.is_writer():
-            self._base_dir.mkdir(parents=True, exist_ok=True)
-        self._io.barrier()
+        self._io.make_dir(self._base_dir)
 
         # Load from startup
         startup = self._read_startup()
-        self._quantities = startup["quantities"]
         self._trailing_names = startup["frame_convention"]["trailing"]
 
         # If a new name is specified in decomposed bases, allow expanding the trailing names if
         # it is a new quantity. Always sorted to prevent ambiguous cases.
         new = set(decomposed) - set(self._trailing_names)
         if len(new):
-            if new & set(self._quantities.keys()):
+            if new & set(startup["quantities"]):
                 raise NpyBackError(f"Cannot expand trailing bases with existing quantities: {new}.")
             self._trailing_names = sorted(set(self._trailing_names) | new)
-            self._write_startup()
+            self._write_startup(startup["quantities"])
 
     # =========================================================================
     # Startup file
@@ -273,22 +315,20 @@ class NpyBack(QuantityBack):
         return {"frame_convention": {"trailing": list(trailing)}, "quantities": dict(quantities)}
 
     def _read_startup(self):
-        """Read the startup file."""
+        """Read the startup file, blank where the directory holds none yet."""
         try:
-            with open(self._startup_path(), "r", encoding="utf-8") as fp:
-                return json.load(fp)
+            return json.loads(self._io.read_text(self._startup_path()))
         except FileNotFoundError:
             return self._to_written_startup([], {})
 
-    def _write_startup(self):
-        """Write the startup file."""
-        if self._io.is_writer():
-            startup = self._to_written_startup(self._trailing_names, self._quantities)
-            beside = self._startup_path().with_name(self._startup_path().name + "~")
-            with open(beside, "w", encoding="utf-8") as fp:
-                json.dump(startup, fp, indent=2, sort_keys=True)
-            os.replace(beside, self._startup_path())
-        self._io.barrier()
+    def _write_startup(self, quantities):
+        """Write the startup file.
+
+        Args:
+            quantities: The written down form of every quantity, keyed by name.
+        """
+        startup = self._to_written_startup(self._trailing_names, quantities)
+        self._io.write_text(self._startup_path(), json.dumps(startup, indent=2, sort_keys=True))
 
     # =========================================================================
     # Quantity
@@ -311,7 +351,7 @@ class NpyBack(QuantityBack):
             )
 
     @staticmethod
-    def _to_written_unit(unit: "str | Scale | None"):
+    def _to_written_unit(unit: str | Scale | None):
         """Written down form of a unit, keeping a literal and a scale apart.
 
         Args:
@@ -336,14 +376,33 @@ class NpyBack(QuantityBack):
             exponents[name] = exponent
         return {"scale": exponents}
 
-    def new_quantity(self, new: Quantity):
-        """Write down a new quantity."""
-        self._check_frame_convention(new)
-        self._quantities[new.name] = {
-            "unit": self._to_written_unit(new.unit),
-            "frame": [basis.name for basis in new.frame],
-        }
-        self._write_startup()
+    def _to_written_quantity(self, quantity: Quantity):
+        """Written down form of a quantity.
+
+        Args:
+            quantity: The quantity.
+
+        Returns:
+            Its unit and the names spanning it, as JSON holds them.
+
+        Raises:
+            NpyBackError: If an exponent of its unit is neither an integer nor a float.
+        """
+        return {"unit": self._to_written_unit(quantity.unit), "frame": [basis.name for basis in quantity.frame]}
+
+    def save_all_quantities(self, quantities: Mapping[str, Quantity]):
+        """Write down every quantity, replacing whatever the startup file held.
+
+        Args:
+            quantities: Every quantity there is, keyed by name.
+
+        Raises:
+            NpyBackError: If a frame does not put the trailing bases last, or if an exponent of
+                a unit is neither an integer nor a float.
+        """
+        for quantity in quantities.values():
+            self._check_frame_convention(quantity)
+        self._write_startup({name: self._to_written_quantity(quantity) for name, quantity in quantities.items()})
 
     def get_all_quantities(self) -> dict[str, Quantity]:
         """Rebuild every quantity written down.
@@ -354,6 +413,7 @@ class NpyBack(QuantityBack):
         Raises:
             QuantityError: Cyclic reference or referring to undefined quantity.
         """
+        written = self._read_startup()["quantities"]
         built: dict[str, Quantity] = {}
         building: set[str] = set()
 
@@ -367,7 +427,7 @@ class NpyBack(QuantityBack):
                 raise QuantityError(f"{name} refers eventually to itself.")
             # Get the unit and frame description
             try:
-                record = self._quantities[name]
+                record = written[name]
             except KeyError:
                 raise QuantityError(f"{name} is referred but not defined.") from None
 
@@ -385,7 +445,7 @@ class NpyBack(QuantityBack):
 
             return built[name]
 
-        for name in self._quantities:
+        for name in written:
             build(name)
             # Check again because hand-edited file may not comply
             self._check_frame_convention(built[name])
@@ -443,7 +503,7 @@ class NpyBack(QuantityBack):
             stem += "--" + "_".join(str(index) for _, index in file_part)
         return self._base_dir / f"{stem}.npy"
 
-    def _is_decomposed(self, index_part: list):
+    def _has_decomposed(self, index_part: list):
         """Whether the array in the file is spanned by decomposed bases."""
         return any(basis.name in self._decomposed for basis, _ in index_part)
 
@@ -461,17 +521,6 @@ class NpyBack(QuantityBack):
         if np.issubdtype(dtype, np.inexact):
             return np.full(shape, np.nan, dtype=dtype)
         return np.zeros(shape, dtype=dtype)
-
-    def _read_npy(self, path: pathlib.Path, decomposed: bool):
-        """Read a whole file, as one share per rank where it is decomposed."""
-        return self._io.load_distributed(path) if decomposed else self._io.load_replicated(path)
-
-    def _write_npy(self, path: pathlib.Path, data: np.ndarray, decomposed: bool):
-        """Write a whole file, each rank contributing its share where it is decomposed."""
-        if decomposed:
-            self._io.save_distributed(path, data)
-        else:
-            self._io.save_singular(path, data)
 
     def _check_ndim(self, quantity: Quantity, address: tuple, value: np.ndarray):
         """Refuse a value whose number of dimensions cannot be covered by the address.
@@ -509,20 +558,20 @@ class NpyBack(QuantityBack):
         file_part, index_part = self._split_address(quantity, address)
 
         path = self._locate_file(quantity, file_part)
-        decomposed = self._is_decomposed(index_part)
+        decomposed = self._has_decomposed(index_part)
         subscript = tuple(index for _, index in index_part)
 
         if all(index == slice(None) for index in subscript):
-            self._write_npy(path, value, decomposed)
+            self._io.write_data(path, value, decomposed)
             return
 
-        # a whole file is written at a time, so the rest of it has to be carried along
+        # NpyIO always writes the whole file, so it has to read the whole array and change.
         try:
-            whole = self._read_npy(path, decomposed)
+            whole = self._io.read_data(path, decomposed)
         except FileNotFoundError:
             whole = self._blank([self._length(basis) for basis, _ in index_part], value.dtype)
         whole[subscript] = value
-        self._write_npy(path, whole, decomposed)
+        self._io.write_data(path, whole, decomposed)
 
     def load_value(self, quantity: Quantity, address: tuple):
         """Read a quantity's value at one place in its frame.
@@ -543,7 +592,7 @@ class NpyBack(QuantityBack):
         file_part, index_part = self._split_address(quantity, address)
 
         try:
-            whole = self._read_npy(self._locate_file(quantity, file_part), self._is_decomposed(index_part))
+            whole = self._io.read_data(self._locate_file(quantity, file_part), self._has_decomposed(index_part))
         except FileNotFoundError as err:
             raise QuantityError(f"{quantity.name} holds no value at {address} yet") from err
 
@@ -552,6 +601,6 @@ class NpyBack(QuantityBack):
     def _length(self, basis: Quantity):
         """How many points a basis holds."""
         try:
-            return len(self._io.load_replicated(self._locate_file(basis, [])))
+            return len(self._io.read_data(self._locate_file(basis, [])))
         except FileNotFoundError as err:
             raise QuantityError(f"{basis.name} must have its value saved before it can span anything.") from err
