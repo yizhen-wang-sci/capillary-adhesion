@@ -6,7 +6,15 @@ import muGrid
 import numpy as np
 from NuMPI import MPI
 
-from a_package.domain import CentroidQuadrature, Field, FirstOrderElement, Grid, field_component_ax, field_sub_pt_ax
+from a_package.domain import (
+    CentroidQuadrature,
+    Field,
+    FirstOrderElement,
+    Grid,
+    Switch,
+    field_component_ax,
+    field_sub_pt_ax,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,12 +22,15 @@ logger = logging.getLogger(__name__)
 class PhaseMixture:
     """Liquid-vapour mixture forming an interface, contained in a gap between solids."""
 
-    def __init__(self, eta: float, theta: float, epsilon: float = 1.0, component_axis: int = field_component_ax):
+    def __init__(
+        self, eta: float, theta: float, switch: Switch, epsilon: float = 1.0, component_axis: int = field_component_ax
+    ):
         """Derive the curvature and wetting prefactors from the contact angle.
 
         Args:
             eta: Interface thickness of the liquid-vapour interface.
             theta: Contact angle at the liquid-solid interface, in radians.
+            switch: Smooth indicator of the open gap, in place of (gap > 0).
             epsilon: An extra prefactor on the perimeter term, 1.0 by default.
             component_axis: Index of the axis the penalties reduce over, `field_component_ax`
                 by default.
@@ -28,6 +39,7 @@ class PhaseMixture:
         self._theta = theta
         self._curv = 0.5 * (abs(np.sin(theta)) + np.arcsin(np.cos(theta)) / np.cos(theta))
         self._gamma = -np.cos(theta)
+        self._switch = switch
         self._epsilon = epsilon
         self._component_axis = component_axis
 
@@ -68,6 +80,34 @@ class PhaseMixture:
             + self._eta * self.square_penalty(phase_grad, self._component_axis)
         )
 
+    def compute_local_liquid_vapour_area(self, gap: Field, phase: Field, phase_grad: Field):
+        """Compute local area density of the liquid-vapour interface.
+
+        Args:
+            gap: Gap between the two solid surfaces.
+            phase: Phase-field values.
+            phase_grad: Gradient of the phase field.
+
+        Returns:
+            Area density, with the component axis kept.
+        """
+        return self.compute_local_perimeter(phase, phase_grad) * gap * self._curv
+
+    def compute_local_liquid_solid_area(self, gap: Field, phase: Field):
+        """Compute local area density of the liquid-solid interface, over both solid faces.
+
+        Args:
+            gap: Gap between the two solid surfaces.
+            phase: Phase-field values.
+
+        Returns:
+            Area density.
+        """
+        # FIXME: switch on whether to use small-slope-approx.?
+        # upper and lower surface, hence the 2.
+        # (height gradient square is one order higher and omitted)
+        return 2.0 * self._switch.value(gap) * phase
+
     def compute_local_energy(self, gap: Field, phase: Field, phase_grad: Field):
         """Compute local energy density, of the liquid-vapour and liquid-solid interfaces.
 
@@ -79,14 +119,7 @@ class PhaseMixture:
         Returns:
             Energy density, with the component axis kept.
         """
-        liquid_vapour = self.compute_local_perimeter(phase, phase_grad) * gap * self._curv * self._epsilon
-        # FIXME: switch on whether to use small-slope-approx.?
-        # upper and lower surface, hence the 2.
-        # (height gradient square is one order higher and omitted)
-        # FIXME: (gap > 0) jumps from 0 to 1 as a gap opens, which the gap Jacobian misses;
-        # not usable for the coupled phase-gap problem.
-        liquid_solid = 2.0 * (gap > 0) * phase
-        return liquid_vapour + self._gamma * liquid_solid
+        return self._epsilon * self.compute_local_liquid_vapour_area(gap, phase, phase_grad) + self._gamma * self.compute_local_liquid_solid_area(gap, phase)
 
     @staticmethod
     def double_well_penalty(x, axis):
@@ -136,21 +169,24 @@ class PhaseMixture:
             * self._epsilon
         )
 
-        liquid_solid_D_phase = 2.0 * (gap > 0)
+        liquid_solid_D_phase = 2.0 * self._switch.value(gap)
 
         return liquid_vapour_D_phase + self._gamma * liquid_solid_D_phase, liquid_vapour_D_phase_grad
 
-    def compute_local_energy_gap_jacobian(self, phase: Field, phase_grad: Field):
-        """Compute derivative of local energy w.r.t. the gap, the liquid-vapour term alone.
+    def compute_local_energy_gap_jacobian(self, gap: Field, phase: Field, phase_grad: Field):
+        """Compute derivative of local energy w.r.t. the gap.
 
         Args:
+            gap: Gap between the two solid surfaces.
             phase: Phase-field values.
             phase_grad: Gradient of the phase field.
 
         Returns:
             The derivative, with the component axis kept.
         """
-        return self.compute_local_perimeter(phase, phase_grad) * self._curv * self._epsilon
+        liquid_vapour_D_gap = self.compute_local_perimeter(phase, phase_grad) * self._curv * self._epsilon
+        liquid_solid_D_gap = 2.0 * self._switch.derivative(gap) * phase
+        return liquid_vapour_D_gap + self._gamma * liquid_solid_D_gap
 
     @staticmethod
     def double_well_penalty_derivative(x):
@@ -331,7 +367,7 @@ class CapillaryBridge:
     def get_energy_gap_jacobian(self):
         """Compute gradient of energy w.r.t. nodal gap."""
         energy_D_gap = self._mixture.compute_local_energy_gap_jacobian(
-            self._quadr_phase.s, self._quadr_phase_gradient.s
+            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
         )
 
         self._quadr_value_3.s[...] = self._quadrature.propag_integral_weight(energy_D_gap, self._grid.element_area)
@@ -372,9 +408,7 @@ class CapillaryBridge:
 
     def get_perimeter(self):
         """Compute total perimeter of liquid-vapour interface."""
-        integrand = (self._quadr_gap.s > 0) * self._mixture.compute_local_perimeter(
-            self._quadr_phase.s, self._quadr_phase_gradient.s
-        )
+        integrand = self._mixture.compute_local_perimeter(self._quadr_phase.s, self._quadr_phase_gradient.s)
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_max_volume(self):
@@ -383,11 +417,12 @@ class CapillaryBridge:
 
     def get_liquid_solid_area(self):
         """Compute area of liquid-solid interface."""
-        integrand = (self._quadr_gap.s > 0) * self._quadr_phase.s
+        integrand = self._mixture.compute_local_liquid_solid_area(self._quadr_gap.s, self._quadr_phase.s)
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_liquid_vapour_area(self):
         """Compute area of liquid-vapour interface."""
-        local_perimeter = self._mixture.compute_local_perimeter(self._quadr_phase.s, self._quadr_phase_gradient.s)
-        integrand = local_perimeter * self._quadr_gap.s
+        integrand = self._mixture.compute_local_liquid_vapour_area(
+            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
+        )
         return self._quadrature.integrate(integrand, self._grid.element_area).item()
