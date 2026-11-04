@@ -9,12 +9,13 @@ from a_package.domain.switch import AlgebraicSwitch, ArctangentSwitch, CubicSwit
 @pytest.mark.parametrize("activation_length", [1e-3, 0.7, 50.0])
 @pytest.mark.parametrize("tolerance", [1e-2, 1e-3, 1e-6])
 @pytest.mark.parametrize("switch_class", [CubicSwitch, ExponentialSwitch, AlgebraicSwitch, ArctangentSwitch])
-def test_switch_is_within_tolerance_of_off_at_zero_and_on_at_activation_length(
+def test_switch_is_off_at_zero_and_within_tolerance_of_on_at_activation_length(
     switch_class, tolerance, activation_length
 ):
     switch = switch_class(activation_length, tolerance)
     ends = switch.value(np.array([0.0, activation_length]))
-    np.testing.assert_allclose(ends, [tolerance, 1.0 - tolerance], rtol=1e-12, atol=1e-15)
+    expected = [0.0, 1.0 - tolerance]
+    np.testing.assert_allclose(ends, expected, rtol=1e-12, atol=1e-15)
 
 
 @pytest.mark.parametrize("activation_length", [1e-3, 0.7, 50.0])
