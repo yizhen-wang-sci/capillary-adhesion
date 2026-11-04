@@ -6,35 +6,37 @@ import numpy as np
 
 
 class Switch(Protocol):
-    """A switch turning on smoothly over [0, activation_length], from tolerance to 1 - tolerance."""
+    """A switch turning on smoothly from exactly 0 at 0, to 1 - tolerance at activation_length."""
 
     def __init__(self, activation_length: float, tolerance: float):
-        """Calibrate the sigmoid to value tolerance at 0 and 1 - tolerance at the activation length.
+        """Calibrate the sigmoid to 0 at 0 and 1 - tolerance at the activation length.
 
         Args:
-            activation_length: Length from value tolerance to value 1 - tolerance.
-            tolerance: Value at 0, and deficit from 1 at the activation length.
+            activation_length: Length from value 0 to value 1 - tolerance.
+            tolerance: Deficit from 1 at the activation length.
 
         Raises:
             ValueError: If the activation length is not positive, or the tolerance is not
-                in (0, 0.5).
+                in (0, 1).
         """
         if not activation_length > 0:
             raise ValueError(f"activation_length must be positive, got {activation_length}")
-        if not 0 < tolerance < 0.5:
-            raise ValueError(f"tolerance must be in (0, 0.5), got {tolerance}")
+        if not 0 < tolerance < 1:
+            raise ValueError(f"tolerance must be in (0, 1), got {tolerance}")
         self._length = activation_length
         self._tolerance = tolerance
-        self._span = self.logit(1.0 - tolerance) - self.logit(tolerance)
+        self._level = tolerance / (1.0 + tolerance)
+        self._span = self.logit(1.0 - self._level) - self.logit(self._level)
+        self._offset = self.sigmoid(self._map_input(0.0))
 
     @property
     def activation_length(self):
-        """Length from value tolerance to value 1 - tolerance."""
+        """Length from value 0 to value 1 - tolerance."""
         return self._length
 
     @property
     def tolerance(self):
-        """Value at 0, and deficit from 1 at the activation length."""
+        """Deficit from 1 at the activation length."""
         return self._tolerance
 
     def value(self, x):
@@ -43,7 +45,7 @@ class Switch(Protocol):
         Args:
             x: Points to evaluate at.
         """
-        return self.sigmoid(self._map_input(x))
+        return self._map_output(self.sigmoid(self._map_input(x)))
 
     def derivative(self, x):
         """Derivative of the switch.
@@ -51,15 +53,25 @@ class Switch(Protocol):
         Args:
             x: Points to evaluate at.
         """
-        return self.sigmoid_derivative(self._map_input(x)) * self._span / self._length
+        input_slope = self._span / self._length
+        output_slope = 1.0 / (1.0 - self._offset)
+        return self.sigmoid_derivative(self._map_input(x)) * input_slope * output_slope
 
     def _map_input(self, x):
-        """Affine map taking [0, activation_length] onto [logit(tolerance), logit(1 - tolerance)].
+        """Affine map taking [0, activation_length] onto [logit(level), logit(1 - level)].
 
         Args:
             x: Points to evaluate at, anywhere on the real line.
         """
         return (x / self._length - 0.5) * self._span
+
+    def _map_output(self, x):
+        """Affine map taking [level, 1] onto [0, 1], so that the switch is exactly 0 at 0.
+
+        Args:
+            x: Sigmoid values.
+        """
+        return (x - self._offset) / (1.0 - self._offset)
 
     @staticmethod
     def sigmoid(x):
