@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from a_package.domain import CubicSwitch
 from a_package.domain.grid import Grid, factorize_closest
 from a_package.model import (
     CapillaryBridge,
@@ -16,7 +17,9 @@ from a_package.model import (
 def capillary(comm_world):
     grid = Grid([4, 4], [4.0, 4.0])
     grid.decompose(factorize_closest(comm_world.Get_size(), 2), (1, 1), communicator=comm_world)
-    capillary = CapillaryBridge(grid, PhaseMixture(eta=1.0, theta=np.pi / 3), communicator=comm_world)
+    capillary = CapillaryBridge(
+        grid, PhaseMixture(eta=1.0, theta=np.pi / 3, switch=CubicSwitch(0.5, 1e-3)), communicator=comm_world
+    )
     capillary.set_gap(np.ones(grid.decomposition.nb_subdomain_grid_pts))
     capillary.set_phase(np.full(grid.decomposition.nb_subdomain_grid_pts, 0.5))
     return capillary

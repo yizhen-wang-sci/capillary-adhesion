@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from NuMPI import MPI
 
+from a_package.domain import CubicSwitch
 from a_package.domain.grid import Grid, factorize_closest
 from a_package.model.capillary import CapillaryBridge, PhaseMixture
 
@@ -26,7 +27,7 @@ def mock_decomposed_grid():
 
 @pytest.fixture
 def mock_phase_mixture():
-    return PhaseMixture(eta=1.0, theta=np.pi / 3)
+    return PhaseMixture(eta=1.0, theta=np.pi / 3, switch=CubicSwitch(0.5, 1e-3))
 
 
 @pytest.fixture
