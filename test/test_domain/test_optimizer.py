@@ -54,6 +54,9 @@ def test_problem(decompose_stitch, comm_world):
         fem.propag_sens_gradient(field_quadr_2_gradient, field_quadr_2_gradient_back_sens)
         return field_quadr_2_gradient_back_sens.s[0, 0, ...]
 
+    def constraint():
+        return quadr.integrate(field_quadr_1.s, grid.element_area) - grid.element_area * np.sum(mean_field)
+
     def constraint_jacobian():
         integrand_derivative = np.ones_like(field_quadr_1.s)
         field_quadr_3.s[...] = quadr.propag_integral_weight(integrand_derivative, grid.element_area)
@@ -66,8 +69,9 @@ def test_problem(decompose_stitch, comm_world):
         get_x=get_field,
         get_f=objective,
         get_f_Dx=objective_gradient,
-        A=constraint_jacobian().ravel(),
-        b=grid.element_area * np.sum(mean_field),
+        get_g=constraint,
+        get_g_Dx=constraint_jacobian,
+        g_degree=1,
         communicator=comm_world,
     )
     optimizer = ProjectedLbfgs(max_inner_iter=10)

@@ -31,9 +31,9 @@ def capillary(comm_world):
 
 def test_constant_volume_problem_carries_the_linear_constraint(capillary):
     problem = formulate_constant_volume_phase_problem(capillary, volume=2.0)
-    assert problem.has_linear_constraints
-    assert not problem.has_equality_constraints
-    assert problem.b == pytest.approx(2.0)
+    assert problem.has_equality_constraints
+    assert problem.g_degree == 1
+    assert problem.get_g() == pytest.approx(capillary.get_volume() - 2.0)
 
 
 def test_constant_volume_problem_objective_is_the_energy(capillary):
