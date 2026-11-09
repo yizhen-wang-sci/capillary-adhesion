@@ -21,14 +21,19 @@ def formulate_constant_volume_phase_problem(
     Returns:
         An adapted problem the optimizer can handle, whose dual variable is the pressure.
     """
-    # Exploit the linearity in the volume Jacobian
+
+    def volume_residual():
+        """Liquid volume minus the volume to hold."""
+        return capillary.get_volume() - volume
+
     args = {
         "get_x": capillary.get_phase,
         "set_x": capillary.set_phase,
         "get_f": capillary.get_energy,
         "get_f_Dx": capillary.get_energy_jacobian,
-        "A": capillary.get_volume_jacobian().ravel(),
-        "b": volume,
+        "get_g": volume_residual,
+        "get_g_Dx": capillary.get_volume_jacobian,
+        "g_degree": 1,
         "communicator": capillary.communicator,
     }
 
@@ -50,7 +55,7 @@ def extract_pressure_in_constant_volume_solution(result: OptimizerResult):
     # NOTE: in NuMPI LinearConstraint, it defines lagrangian multiplier with "-lambda ...",
     # hence lambda and pressure have the same sign. For this problem, precisely,
     # lambda = pressure / surface tension
-    pressure_per_surface_tension = result["dual"]
+    pressure_per_surface_tension = result["dual"][0]
     return pressure_per_surface_tension
 
 
@@ -123,14 +128,19 @@ def formulate_constant_volume_gap_problem(elastic: ElasticContact):
     Returns:
         An adapted problem the optimizer can handle, whose dual variable is the mean pressure.
     """
-    # Exploit the linearity in the displaced volume Jacobian
+
+    def gap_volume_residual():
+        """Gap volume minus that of the undeformed surfaces."""
+        return elastic.get_gap_volume() - elastic.get_gap_origin_volume()
+
     return Problem(
         get_x=elastic.get_gap,
         set_x=elastic.set_gap,
         get_f=elastic.get_energy,
         get_f_Dx=elastic.get_energy_jacobian,
-        A=elastic.get_gap_volume_jacobian().ravel(),
-        b=elastic.get_gap_origin_volume(),
+        get_g=gap_volume_residual,
+        get_g_Dx=elastic.get_gap_volume_jacobian,
+        g_degree=1,
         x_lb=elastic.gap_lb,
         x_ub=elastic.gap_ub,
         communicator=elastic.communicator,
@@ -189,6 +199,90 @@ def formulate_constant_load_gap_coupling_constant_pressure_phase_problem(
         set_x=set_phase_and_gap,
         get_f=gibbs_potential,
         get_f_Dx=gibbs_potential_jacobian,
+        x_lb=np.concatenate((np.full(nb_nodes, capillary.phase_lb), np.full(nb_nodes, elastic.gap_lb))),
+        x_ub=np.concatenate((np.full(nb_nodes, capillary.phase_ub), np.full(nb_nodes, elastic.gap_ub))),
+        communicator=capillary.communicator,
+    )
+
+
+def formulate_constant_volume_gap_coupling_constant_volume_phase_problem(
+    capillary: CapillaryBridge, elastic: ElasticContact, surface_tension: float, volume: float
+):
+    """Minimise elastic energy(gap) + surface tension * capillary energy(phase, gap).
+
+    Subject to gap_volume(gap) == gap_origin_volume and liquid_volume(phase, gap) == volume.
+
+    Args:
+        capillary: The physics model providing the energy, the liquid volume and their Jacobians
+            w.r.t. both phase field and gap.
+        elastic: The physics model providing the energy, the gap volume and their Jacobians w.r.t.
+            gap, with its mean separation already set.
+        surface_tension: The surface tension, scaling the capillary energy into elastic units.
+        volume: The liquid volume to hold constant.
+
+    Returns:
+        An adapted problem the optimizer can handle, whose x is the phase followed by the gap,
+        and whose duals are the mean pressure and the surface tension times the liquid pressure.
+    """
+    nb_nodes = np.size(capillary.get_phase())
+
+    def get_phase_and_gap():
+        """Phase and gap, ravelled and concatenated."""
+        return np.concatenate((np.ravel(capillary.get_phase()), np.ravel(elastic.get_gap())))
+
+    def set_phase_and_gap(value: np.ndarray):
+        """Set the gap in both models, then the phase."""
+        phase, gap = np.split(np.ravel(value), [nb_nodes])
+        capillary.set_gap(gap)
+        elastic.set_gap(gap)
+        capillary.set_phase(phase)
+
+    def total_energy():
+        """Elastic energy plus the capillary energy in elastic units."""
+        return elastic.get_energy() + surface_tension * capillary.get_energy()
+
+    def total_energy_jacobian():
+        """Derivative of `total_energy` with respect to the phase and the gap."""
+        phase_jacobian = surface_tension * capillary.get_energy_phase_jacobian()
+        gap_jacobian = elastic.get_energy_jacobian() + surface_tension * capillary.get_energy_gap_jacobian()
+        return np.concatenate((np.ravel(phase_jacobian), np.ravel(gap_jacobian)))
+
+    def volume_residuals():
+        """Gap volume minus that of the undeformed surfaces, and liquid volume minus `volume`."""
+        return np.array([elastic.get_gap_volume() - elastic.get_gap_origin_volume(), capillary.get_volume() - volume])
+
+    def volume_residuals_jacobian():
+        """Jacobian of `volume_residuals` with respect to the phase and the gap."""
+        rows = np.zeros((2, 2 * nb_nodes))
+        rows[0, nb_nodes:] = np.ravel(elastic.get_gap_volume_jacobian())
+        rows[1, :nb_nodes] = np.ravel(capillary.get_volume_phase_jacobian())
+        rows[1, nb_nodes:] = np.ravel(capillary.get_volume_gap_jacobian())
+        return rows
+
+    def volume_residuals_hessian_product(u: np.ndarray):
+        """Hessian of each volume residual applied to u."""
+        phase_part, gap_part = np.split(np.ravel(u), [nb_nodes])
+        phase_now = np.copy(capillary.get_phase())
+        gap_now = np.copy(capillary.get_gap())
+        capillary.set_gap(gap_part)
+        phase_product = np.ravel(capillary.get_volume_phase_jacobian())
+        capillary.set_gap(gap_now)
+        capillary.set_phase(phase_part)
+        gap_product = np.ravel(capillary.get_volume_gap_jacobian())
+        capillary.set_phase(phase_now)
+        rows = np.zeros((2, 2 * nb_nodes))
+        rows[1] = np.concatenate((phase_product, gap_product))
+        return rows
+
+    return Problem(
+        get_x=get_phase_and_gap,
+        set_x=set_phase_and_gap,
+        get_f=total_energy,
+        get_f_Dx=total_energy_jacobian,
+        get_g=volume_residuals,
+        get_g_Dx=volume_residuals_jacobian,
+        get_g_D2x_dot=volume_residuals_hessian_product,
+        g_degree=2,
         x_lb=np.concatenate((np.full(nb_nodes, capillary.phase_lb), np.full(nb_nodes, elastic.gap_lb))),
         x_ub=np.concatenate((np.full(nb_nodes, capillary.phase_ub), np.full(nb_nodes, elastic.gap_ub))),
         communicator=capillary.communicator,

@@ -5,6 +5,7 @@ from .contact import ElasticContact, RigidContact, SpectralElasticPlane
 from .equilibrium import (
     extract_pressure_in_constant_volume_solution,
     formulate_constant_pressure_phase_problem,
+    formulate_constant_volume_gap_coupling_constant_volume_phase_problem,
     formulate_constant_volume_gap_problem,
     formulate_constant_volume_phase_problem,
 )

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class Problem:
-    """A minimisation of f(x), optionally subject to A x - b == 0, g(x) == 0, x_lb <= x <= x_ub."""
+    """A minimisation of f(x), optionally subject to g(x) == 0 and x_lb <= x <= x_ub."""
 
     def __init__(
         self,
@@ -27,10 +27,10 @@ class Problem:
         set_x: Callable[[np.ndarray], None],
         get_f: Callable[[], float],
         get_f_Dx: Callable[[], np.ndarray],
-        A: np.ndarray | None = None,
-        b: float | None = None,
-        get_g: Callable[[], float] | None = None,
+        get_g: Callable[[], np.ndarray] | None = None,
         get_g_Dx: Callable[[], np.ndarray] | None = None,
+        get_g_D2x_dot: Callable[[np.ndarray], np.ndarray] | None = None,
+        g_degree: int | None = None,
         x_lb: float | np.ndarray | None = None,
         x_ub: float | np.ndarray | None = None,
         is_zeroed: np.ndarray | None = None,
@@ -43,27 +43,41 @@ class Problem:
             set_x: Write the model's x.
             get_f: The objective at the current x.
             get_f_Dx: The objective's gradient at the current x.
-            A: Jacobian of the linear equality constraint.
-            b: Right-hand side of the linear equality constraint.
-            get_g: The general equality constraint at the current x.
-            get_g_Dx: That constraint's gradient at the current x.
+            get_g: The equality constraints g(x) at the current x, one value per constraint.
+            get_g_Dx: The Jacobian ∇g(x) at the current x, one gradient per constraint.
+            get_g_D2x_dot: The Hessian products ∇²g_j(x) u at the current x, one per constraint.
+            g_degree: 1 if g is linear, 2 if g is quadratic, None if neither is declared.
             x_lb: Lower bound, either one for every entry of x or one per entry.
             x_ub: Upper bound, either one for every entry of x or one per entry.
             is_zeroed: Mask of entries held at zero.
             communicator: Communicator spanning the ranks the unknowns are spread across.
+
+        Raises:
+            ValueError: If `get_g` and `get_g_Dx` are not given together, if `get_g_D2x_dot` or
+                `g_degree` is given without them, if `g_degree` is neither None, 1 nor 2, if
+                `g_degree` is 2 without `get_g_D2x_dot`, or if `g_degree` is 1 with `get_g_D2x_dot`.
         """
+        if (get_g is None) != (get_g_Dx is None):
+            raise ValueError("get_g and get_g_Dx must be given together")
+        if get_g is None and (get_g_D2x_dot is not None or g_degree is not None):
+            raise ValueError("get_g_D2x_dot and g_degree require get_g")
+        if g_degree not in (None, 1, 2):
+            raise ValueError(f"g_degree must be None, 1 or 2, got {g_degree}")
+        if g_degree == 2 and get_g_D2x_dot is None:
+            raise ValueError("g_degree 2 requires get_g_D2x_dot")
+        if g_degree == 1 and get_g_D2x_dot is not None:
+            raise ValueError("g_degree 1 excludes get_g_D2x_dot")
+
         self._get_x = get_x
         self._set_x = set_x
         self._get_f = get_f
         self._get_f_Dx = get_f_Dx
-        if A is not None:
-            self._A = A
-        if b is not None:
-            self._b = b
-        if get_g is not None:
+        if get_g is not None and get_g_Dx is not None:
             self._get_g = get_g
-        if get_g_Dx is not None:
             self._get_g_Dx = get_g_Dx
+        if get_g_D2x_dot is not None:
+            self._get_g_D2x_dot = get_g_D2x_dot
+        self.g_degree = g_degree
         if x_lb is not None:
             self._x_lb = x_lb
         if x_ub is not None:
@@ -73,14 +87,14 @@ class Problem:
         self.communicator = communicator
 
     @property
-    def has_linear_constraints(self):
-        """Whether a linear equality constraint was given."""
-        return hasattr(self, "_A") and hasattr(self, "_b")
+    def has_equality_constraints(self):
+        """Whether an equality constraint was given."""
+        return hasattr(self, "_get_g")
 
     @property
-    def has_equality_constraints(self):
-        """Whether a general equality constraint was given."""
-        return hasattr(self, "_get_g") and hasattr(self, "_get_g_Dx")
+    def has_constraint_hessian_products(self):
+        """Whether the Hessian products of the equality constraints were given."""
+        return hasattr(self, "_get_g_D2x_dot")
 
     @property
     def has_bounds(self):
@@ -115,39 +129,32 @@ class Problem:
         """The objective's gradient at the current x, ravelled."""
         return np.asarray(self._get_f_Dx()).ravel()
 
-    @property
-    def A(self):
-        """Jacobian of the linear equality constraint.
-
-        Raises:
-            AttributeError: If no linear equality constraint was given.
-        """
-        return self._A
-
-    @property
-    def b(self):
-        """Right-hand side of the linear equality constraint.
-
-        Raises:
-            AttributeError: If no linear equality constraint was given.
-        """
-        return self._b
-
     def get_g(self):
-        """The general equality constraint at the current x, as a scalar.
+        """The equality constraints g(x) at the current x, as an (m,) array.
 
         Raises:
-            AttributeError: If no general equality constraint was given.
+            AttributeError: If no equality constraint was given.
         """
-        return np.asarray(self._get_g()).item()
+        return np.atleast_1d(np.asarray(self._get_g(), dtype=float)).ravel()
 
     def get_g_Dx(self):
-        """That constraint's gradient at the current x, ravelled.
+        """The Jacobian ∇g(x) at the current x, as an (m, n) array.
 
         Raises:
-            AttributeError: If no general equality constraint was given.
+            AttributeError: If no equality constraint was given.
         """
-        return np.asarray(self._get_g_Dx()).ravel()
+        return np.reshape(self._get_g_Dx(), (-1, np.size(self._get_x())))
+
+    def get_g_D2x_dot(self, u):
+        """The Hessian products ∇²g_j(x) u at the current x, as an (m, n) array.
+
+        Args:
+            u: The vector the Hessians are applied to, ravelled.
+
+        Raises:
+            AttributeError: If no Hessian product was given.
+        """
+        return np.reshape(self._get_g_D2x_dot(u), (-1, np.size(self._get_x())))
 
     @property
     def x_lb(self):
@@ -177,11 +184,26 @@ class Problem:
         return np.asarray(self._is_zero).ravel()
 
 
+def _measure_constraint_violation(problem: Problem, x: np.ndarray):
+    """The absolute residual of each equality constraint at x.
+
+    Args:
+        problem: A problem with an equality constraint.
+        x: The unknowns to evaluate at.
+
+    Returns:
+        An (m,) array.
+    """
+    problem.set_x(x)
+    return np.abs(problem.get_g())
+
+
 class OptimizerResult(TypedDict, total=False):
     """Result of an optimizer."""
 
     x: Required[np.ndarray]
-    dual: float
+    dual: np.ndarray
+    constr_violation: np.ndarray
     success: Required[bool]
     reached_iter_limit: bool
     had_abnormal_stop: bool
@@ -227,7 +249,7 @@ class ProjectedLbfgs(Optimizer):
         self.tol_step = tol_step
 
     def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
-        """Minimise the objective subject to a linear equality constraint and bounds.
+        """Minimise the objective subject to one linear equality constraint and bounds.
 
         Args:
             problem: The problem to solve.
@@ -236,12 +258,21 @@ class ProjectedLbfgs(Optimizer):
             **kwargs: To match the `Optimizer` interface.
 
         Returns:
-            The result of the minimisation, carrying `dual`, the multiplier of the linear
-            constraint.
+            The result of the minimisation, carrying `dual`, the multiplier of the constraint,
+            and `constr_violation`, the absolute residual of g at the returned x.
+
+        Raises:
+            TypeError: If the problem has no equality constraint, or if g is not declared linear.
+            ValueError: If g has more than one constraint.
         """
-        linear_constraint = NuMPI.Optimization.LinearConstraint(
-            problem.A, problem.b, NuMPI.Tools.Reduction(problem.communicator)
-        )
+        if not problem.has_equality_constraints or problem.g_degree != 1:
+            raise TypeError(f"ProjectedLbfgs requires a linear g, got g_degree {problem.g_degree}")
+        gradient = problem.get_g_Dx()
+        if gradient.shape[0] != 1:
+            raise ValueError(f"ProjectedLbfgs requires one constraint in g, got {gradient.shape[0]}")
+        a = np.array(gradient[0])
+        target = problem.communicator.allreduce(a @ problem.get_x(), op=MPI.SUM) - problem.get_g()[0]
+        linear_constraint = NuMPI.Optimization.LinearConstraint(a, target, NuMPI.Tools.Reduction(problem.communicator))
 
         def compute_f(x):
             problem.set_x(x)
@@ -278,7 +309,8 @@ class ProjectedLbfgs(Optimizer):
         )
         return OptimizerResult(
             x=result["x"].reshape(init_shape),
-            dual=result["multiplier"],
+            dual=np.atleast_1d(np.asarray(result["multiplier"], dtype=float)),
+            constr_violation=_measure_constraint_violation(problem, result["x"]),
             success=result["success"],
             message=result["message"],
             nit=result["nit"],
@@ -311,10 +343,10 @@ class BoundedLbfgs(Optimizer):
             The result of the minimisation.
 
         Raises:
-            TypeError: If the problem carries a linear or an equality constraint.
+            TypeError: If the problem carries an equality constraint.
         """
-        if problem.has_linear_constraints or problem.has_equality_constraints:
-            raise TypeError("BoundedLbfgs does not support linear or equality constraints")
+        if problem.has_equality_constraints:
+            raise TypeError("BoundedLbfgs does not support an equality constraint")
 
         def compute_f(x):
             problem.set_x(x)
