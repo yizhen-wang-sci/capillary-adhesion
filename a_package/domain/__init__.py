@@ -5,4 +5,12 @@ from .field import Field, adapt_shape, field_component_ax, field_element_axs, fi
 from .grid import Grid, factorize_closest
 from .optimizer import BoundedLbfgs, Optimizer, OptimizerResult, Problem, ProjectedLbfgs
 from .quadrature import CentroidQuadrature, NodalQuadrature, Quadrature, ThreePtQuadrature
-from .switch import AlgebraicSwitch, ArctangentSwitch, CubicSwitch, ExponentialSwitch, Switch
+from .switch import (
+    AlgebraicSwitch,
+    ArctangentSwitch,
+    CubicSwitch,
+    ExponentialSwitch,
+    SharpSwitch,
+    SmoothSwitch,
+    Switch,
+)

@@ -1,4 +1,4 @@
-"""Smooth switches on [0, inf), each a sigmoid calibrated by a tolerance and activation length."""
+"""Switches on [0, inf): the sharp indicator, and sigmoids calibrated by tolerance and length."""
 
 from typing import Protocol
 
@@ -6,6 +6,46 @@ import numpy as np
 
 
 class Switch(Protocol):
+    """A non-decreasing map from [0, inf) to [0, 1], 0 at 0, with its derivative."""
+
+    def value(self, x):
+        """Value of the switch.
+
+        Args:
+            x: Points to evaluate at.
+        """
+        raise NotImplementedError
+
+    def derivative(self, x):
+        """Derivative of the switch.
+
+        Args:
+            x: Points to evaluate at.
+        """
+        raise NotImplementedError
+
+
+class SharpSwitch(Switch):
+    """The indicator (x > 0), with zero derivative."""
+
+    def value(self, x):
+        """Value of the switch.
+
+        Args:
+            x: Points to evaluate at.
+        """
+        return (np.asarray(x) > 0).astype(float)
+
+    def derivative(self, x):
+        """Derivative of the switch.
+
+        Args:
+            x: Points to evaluate at.
+        """
+        return np.zeros(np.shape(x))
+
+
+class SmoothSwitch(Switch, Protocol):
     """A switch turning on smoothly from exactly 0 at 0, to 1 - tolerance at activation_length."""
 
     def __init__(self, activation_length: float, tolerance: float):
@@ -63,7 +103,7 @@ class Switch(Protocol):
         Args:
             x: Points to evaluate at, anywhere on the real line.
         """
-        return (x / self._length - 0.5) * self._span
+        return (x - 0.5 * self._length) * (self._span / self._length)
 
     def _map_output(self, x):
         """Affine map taking [level, 1] onto [0, 1], so that the switch is exactly 0 at 0.
@@ -101,7 +141,7 @@ class Switch(Protocol):
         raise NotImplementedError
 
 
-class ExponentialSwitch(Switch):
+class ExponentialSwitch(SmoothSwitch):
     """The sigmoid 1 / (1 + exp(-x)), with tail exp(-x)."""
 
     @staticmethod
@@ -133,7 +173,7 @@ class ExponentialSwitch(Switch):
         return np.log(x / (1.0 - x))
 
 
-class AlgebraicSwitch(Switch):
+class AlgebraicSwitch(SmoothSwitch):
     """The sigmoid (1 + x / sqrt(1 + x^2)) / 2, with tail 1 / (4 x^2)."""
 
     @staticmethod
@@ -164,7 +204,7 @@ class AlgebraicSwitch(Switch):
         return (2.0 * x - 1.0) / (2.0 * np.sqrt(x * (1.0 - x)))
 
 
-class ArctangentSwitch(Switch):
+class ArctangentSwitch(SmoothSwitch):
     """The sigmoid 1/2 + arctan(x) / pi, with tail 1 / (pi x)."""
 
     @staticmethod
@@ -195,7 +235,7 @@ class ArctangentSwitch(Switch):
         return np.tan(np.pi * (x - 0.5))
 
 
-class CubicSwitch(Switch):
+class CubicSwitch(SmoothSwitch):
     """The cubic 3u^2 - 2u^3 with u = (1 + x) / 2 clipped to [0, 1], exactly 1 from x = 1 on."""
 
     @staticmethod
