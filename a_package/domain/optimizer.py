@@ -317,6 +317,90 @@ class ProjectedLbfgs(Optimizer):
         )
 
 
+class QcProjectedLbfgs(Optimizer):
+    """Hands a quadratic equality constraint and box bounds to NuMPI to enforce natively."""
+
+    def __init__(self, max_inner_iter: int = 1000, tol_gradient: float = 1e-6, tol_step: float = 0.0):
+        """Set the iteration limit and the two convergence tolerances.
+
+        Args:
+            max_inner_iter: Iteration limit handed to NuMPI.
+            tol_gradient: Tolerance on the infinity norm of the KKT-masked reduced gradient.
+            tol_step: Tolerance on the infinity norm of the iterate step. Zero disables it.
+        """
+        self.max_inner_iter = max_inner_iter
+        self.tol_gradient = tol_gradient
+        self.tol_step = tol_step
+
+    def solve_minimisation(self, problem: Problem, x0: np.ndarray, callback=None, **kwargs) -> OptimizerResult:
+        """Minimise the objective subject to quadratic equality constraints and bounds.
+
+        Args:
+            problem: The problem to solve.
+            x0: Initial guess. Its shape is restored on the returned x.
+            callback: Called once per iteration by NuMPI.
+            **kwargs: To match the `Optimizer` interface.
+
+        Returns:
+            The result of the minimisation, carrying `dual`, the multipliers of the constraints,
+            and `constr_violation`, the absolute residuals of g at the returned x.
+
+        Raises:
+            TypeError: If the problem has no equality constraint, or if g is not declared quadratic.
+        """
+        if not problem.has_equality_constraints or problem.g_degree != 2:
+            raise TypeError(f"QcProjectedLbfgs requires a quadratic g, got g_degree {problem.g_degree}")
+        x = problem.get_x()
+        hessian_x = problem.get_g_D2x_dot(x)
+        a = problem.get_g_Dx() - hessian_x
+        target = problem.communicator.allreduce(a @ x + 0.5 * hessian_x @ x, op=MPI.SUM) - problem.get_g()
+        quadratic_constraint = NuMPI.Optimization.QuadraticConstraint(
+            a, problem.get_g_D2x_dot, target, NuMPI.Tools.Reduction(problem.communicator)
+        )
+
+        def compute_f(x):
+            problem.set_x(x)
+            return problem.get_f()
+
+        def compute_f_Dx(x):
+            problem.set_x(x)
+            return problem.get_f_Dx()
+
+        bounds_lo = None
+        bounds_hi = None
+        if problem.has_bounds:
+            bounds_lo = problem.x_lb
+            bounds_hi = problem.x_ub
+
+        zero_mask = None
+        if problem.has_zeros:
+            zero_mask = problem.is_zero
+
+        init_shape = x0.shape
+        result = NuMPI.Optimization.l_bfgs_qc_projected(
+            compute_f,
+            x0.ravel(),
+            quadratic_constraint,
+            jac=compute_f_Dx,
+            bounds_lo=bounds_lo,
+            bounds_hi=bounds_hi,
+            zero_mask=zero_mask,
+            maxiter=self.max_inner_iter,
+            gtol=self.tol_gradient,
+            xtol=self.tol_step,
+            comm=problem.communicator,
+            callback=callback,
+        )
+        return OptimizerResult(
+            x=result["x"].reshape(init_shape),
+            dual=np.atleast_1d(np.asarray(result["multiplier"], dtype=float)),
+            constr_violation=_measure_constraint_violation(problem, result["x"]),
+            success=result["success"],
+            message=result["message"],
+            nit=result["nit"],
+        )
+
+
 class BoundedLbfgs(Optimizer):
     """Hands box bounds to NuMPI to enforce natively, without an equality constraint."""
 
