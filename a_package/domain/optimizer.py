@@ -214,6 +214,123 @@ class OptimizerResult(TypedDict, total=False):
     time: float
 
 
+class ProblemScaler:
+    """Rescales a problem's unknowns, objective and equality constraints, and maps results back."""
+
+    def __init__(
+        self,
+        x_scale: float | np.ndarray = 1.0,
+        f_scale: float = 1.0,
+        g_scale: float | np.ndarray = 1.0,
+    ):
+        """Store the scales of the unknowns, the objective and the equality constraints.
+
+        Args:
+            x_scale: The scale in x = x_scale x_hat, one for every entry of x or one per entry.
+            f_scale: The scale in f = f_scale f_hat.
+            g_scale: The scale in g_j = g_scale_j g_hat_j, one for every
+                constraint or one per constraint.
+
+        Raises:
+            ValueError: If any scale is not positive.
+        """
+        for name, value in (
+            ("x_scale", x_scale),
+            ("f_scale", f_scale),
+            ("g_scale", g_scale),
+        ):
+            if not np.all(np.asarray(value) > 0):
+                raise ValueError(f"{name} must be positive, got {value}")
+        self.x_scale = np.asarray(x_scale, dtype=float).ravel() if np.ndim(x_scale) else float(x_scale)
+        self.f_scale = float(f_scale)
+        self.g_scale = np.atleast_1d(np.asarray(g_scale, dtype=float)).ravel()
+
+    def scale(self, problem: Problem) -> Problem:
+        """The same problem in the unknowns x_hat, with the objective and the constraints rescaled.
+
+        Args:
+            problem: The problem to rescale.
+
+        Returns:
+            The rescaled problem, reading and writing the same model.
+        """
+        x_scale = self.x_scale
+        f_scale = self.f_scale
+
+        def get_x_hat():
+            """The unknowns x_hat at the model's current x."""
+            return problem.get_x() / x_scale
+
+        def set_x_hat(x_hat):
+            """Set the model's x from the unknowns x_hat."""
+            problem.set_x(x_scale * np.ravel(x_hat))
+
+        def get_f_hat():
+            """The rescaled objective at the current x."""
+            return problem.get_f() / f_scale
+
+        def get_f_hat_Dx_hat():
+            """The rescaled objective's gradient with respect to x_hat."""
+            return x_scale * problem.get_f_Dx() / f_scale
+
+        args = {
+            "get_x": get_x_hat,
+            "set_x": set_x_hat,
+            "get_f": get_f_hat,
+            "get_f_Dx": get_f_hat_Dx_hat,
+            "communicator": problem.communicator,
+        }
+        if problem.has_equality_constraints:
+            g_scale = self.g_scale
+
+            def get_g_hat():
+                """The rescaled equality constraints at the current x."""
+                return problem.get_g() / g_scale
+
+            def get_g_hat_Dx_hat():
+                """The Jacobian of the rescaled constraints with respect to x_hat."""
+                return x_scale * problem.get_g_Dx() / g_scale[:, np.newaxis]
+
+            args.update(get_g=get_g_hat, get_g_Dx=get_g_hat_Dx_hat, g_degree=problem.g_degree)
+
+            if problem.has_constraint_hessian_products:
+
+                def get_g_hat_D2x_hat_dot(u):
+                    """The Hessian products of the rescaled constraints in x_hat, applied to u."""
+                    return x_scale * problem.get_g_D2x_dot(x_scale * np.ravel(u)) / g_scale[:, np.newaxis]
+
+                args.update(get_g_D2x_dot=get_g_hat_D2x_hat_dot)
+        if problem.has_bounds:
+            args.update(x_lb=problem.x_lb / x_scale, x_ub=problem.x_ub / x_scale)
+        if problem.has_zeros:
+            args.update(is_zeroed=problem.is_zero)
+        return Problem(**args)
+
+    def unscale(self, result: OptimizerResult) -> OptimizerResult:
+        """The result of solving the rescaled problem, in the original unknowns and units.
+
+        Args:
+            result: From solving a problem built by `scale`.
+
+        Returns:
+            The result with `x`, `dual`, `constr_violation`, `fun` and `jac` mapped back,
+            whichever are present.
+        """
+        unscaled = OptimizerResult(**result)
+        x_hat = np.asarray(result["x"])
+        unscaled["x"] = np.reshape(self.x_scale * x_hat.ravel(), x_hat.shape)
+        if "dual" in result:
+            unscaled["dual"] = result["dual"] * self.f_scale / self.g_scale
+        if "constr_violation" in result:
+            unscaled["constr_violation"] = result["constr_violation"] * self.g_scale
+        if "fun" in result:
+            unscaled["fun"] = result["fun"] * self.f_scale
+        if "jac" in result:
+            jac_hat = np.asarray(result["jac"])
+            unscaled["jac"] = np.reshape(jac_hat.ravel() * self.f_scale / self.x_scale, jac_hat.shape)
+        return unscaled
+
+
 class Optimizer(Protocol):
     """The interface a solving strategy presents to a caller."""
 
