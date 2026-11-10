@@ -6,6 +6,7 @@ import muGrid
 import numpy as np
 from NuMPI import MPI
 
+from a_package.domain import get_xp, like
 from a_package.domain import CentroidQuadrature, Field, FirstOrderElement, Grid, field_component_ax, field_sub_pt_ax
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ class PhaseMixture:
             x: Values to evaluate the potential at.
             axis: Component axis to sum over. Kept, not squeezed.
         """
-        return np.sum(x**2 * (1 - x) ** 2, axis=axis, keepdims=True)
+        return (x**2 * (1 - x) ** 2).sum(axis=axis, keepdims=True)
 
     @staticmethod
     def square_penalty(x, axis):
@@ -104,7 +105,7 @@ class PhaseMixture:
             x: Values to take the norm of.
             axis: Component axis to sum over. Kept, not squeezed.
         """
-        return np.sum(x**2, axis=axis, keepdims=True)
+        return (x**2).sum(axis=axis, keepdims=True)
 
     def compute_local_energy_jacobian(self, gap: Field, phase: Field, phase_grad: Field):
         """Compute derivatives of local energy w.r.t. phase and phase gradient.
@@ -223,7 +224,7 @@ class CapillaryBridge:
         Args:
             value: Nodal gap values, reshaped to this rank's subdomain.
         """
-        self._nodal_gap.s[...] = np.reshape(value, (1, 1, *self._decomposition.nb_subdomain_grid_pts))
+        self._nodal_gap.s[...] = like(value, self._nodal_gap.s).reshape(1, 1, *self._decomposition.nb_subdomain_grid_pts)
         self._decomposition.communicate_ghosts(self._nodal_gap)
         self._fem.interpolate_value(self._nodal_gap, self._quadr_gap)
 
@@ -243,7 +244,7 @@ class CapillaryBridge:
             value: Nodal phase values, reshaped to this rank's subdomain. Zeroed wherever the
                 gap is closed.
         """
-        self._nodal_phase.s[...] = np.reshape(value, (1, 1, *self._decomposition.nb_subdomain_grid_pts))
+        self._nodal_phase.s[...] = like(value, self._nodal_phase.s).reshape(1, 1, *self._decomposition.nb_subdomain_grid_pts)
         self._nodal_phase.s[self.gap_is_closed] = 0.0
         self._decomposition.communicate_ghosts(self._nodal_phase)
         self._fem.interpolate_value(self._nodal_phase, self._quadr_phase)
@@ -261,15 +262,17 @@ class CapillaryBridge:
 
     def validate_phase(self):
         """Log warnings if phase field exceeds [0, 1] bounds."""
-        if np.any(self._nodal_phase.s < 0):
-            outlier = np.where(self._nodal_phase.s < 0, self._nodal_phase.s, np.nan)
-            count = np.count_nonzero(~np.isnan(outlier))
-            extreme = np.nanmin(outlier)
+        phase = self._nodal_phase.s
+        xp = get_xp(phase)
+        if bool((phase < 0).any()):
+            outlier = xp.where(phase < 0, phase, xp.nan)
+            count = int(xp.count_nonzero(~xp.isnan(outlier)))
+            extreme = float(xp.nanmin(outlier))
             logger.warning(f"Notice: phase field has {count} values < 0, min at {extreme:.2e}")
-        if np.any(self._nodal_phase.s > 1):
-            outlier = np.where(self._nodal_phase.s > 1, self._nodal_phase.s, np.nan)
-            count = np.count_nonzero(~np.isnan(outlier))
-            extreme = np.nanmax(outlier)
+        if bool((phase > 1).any()):
+            outlier = xp.where(phase > 1, phase, xp.nan)
+            count = int(xp.count_nonzero(~xp.isnan(outlier)))
+            extreme = float(xp.nanmax(outlier))
             logger.warning(f"Notice: phase field has {count} values > 1, max at 1.0+{extreme - 1:.2e}.")
 
     def get_energy(self):

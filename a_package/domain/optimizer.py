@@ -15,6 +15,8 @@ import NuMPI.Tools
 import numpy as np
 from NuMPI import MPI
 
+from .backend import get_xp, to_host
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,7 +96,7 @@ class Problem:
 
     def get_x(self):
         """The model's current unknowns, ravelled."""
-        return np.asarray(self._get_x()).ravel()
+        return self._get_x().ravel()
 
     def set_x(self, x):
         """Set x, skipping the underlying call when x is unchanged.
@@ -102,18 +104,20 @@ class Problem:
         Args:
             x: The new unknowns, in the model's own shape.
         """
-        is_changed = np.any(np.asarray(x).ravel() != self.get_x())
+        current = self.get_x()
+        x = get_xp(current).asarray(x).ravel()
+        is_changed = bool((x != current).any())
         is_changed = self.communicator.allreduce(is_changed, op=MPI.LOR)
         if is_changed:
             self._set_x(x)
 
     def get_f(self):
         """The objective at the current x, as a scalar."""
-        return np.asarray(self._get_f()).item()
+        return to_host(self._get_f()).item()
 
     def get_f_Dx(self):
         """The objective's gradient at the current x, ravelled."""
-        return np.asarray(self._get_f_Dx()).ravel()
+        return self._get_f_Dx().ravel()
 
     @property
     def A(self):
@@ -139,7 +143,7 @@ class Problem:
         Raises:
             AttributeError: If no general equality constraint was given.
         """
-        return np.asarray(self._get_g()).item()
+        return to_host(self._get_g()).item()
 
     def get_g_Dx(self):
         """That constraint's gradient at the current x, ravelled.
@@ -147,7 +151,7 @@ class Problem:
         Raises:
             AttributeError: If no general equality constraint was given.
         """
-        return np.asarray(self._get_g_Dx()).ravel()
+        return self._get_g_Dx().ravel()
 
     @property
     def x_lb(self):
@@ -174,7 +178,7 @@ class Problem:
         Raises:
             AttributeError: If no zero mask was given.
         """
-        return np.asarray(self._is_zero).ravel()
+        return self._is_zero.ravel()
 
 
 class OptimizerResult(TypedDict, total=False):
@@ -240,7 +244,7 @@ class ProjectedLbfgs(Optimizer):
             constraint.
         """
         linear_constraint = NuMPI.Optimization.LinearConstraint(
-            problem.A, problem.b, NuMPI.Tools.Reduction(problem.communicator)
+            to_host(problem.A), problem.b, NuMPI.Tools.Reduction(problem.communicator)
         )
 
         def compute_f(x):
@@ -249,7 +253,7 @@ class ProjectedLbfgs(Optimizer):
 
         def compute_f_Dx(x):
             problem.set_x(x)
-            return problem.get_f_Dx()
+            return to_host(problem.get_f_Dx())
 
         bounds_lo = None
         bounds_hi = None
@@ -259,9 +263,10 @@ class ProjectedLbfgs(Optimizer):
 
         zero_mask = None
         if problem.has_zeros:
-            zero_mask = problem.is_zero
+            zero_mask = to_host(problem.is_zero)
 
         init_shape = x0.shape
+        x0 = to_host(x0)
         result = NuMPI.Optimization.l_bfgs_projected(
             compute_f,
             x0.ravel(),
@@ -322,7 +327,7 @@ class BoundedLbfgs(Optimizer):
 
         def compute_f_Dx(x):
             problem.set_x(x)
-            return problem.get_f_Dx()
+            return to_host(problem.get_f_Dx())
 
         bounds_lo = None
         bounds_hi = None
@@ -332,9 +337,10 @@ class BoundedLbfgs(Optimizer):
 
         zero_mask = None
         if problem.has_zeros:
-            zero_mask = problem.is_zero
+            zero_mask = to_host(problem.is_zero)
 
         init_shape = x0.shape
+        x0 = to_host(x0)
         result = NuMPI.Optimization.l_bfgs_bounded(
             compute_f,
             x0.ravel(),

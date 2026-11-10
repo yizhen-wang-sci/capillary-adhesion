@@ -8,17 +8,17 @@ values=[5, 60, 75, 90, 105, 120, 175]
 
 [grid]
 lateral_size = 1.0
-nb_pixels = 1024
+nb_pixels = 128
 
 [surface.upper]
 shape = "rough"
 
 [surface.upper.rough]
 length_unit = "pixel"
-rolloff_wavelength = 64
+rolloff_wavelength = 32
 cutoff_wavelength = 8
 hurst_exponent = 0.8
-prefactor = 1e1
+prefactor = 1e0
 seed = 0
 
 [surface.lower]
@@ -26,10 +26,10 @@ shape = "rough"
 
 [surface.lower.rough]
 length_unit = "pixel"
-rolloff_wavelength = 64
+rolloff_wavelength = 32
 cutoff_wavelength = 8
 hurst_exponent = 0.8
-prefactor = 1e1
+prefactor = 1e0
 seed = 1
 
 [capillary]
@@ -44,7 +44,7 @@ max_separation = 1.5
 min_separation = 0.5
 nb_decrements = 100
 round_trip = true
-nb_cycles = 10
+nb_cycles = 1
 
 [constraint]
 liquid_volume_percent = 50.0

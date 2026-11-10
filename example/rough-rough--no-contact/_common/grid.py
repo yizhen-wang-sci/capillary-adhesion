@@ -14,7 +14,7 @@ def build_grid(config: dict) -> Grid:
     section = config["grid"]
     N = section["nb_pixels"]
     L = section["lateral_size"]
-    return Grid([N, N], [L, L])
+    return Grid([N, N], [L, L], device="cuda")
 
 
 def build_length_unit(grid: Grid, unit: str) -> UnitConversion:

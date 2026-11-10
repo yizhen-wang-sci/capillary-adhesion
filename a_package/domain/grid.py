@@ -16,6 +16,7 @@ class Grid:
         nb_grid_pts: Sequence[int],
         lengths: Sequence[float] | None = None,
         decomposition: muGrid.CartesianDecomposition | None = None,
+        device: str | muGrid.Device | None = None,
     ):
         """Set up the grid, deriving the element sizes from the domain lengths.
 
@@ -25,9 +26,10 @@ class Grid:
             lengths: Physical length of the domain along each dimension, 1.0 in each by default.
             decomposition: How the domain is split across processes. Defaults to no split, where
                 every process holds a grid spanning the whole global domain.
-
-        Raises:
-            ValueError: If `lengths` and `nb_grid_pts` have different dimensions.
+            device: Where field memory lives: "cpu", "cuda", "cuda:N", or a `muGrid.Device`.
+                Defaults to the device of `decomposition` if one is given, else "cpu".
+        ValueError: If `lengths` and `nb_grid_pts` have different dimensions, or if
+                `device` disagrees with the device of `decomposition`.
         """
         self.nb_domain_grid_pts = tuple(nb_grid_pts)
         self.nb_spatial_dim = len(self.nb_domain_grid_pts)
@@ -42,7 +44,17 @@ class Grid:
         self.element_sizes = [l / n for l, n in zip(self.domain_lengths, self.nb_domain_grid_pts)]
         self.element_area = np.multiply.reduce(self.element_sizes, initial=1.0)
 
-        if decomposition is None:
+        if decomposition is not None:
+            # The decomposition already owns its memory, so its device is authoritative.
+            decomp_device = decomposition.collection.device
+            if device is not None and _as_device(device).device_string != decomp_device.device_string:
+                raise ValueError(
+                    f"device {_as_device(device).device_string!r} disagrees with the decomposition's "
+                    f"device {decomp_device.device_string!r}"
+                )
+            self.device = decomp_device
+        else:
+            self.device = _as_device("cpu" if device is None else device)
             # default to no decomposition, where all processes have its grid representing
             # the same global domain.
             decomposition = muGrid.CartesianDecomposition(
@@ -51,8 +63,10 @@ class Grid:
                 [1] * self.nb_spatial_dim,
                 [0] * self.nb_spatial_dim,
                 [0] * self.nb_spatial_dim,
+                device=self.device,
             )
         self.decomposition = decomposition
+
 
     def decompose(
         self, nb_subdomains: Sequence[int], nb_ghost_layers: Sequence[int] | None = None, communicator=MPI.COMM_SELF
@@ -104,6 +118,7 @@ class Grid:
             list(nb_subdomains),
             list(nb_ghost_layers),
             list(nb_ghost_layers),
+            device=self.device,
         )
         return self.decomposition
 
@@ -242,3 +257,8 @@ def factorize_closest(value: int, nb_factor: int):
     if np.multiply.reduce(factors) < value:
         raise ValueError(f"Cannot factorize {value} into {nb_factor} integers.")
     return factors
+
+def _as_device(device: str | muGrid.Device) -> muGrid.Device:
+    """Normalise a device given as a string or a `muGrid.Device`."""
+    return device if isinstance(device, muGrid.Device) else muGrid.Device.from_string(device)
+
