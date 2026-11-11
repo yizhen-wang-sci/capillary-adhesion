@@ -67,7 +67,6 @@ class Grid:
             )
         self.decomposition = decomposition
 
-
     def decompose(
         self, nb_subdomains: Sequence[int], nb_ghost_layers: Sequence[int] | None = None, communicator=MPI.COMM_SELF
     ):
@@ -258,7 +257,7 @@ def factorize_closest(value: int, nb_factor: int):
         raise ValueError(f"Cannot factorize {value} into {nb_factor} integers.")
     return factors
 
+
 def _as_device(device: str | muGrid.Device) -> muGrid.Device:
     """Normalise a device given as a string or a `muGrid.Device`."""
     return device if isinstance(device, muGrid.Device) else muGrid.Device.from_string(device)
-

@@ -6,8 +6,16 @@ import muGrid
 import numpy as np
 from NuMPI import MPI
 
-from a_package.domain import get_xp, like
-from a_package.domain import CentroidQuadrature, Field, FirstOrderElement, Grid, field_component_ax, field_sub_pt_ax
+from a_package.domain import (
+    CentroidQuadrature,
+    Field,
+    FirstOrderElement,
+    Grid,
+    field_component_ax,
+    field_sub_pt_ax,
+    get_xp,
+    like,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -224,7 +232,9 @@ class CapillaryBridge:
         Args:
             value: Nodal gap values, reshaped to this rank's subdomain.
         """
-        self._nodal_gap.s[...] = like(value, self._nodal_gap.s).reshape(1, 1, *self._decomposition.nb_subdomain_grid_pts)
+        self._nodal_gap.s[...] = like(value, self._nodal_gap.s).reshape(
+            1, 1, *self._decomposition.nb_subdomain_grid_pts
+        )
         self._decomposition.communicate_ghosts(self._nodal_gap)
         self._fem.interpolate_value(self._nodal_gap, self._quadr_gap)
 
@@ -244,7 +254,9 @@ class CapillaryBridge:
             value: Nodal phase values, reshaped to this rank's subdomain. Zeroed wherever the
                 gap is closed.
         """
-        self._nodal_phase.s[...] = like(value, self._nodal_phase.s).reshape(1, 1, *self._decomposition.nb_subdomain_grid_pts)
+        self._nodal_phase.s[...] = like(value, self._nodal_phase.s).reshape(
+            1, 1, *self._decomposition.nb_subdomain_grid_pts
+        )
         self._nodal_phase.s[self.gap_is_closed] = 0.0
         self._decomposition.communicate_ghosts(self._nodal_phase)
         self._fem.interpolate_value(self._nodal_phase, self._quadr_phase)
