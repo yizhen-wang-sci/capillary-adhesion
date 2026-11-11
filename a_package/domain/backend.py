@@ -1,4 +1,5 @@
 """Helper functions to copy between CuPy and NumPy."""
+
 import numpy as np
 
 try:
