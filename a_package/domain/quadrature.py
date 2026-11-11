@@ -7,6 +7,7 @@ from typing import ClassVar
 import numpy as np
 from NuMPI import MPI
 
+from .backend import get_xp, to_host
 from .field import Field, field_element_axs
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,14 @@ class Quadrature(ABC):
         if type(self) is Quadrature:
             raise TypeError("Quadrature is abstract, instantiate a subclass instead.")
         self._communicator = communicator
+        self._weights_cache = {}
+
+    def _weights(self, xp):
+        """The quadrature weights in namespace `xp`, copied to its device once and cached."""
+        weights = self._weights_cache.get(xp)
+        if weights is None:
+            weights = self._weights_cache[xp] = xp.asarray(self.quad_pt_weights)
+        return weights
 
     @property
     def nb_quad_pts(self):
@@ -90,9 +99,10 @@ class Quadrature(ABC):
             One integral per field component, reduced over the communicator.
         """
         # Regular grid -> element area factors out
-        element_sum = element_area * np.sum(field, axis=field_element_axs)
-        local = np.einsum("s, cs-> c", self.quad_pt_weights, element_sum)
-        return self._communicator.allreduce(local, op=MPI.SUM)
+        element_sum = element_area * field.sum(axis=field_element_axs)
+        local = (element_sum * self._weights(get_xp(field))).sum(axis=-1)
+        # Only one value per component crosses to the host for the reduction.
+        return self._communicator.allreduce(to_host(local), op=MPI.SUM)
 
     def propag_integral_weight(self, field: Field, element_area: float = 1.0):
         """Propagate the sensitivity of `integrate` back to the quadrature points.
@@ -106,7 +116,8 @@ class Quadrature(ABC):
             across ranks.
         """
         # Regular grid -> element area factors out
-        return element_area * np.einsum("s, cs...-> cs...", self.quad_pt_weights, field)
+        weights = self._weights(get_xp(field))
+        return element_area * field * weights.reshape(-1, *(1,) * (field.ndim - 2))
 
 
 class NodalQuadrature(Quadrature):
