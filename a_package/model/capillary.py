@@ -11,6 +11,7 @@ from a_package.domain import (
     Field,
     FirstOrderElement,
     Grid,
+    Quadrature,
     Switch,
     field_component_ax,
     field_sub_pt_ax,
@@ -235,7 +236,14 @@ class PhaseMixture:
 class CapillaryBridge:
     """Nodal-value interface for capillary bridge evaluation."""
 
-    def __init__(self, grid: Grid, phase_mixture, communicator=MPI.COMM_SELF):
+    def __init__(
+        self,
+        grid: Grid,
+        phase_mixture,
+        communicator=MPI.COMM_SELF,
+        energy_quadrature: type[Quadrature] = CentroidQuadrature,
+        volume_quadrature: type[Quadrature] = CentroidQuadrature,
+    ):
         """Set up the numerics and the fields over a grid.
 
         Args:
@@ -243,41 +251,58 @@ class CapillaryBridge:
             phase_mixture: The physics of the liquid-vapour phase mixture.
             communicator: Communicator spanning the ranks the fields are spread across,
                 `MPI.COMM_SELF` by default.
+            energy_quadrature: Rule integrating the energy, the perimeter and the interface
+                areas, `CentroidQuadrature` by default.
+            volume_quadrature: Rule integrating the liquid volume and the maximum volume,
+                `CentroidQuadrature` by default.
         """
         self._grid = grid
         self._mixture = phase_mixture
         self.communicator = communicator
 
         # numeric setup
-        self._quadrature = CentroidQuadrature(communicator)
-        self._fem = FirstOrderElement(self._quadrature.quad_pt_coords, grid.element_sizes)
+        self._energy_quadrature = energy_quadrature(communicator)
+        self._energy_fem = FirstOrderElement(self._energy_quadrature.quad_pt_coords, grid.element_sizes)
+        self._volume_quadrature = volume_quadrature(communicator)
+        self._volume_fem = FirstOrderElement(self._volume_quadrature.quad_pt_coords, grid.element_sizes)
 
         # decomposition and field collection setup
         self._decomposition = grid.decomposition
         self._collection = grid.collection_real
         self._collection.set_nb_sub_pts("nodal", 1)
-        self._collection.set_nb_sub_pts("quadr", self._quadrature.nb_quad_pts)
+        self._collection.set_nb_sub_pts("energy_quadr", self._energy_quadrature.nb_quad_pts)
+        self._collection.set_nb_sub_pts("volume_quadr", self._volume_quadrature.nb_quad_pts)
 
         # fields
-        self._nodal_gap = muGrid.Field(self._collection.real_field("nodal_gap", 1, "nodal"))
-        self._quadr_gap = muGrid.Field(self._collection.real_field("quadr_gap", 1, "quadr"))
-        self._nodal_phase = muGrid.Field(self._collection.real_field("nodal_phase", 1, "nodal"))
-        self._quadr_phase = muGrid.Field(self._collection.real_field("quadr_phase", 1, "quadr"))
-        self._quadr_phase_gradient = muGrid.Field(self._collection.real_field("quadr_phase_gradient", 2, "quadr"))
+        self._nodal_gap = self._real_field("nodal_gap", 1, "nodal")
+        self._nodal_phase = self._real_field("nodal_phase", 1, "nodal")
+        self._energy_gap = self._real_field("energy_quadr_gap", 1, "energy_quadr")
+        self._energy_phase = self._real_field("energy_quadr_phase", 1, "energy_quadr")
+        self._energy_phase_gradient = self._real_field("energy_quadr_phase_gradient", 2, "energy_quadr")
+        self._volume_gap = self._real_field("volume_quadr_gap", 1, "volume_quadr")
+        self._volume_phase = self._real_field("volume_quadr_phase", 1, "volume_quadr")
 
         # more fields for backward propagation
-        self._quadr_value_1 = muGrid.Field(self._collection.real_field("quadr_value_1", 1, "quadr"))
-        self._quadr_value_1_back_sens = muGrid.Field(self._collection.real_field("quadr_value_1_back_sens", 1, "nodal"))
-        self._quadr_value_2 = muGrid.Field(self._collection.real_field("quadr_value_2", 1, "quadr"))
-        self._quadr_value_2_back_sens = muGrid.Field(self._collection.real_field("quadr_value_2_back_sens", 1, "nodal"))
-        self._quadr_value_3 = muGrid.Field(self._collection.real_field("quadr_value_3", 1, "quadr"))
-        self._quadr_value_3_back_sens = muGrid.Field(self._collection.real_field("quadr_value_3_back_sens", 1, "nodal"))
-        self._quadr_value_4 = muGrid.Field(self._collection.real_field("quadr_value_4", 1, "quadr"))
-        self._quadr_value_4_back_sens = muGrid.Field(self._collection.real_field("quadr_value_4_back_sens", 1, "nodal"))
-        self._quadr_gradient = muGrid.Field(self._collection.real_field("quadr_gradient", 2, "quadr"))
-        self._quadr_gradient_back_sens = muGrid.Field(
-            self._collection.real_field("quadr_gradient_back_sens", 1, "nodal")
-        )
+        self._energy_D_phase = self._real_field("energy_D_phase", 1, "energy_quadr")
+        self._energy_D_phase_back_sens = self._real_field("energy_D_phase_back_sens", 1, "nodal")
+        self._energy_D_phase_gradient = self._real_field("energy_D_phase_gradient", 2, "energy_quadr")
+        self._energy_D_phase_gradient_back_sens = self._real_field("energy_D_phase_gradient_back_sens", 1, "nodal")
+        self._energy_D_gap = self._real_field("energy_D_gap", 1, "energy_quadr")
+        self._energy_D_gap_back_sens = self._real_field("energy_D_gap_back_sens", 1, "nodal")
+        self._volume_D_phase = self._real_field("volume_D_phase", 1, "volume_quadr")
+        self._volume_D_phase_back_sens = self._real_field("volume_D_phase_back_sens", 1, "nodal")
+        self._volume_D_gap = self._real_field("volume_D_gap", 1, "volume_quadr")
+        self._volume_D_gap_back_sens = self._real_field("volume_D_gap_back_sens", 1, "nodal")
+
+    def _real_field(self, name: str, nb_components: int, sub_pt_tag: str):
+        """Register a real field in the collection.
+
+        Args:
+            name: Unique name of the field.
+            nb_components: Number of components per sub-point.
+            sub_pt_tag: Tag of the sub-points the field lives on.
+        """
+        return muGrid.Field(self._collection.real_field(name, nb_components, sub_pt_tag))
 
     def get_gap(self):
         """Return nodal gap field."""
@@ -291,7 +316,8 @@ class CapillaryBridge:
         """
         self._nodal_gap.s[...] = np.reshape(value, (1, 1, *self._decomposition.nb_subdomain_grid_pts))
         self._decomposition.communicate_ghosts(self._nodal_gap)
-        self._fem.interpolate_value(self._nodal_gap, self._quadr_gap)
+        self._energy_fem.interpolate_value(self._nodal_gap, self._energy_gap)
+        self._volume_fem.interpolate_value(self._nodal_gap, self._volume_gap)
 
     @property
     def gap_is_closed(self):
@@ -310,8 +336,9 @@ class CapillaryBridge:
         """
         self._nodal_phase.s[...] = np.reshape(value, (1, 1, *self._decomposition.nb_subdomain_grid_pts))
         self._decomposition.communicate_ghosts(self._nodal_phase)
-        self._fem.interpolate_value(self._nodal_phase, self._quadr_phase)
-        self._fem.interpolate_gradient(self._nodal_phase, self._quadr_phase_gradient)
+        self._energy_fem.interpolate_value(self._nodal_phase, self._energy_phase)
+        self._energy_fem.interpolate_gradient(self._nodal_phase, self._energy_phase_gradient)
+        self._volume_fem.interpolate_value(self._nodal_phase, self._volume_phase)
 
     @property
     def phase_lb(self):
@@ -339,27 +366,29 @@ class CapillaryBridge:
     def get_energy(self):
         """Compute total capillary energy."""
         integrand = self._mixture.compute_local_energy(
-            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
+            self._energy_gap.s, self._energy_phase.s, self._energy_phase_gradient.s
         )
-        return self._quadrature.integrate(integrand, self._grid.element_area).item()
+        return self._energy_quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_energy_phase_jacobian(self):
         """Compute gradient of energy w.r.t. nodal phase."""
         [energy_D_phase, energy_D_phase_gradient] = self._mixture.compute_local_energy_jacobian(
-            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
+            self._energy_gap.s, self._energy_phase.s, self._energy_phase_gradient.s
         )
 
-        self._quadr_value_1.s[...] = self._quadrature.propag_integral_weight(energy_D_phase, self._grid.element_area)
-        self._decomposition.communicate_ghosts(self._quadr_value_1)
-        self._fem.propag_sens_value(self._quadr_value_1, self._quadr_value_1_back_sens)
+        self._energy_D_phase.s[...] = self._energy_quadrature.propag_integral_weight(
+            energy_D_phase, self._grid.element_area
+        )
+        self._decomposition.communicate_ghosts(self._energy_D_phase)
+        self._energy_fem.propag_sens_value(self._energy_D_phase, self._energy_D_phase_back_sens)
 
-        self._quadr_gradient.s[...] = self._quadrature.propag_integral_weight(
+        self._energy_D_phase_gradient.s[...] = self._energy_quadrature.propag_integral_weight(
             energy_D_phase_gradient, self._grid.element_area
         )
-        self._decomposition.communicate_ghosts(self._quadr_gradient)
-        self._fem.propag_sens_gradient(self._quadr_gradient, self._quadr_gradient_back_sens)
+        self._decomposition.communicate_ghosts(self._energy_D_phase_gradient)
+        self._energy_fem.propag_sens_gradient(self._energy_D_phase_gradient, self._energy_D_phase_gradient_back_sens)
 
-        jacobian = self._quadr_value_1_back_sens.s + self._quadr_gradient_back_sens.s
+        jacobian = self._energy_D_phase_back_sens.s + self._energy_D_phase_gradient_back_sens.s
         return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     get_energy_jacobian = get_energy_phase_jacobian
@@ -367,62 +396,68 @@ class CapillaryBridge:
     def get_energy_gap_jacobian(self):
         """Compute gradient of energy w.r.t. nodal gap."""
         energy_D_gap = self._mixture.compute_local_energy_gap_jacobian(
-            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
+            self._energy_gap.s, self._energy_phase.s, self._energy_phase_gradient.s
         )
 
-        self._quadr_value_3.s[...] = self._quadrature.propag_integral_weight(energy_D_gap, self._grid.element_area)
-        self._decomposition.communicate_ghosts(self._quadr_value_3)
-        self._fem.propag_sens_value(self._quadr_value_3, self._quadr_value_3_back_sens)
+        self._energy_D_gap.s[...] = self._energy_quadrature.propag_integral_weight(
+            energy_D_gap, self._grid.element_area
+        )
+        self._decomposition.communicate_ghosts(self._energy_D_gap)
+        self._energy_fem.propag_sens_value(self._energy_D_gap, self._energy_D_gap_back_sens)
 
-        jacobian = self._quadr_value_3_back_sens.s.copy()
+        jacobian = self._energy_D_gap_back_sens.s.copy()
         return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_volume(self):
         """Compute total liquid volume."""
-        integrand = self._mixture.compute_local_volume(self._quadr_gap.s, self._quadr_phase.s)
-        return self._quadrature.integrate(integrand, self._grid.element_area).item()
+        integrand = self._mixture.compute_local_volume(self._volume_gap.s, self._volume_phase.s)
+        return self._volume_quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_volume_phase_jacobian(self):
         """Compute gradient of volume w.r.t. nodal phase."""
-        [volume_D_phase] = self._mixture.compute_local_volume_jacobian(self._quadr_gap.s, self._quadr_phase.s)
+        [volume_D_phase] = self._mixture.compute_local_volume_jacobian(self._volume_gap.s, self._volume_phase.s)
 
-        self._quadr_value_2.s[...] = self._quadrature.propag_integral_weight(volume_D_phase, self._grid.element_area)
-        self._decomposition.communicate_ghosts(self._quadr_value_2)
-        self._fem.propag_sens_value(self._quadr_value_2, self._quadr_value_2_back_sens)
+        self._volume_D_phase.s[...] = self._volume_quadrature.propag_integral_weight(
+            volume_D_phase, self._grid.element_area
+        )
+        self._decomposition.communicate_ghosts(self._volume_D_phase)
+        self._volume_fem.propag_sens_value(self._volume_D_phase, self._volume_D_phase_back_sens)
 
-        jacobian = self._quadr_value_2_back_sens.s.copy()
+        jacobian = self._volume_D_phase_back_sens.s.copy()
         return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     get_volume_jacobian = get_volume_phase_jacobian
 
     def get_volume_gap_jacobian(self):
         """Compute gradient of liquid volume w.r.t. nodal gap."""
-        [volume_D_gap] = self._mixture.compute_local_volume_gap_jacobian(self._quadr_phase.s)
+        [volume_D_gap] = self._mixture.compute_local_volume_gap_jacobian(self._volume_phase.s)
 
-        self._quadr_value_4.s[...] = self._quadrature.propag_integral_weight(volume_D_gap, self._grid.element_area)
-        self._decomposition.communicate_ghosts(self._quadr_value_4)
-        self._fem.propag_sens_value(self._quadr_value_4, self._quadr_value_4_back_sens)
+        self._volume_D_gap.s[...] = self._volume_quadrature.propag_integral_weight(
+            volume_D_gap, self._grid.element_area
+        )
+        self._decomposition.communicate_ghosts(self._volume_D_gap)
+        self._volume_fem.propag_sens_value(self._volume_D_gap, self._volume_D_gap_back_sens)
 
-        jacobian = self._quadr_value_4_back_sens.s.copy()
+        jacobian = self._volume_D_gap_back_sens.s.copy()
         return jacobian.squeeze(axis=(field_component_ax, field_sub_pt_ax))
 
     def get_perimeter(self):
         """Compute total perimeter of liquid-vapour interface."""
-        integrand = self._mixture.compute_local_perimeter(self._quadr_phase.s, self._quadr_phase_gradient.s)
-        return self._quadrature.integrate(integrand, self._grid.element_area).item()
+        integrand = self._mixture.compute_local_perimeter(self._energy_phase.s, self._energy_phase_gradient.s)
+        return self._energy_quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_max_volume(self):
         """Compute maximum available volume."""
-        return self._quadrature.integrate(self._quadr_gap.s, self._grid.element_area).item()
+        return self._volume_quadrature.integrate(self._volume_gap.s, self._grid.element_area).item()
 
     def get_liquid_solid_area(self):
         """Compute area of liquid-solid interface."""
-        integrand = self._mixture.compute_local_liquid_solid_area(self._quadr_gap.s, self._quadr_phase.s)
-        return self._quadrature.integrate(integrand, self._grid.element_area).item()
+        integrand = self._mixture.compute_local_liquid_solid_area(self._energy_gap.s, self._energy_phase.s)
+        return self._energy_quadrature.integrate(integrand, self._grid.element_area).item()
 
     def get_liquid_vapour_area(self):
         """Compute area of liquid-vapour interface."""
         integrand = self._mixture.compute_local_liquid_vapour_area(
-            self._quadr_gap.s, self._quadr_phase.s, self._quadr_phase_gradient.s
+            self._energy_gap.s, self._energy_phase.s, self._energy_phase_gradient.s
         )
-        return self._quadrature.integrate(integrand, self._grid.element_area).item()
+        return self._energy_quadrature.integrate(integrand, self._grid.element_area).item()
