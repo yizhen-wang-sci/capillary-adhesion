@@ -91,33 +91,32 @@ def formulate_constant_pressure_phase_problem(
     return Problem(**args)
 
 
-def formulate_constant_separation_gap_problem(elastic: ElasticContact):
-    """Minimise energy(gap) subject to displaced_volume(gap) == 0.
+def formulate_constant_separation_elastic_problem(elastic: ElasticContact):
+    """Minimise energy(x) at the mean separation, x being the gap or the displacement.
 
     Args:
-        elastic: The physics model providing the energy and its Jacobian w.r.t. gap,
+        elastic: The physics model providing the energy and its Jacobian w.r.t. x,
             with its mean separation already set.
 
     Returns:
-        An adapted problem the optimizer can handle, whose dual variable is the mean pressure.
+        An adapted problem the optimizer can handle.
     """
-    # Exploit the linearity in the displaced volume Jacobian
     return Problem(
-        get_x=elastic.get_gap,
-        set_x=elastic.set_gap,
+        get_x=elastic.get_x,
+        set_x=elastic.set_x,
         get_f=elastic.get_energy,
         get_f_Dx=elastic.get_energy_jacobian,
-        x_lb=elastic.gap_lb,
-        x_ub=elastic.gap_ub,
+        x_lb=elastic.x_lb,
+        x_ub=elastic.x_ub,
         communicator=elastic.communicator,
     )
 
 
-def formulate_constant_volume_gap_problem(elastic: ElasticContact):
-    """Minimise energy(gap) subject to displaced_volume(gap) == 0.
+def formulate_constant_volume_elastic_problem(elastic: ElasticContact):
+    """Minimise energy(x) subject to gap_volume(x) == gap_origin_volume, x the gap or displacement.
 
     Args:
-        elastic: The physics model providing the energy and its Jacobian w.r.t. gap,
+        elastic: The physics model providing the energy and its Jacobian w.r.t. x,
             with its mean separation already set.
 
     Returns:
@@ -125,16 +124,21 @@ def formulate_constant_volume_gap_problem(elastic: ElasticContact):
     """
     # Exploit the linearity in the displaced volume Jacobian
     return Problem(
-        get_x=elastic.get_gap,
-        set_x=elastic.set_gap,
+        get_x=elastic.get_x,
+        set_x=elastic.set_x,
         get_f=elastic.get_energy,
         get_f_Dx=elastic.get_energy_jacobian,
         A=elastic.get_gap_volume_jacobian().ravel(),
-        b=elastic.get_gap_origin_volume(),
-        x_lb=elastic.gap_lb,
-        x_ub=elastic.gap_ub,
+        b=elastic.get_gap_origin_volume() - elastic.get_gap_volume_intercept(),
+        x_lb=elastic.x_lb,
+        x_ub=elastic.x_ub,
         communicator=elastic.communicator,
     )
+
+
+# Former names
+formulate_constant_separation_gap_problem = formulate_constant_separation_elastic_problem
+formulate_constant_volume_gap_problem = formulate_constant_volume_elastic_problem
 
 
 def formulate_constant_load_gap_coupling_constant_pressure_phase_problem(
